@@ -1,23 +1,23 @@
 // src/pages/Dashboard.js
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import {
-  Chart as ChartJS,
-  registerables
-} from 'chart.js';
-import ProductSalesChart from '../components/ProductSalesChart';
-import './Dashboard.css';
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Chart as ChartJS, registerables } from "chart.js";
+import ProductSalesChart from "../components/ProductSalesChart";
+import api from "../services/api";
+import "./Dashboard.css";
 
 ChartJS.register(...registerables);
+
+const formatCurrency = (n) => `Rp.${Number(n || 0).toFixed(2)}`;
 
 export default function Dashboard() {
   const navigate = useNavigate();
 
-  // Optional role-gate (keep or remove)
-  const storedUser = localStorage.getItem('user');
-  const user = storedUser ? JSON.parse(storedUser) : { role: 'admin' };
-  if (user.role !== 'admin') return <div className="page-container">Access Denied. Admins only.</div>;
+  const storedUser = localStorage.getItem("user");
+  const user = storedUser ? JSON.parse(storedUser) : { role: "admin" };
+  if (user.role !== "admin") {
+    return <div className="page-container">Access Denied. Admins only.</div>;
+  }
 
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -26,24 +26,26 @@ export default function Dashboard() {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await axios.get('http://localhost:5001/api/dashboard');
+        // ✅ no hardcoded localhost
+        const { data } = await api.get("/dashboard");
         setDashboardData(data);
       } catch (err) {
-        setError('Error fetching dashboard data.');
+        console.error(err);
+        setError("Error fetching dashboard data.");
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  if (loading) return <div className="page-container">Loading dashboard...</div>;
-  if (error)   return <div className="page-container">{error}</div>;
+  if (loading)
+    return <div className="page-container">Loading dashboard...</div>;
+  if (error) return <div className="page-container">{error}</div>;
 
   const { totalSales, orderCount, averageOrder, productSales } = dashboardData;
 
   return (
     <div className="page-container">
-      {/* Back */}
       <button className="back-btn" onClick={() => navigate("/")}>
         <i className="fas fa-arrow-left" /> Back
       </button>
@@ -53,15 +55,15 @@ export default function Dashboard() {
       <section className="cards-grid">
         <div className="card">
           <h3>Today&apos;s Sales</h3>
-          <p className="metric">${totalSales.day.toFixed(2)}</p>
+          <p className="metric">{formatCurrency(totalSales.day)}</p>
         </div>
         <div className="card">
           <h3>This Month&apos;s Sales</h3>
-          <p className="metric">${totalSales.month.toFixed(2)}</p>
+          <p className="metric">{formatCurrency(totalSales.month)}</p>
         </div>
         <div className="card">
           <h3>This Year&apos;s Sales</h3>
-          <p className="metric">${totalSales.year.toFixed(2)}</p>
+          <p className="metric">{formatCurrency(totalSales.year)}</p>
         </div>
         <div className="card">
           <h3>Total Orders</h3>
@@ -69,7 +71,7 @@ export default function Dashboard() {
         </div>
         <div className="card">
           <h3>Average Order</h3>
-          <p className="metric">${averageOrder.toFixed(2)}</p>
+          <p className="metric">{formatCurrency(averageOrder)}</p>
         </div>
       </section>
 
@@ -96,7 +98,7 @@ export default function Dashboard() {
                 <tr key={item.productId || item.name}>
                   <td>{item.name}</td>
                   <td>{item.quantity}</td>
-                  <td>${Number(item.total || 0).toFixed(2)}</td>
+                  <td>{formatCurrency(item.total)}</td>
                 </tr>
               ))}
             </tbody>
