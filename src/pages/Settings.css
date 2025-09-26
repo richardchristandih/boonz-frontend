@@ -1,0 +1,329 @@
+/* ------------------------------
+   src/pages/Settings.css
+   ------------------------------ */
+
+/* ===== Page shell ===== */
+.page-container {
+  padding: 28px;
+}
+
+.back-btn {
+  appearance: none;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  margin-bottom: 12px;
+}
+.back-btn:hover { background: #f9fafb; }
+.back-btn i { font-size: 14px; }
+
+.page-title {
+  margin: 6px 0 4px;
+  font-size: 24px;
+  font-weight: 800;
+  color: #111827;
+}
+
+/* Subtitle under the main page title */
+.settings-subtitle {
+  color: #6b7280;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+/* ===== Grid of cards ===== */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+  align-items: stretch;          /* make all cards equal height */
+}
+
+/* Card styling */
+.card {
+  background: #fff;
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;             /* keeps heights consistent */
+}
+.card h2 {
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+.muted {
+  color: #6b7280;
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Divider (optional utility inside cards) */
+.card .divider {
+  height: 1px;
+  background: #efefef;
+  margin: 12px 0;
+  border-radius: 1px;
+}
+
+/* ===== Controls (inputs/selects/labels) ===== */
+.card label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.card input[type="text"],
+.card input[type="number"],
+.card input[type="file"],
+.card select,
+.card textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.card textarea { resize: vertical; }
+.card input[type="range"] { width: 100%; }
+
+.card input:focus,
+.card select:focus,
+.card textarea:focus {
+  border-color: #a78bfa;              /* violet-400 */
+  box-shadow: 0 0 0 3px rgba(167,139,250,0.25);
+}
+
+/* Help text under inputs */
+.form-hint {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
+/* ===== Two-up rows (wrap when cramped) ===== */
+.form-grid-2 {
+  display: flex;          /* was grid — flex lets us wrap cleanly */
+  gap: 12px;
+  flex-wrap: wrap;        /* allows controls to move to next line */
+}
+.form-grid-2 > * {
+  flex: 1 1 220px;        /* grow, but don't shrink below ~220px */
+  min-width: 0;           /* prevent inner overflow clipping */
+}
+
+/* Ensure selects don't clip their text and fill the column */
+.card select {
+  width: 100%;
+  max-width: 100%;
+  padding-right: 28px;     /* room for native chevron on some browsers */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* if the label is extremely long */
+}
+
+/* ===== Buttons ===== */
+.btn {
+  appearance: none;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 10px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
+}
+.btn:hover { background: #f9fafb; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn.outline {
+  border-color: #f59e0b;
+  color: #b45309;
+}
+.btn.primary {
+  background: #635bff;
+  color: #fff;
+  border-color: transparent;
+}
+.btn.primary:hover { background: #524cf3; }
+.btn.danger {
+  border-color: #ef4444;
+  color: #991b1b;
+  background: #fff;
+}
+.btn.danger:hover {
+  background: #fff5f5;
+  border-color: #dc2626;
+}
+
+/* Actions row pinned to bottom of each card */
+.card .actions {
+  margin-top: auto;       /* push actions to bottom */
+  padding-top: 12px;      /* spacing from content */
+  display: inline-flex;
+  gap: 10px;
+  align-self: flex-start; /* left aligned buttons */
+  flex-wrap: wrap;
+}
+
+/* Notes / logs under actions or content */
+.note {
+  margin-top: 12px;
+  color: #374151;
+  font-size: 13px;
+}
+.pre {
+  background: #f7f7fb;
+  padding: 10px;
+  border-radius: 10px;
+  white-space: pre-wrap;
+  border: 1px dashed #e5e7eb;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* ===== Minimal list reset — handy for promos list ===== */
+.list-reset {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.list-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #efefef;
+}
+.list-item:last-child { border-bottom: 0; }
+
+/* Status tag (Active / Inactive) */
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #eef2ff;     /* indigo-50 */
+  color: #3730a3;          /* indigo-800 */
+  vertical-align: middle;
+}
+.tag.muted {
+  background: #f3f4f6;     /* gray-100 */
+  color: #6b7280;          /* gray-500 */
+}
+
+/* ===== Modal (overlay) ===== */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: grid;                 /* easy centering */
+  place-items: center;
+  padding: 24px;                 /* breathing room on small screens */
+  z-index: 1000;
+}
+
+.modal__dialog {
+  background: #fff;
+  width: min(680px, 92vw);
+  max-height: 90vh;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;              /* keep rounded corners clean */
+}
+
+/* Modal sections */
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #eee;
+}
+.modal__head strong { font-size: 15px; }
+
+.modal__close {
+  background: transparent;
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.modal__close:hover { background: #f5f5f5; }
+
+.modal__body {
+  padding: 16px 18px;
+  overflow: auto;                /* scroll content if tall */
+  display: grid;
+  place-items: center;           /* center whatever we preview */
+}
+
+.modal__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;     /* buttons on the right */
+  padding: 14px 18px;
+  border-top: 1px solid #eee;
+}
+
+/* ===== Preview scoping inside modal ===== */
+.modal__body .receipt-preview .receipt-paper {
+  border: 1px solid #eaeaea;
+  border-radius: 12px;
+  box-shadow: 0 3px 12px rgba(0,0,0,.06);
+}
+
+/* For raw text previews (when ReceiptPreview shows a <pre>) */
+.modal__body .receipt-preview pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===== Utility: image preview in settings (logo) ===== */
+.card .logo-preview {
+  margin-top: 8px;
+  display: inline-block;
+  border: 1px dashed #e5e7eb;
+  border-radius: 10px;
+  padding: 6px;
+  background: #fafafa;
+}
+
+/* ===== Tiny helpers ===== */
+.kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+/* ===== Responsive tweaks ===== */
+@media (max-width: 640px) {
+  .page-title { font-size: 20px; }
+  .modal__dialog { width: 96vw; }
+  .form-grid-2 { flex-wrap: wrap; }  /* ensure wrap on small screens */
+}

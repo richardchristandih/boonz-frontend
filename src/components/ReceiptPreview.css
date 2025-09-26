@@ -1,0 +1,144 @@
+/* ========= Layout ========= */
+.receipt-preview {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* Use width classes so 58/80 mm look right in preview */
+.receipt-paper {
+  --paper-width: 240px;           /* ~58mm */
+  --ink: #111827;
+  --muted: #6b7280;
+  --rule: #e5e7eb;
+  --fs: 13px;
+
+  width: var(--paper-width);
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 12px 12px 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: var(--fs);
+  line-height: 1.35;
+  color: var(--ink);
+  box-shadow: 0 12px 28px rgba(2,6,23,.06);
+
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums; /* monospaced numbers for aligned prices */
+}
+
+/* 80mm preview variant */
+.receipt-paper.paper-80 { --paper-width: 300px; }
+
+/* Optional compact variant */
+.receipt-paper.compact { --fs: 12px; }
+
+/* ========= Header ========= */
+.head .shop {
+  text-align: center;
+  font-weight: 800;
+  font-size: 14px;
+}
+.logo {
+  display: block;
+  margin: 0 auto 6px;
+  width: 96px;
+  height: auto;
+  object-fit: contain;
+}
+
+/* ========= Meta & separators ========= */
+.muted { color: var(--muted); }
+.meta { margin: 6px 0 0; }
+.meta > div { margin: 2px 0; }
+
+.hr {
+  height: 1px;
+  background: repeating-linear-gradient(
+    to right,
+    var(--rule) 0,
+    var(--rule) 8px,
+    transparent 8px,
+    transparent 14px
+  );
+  margin: 8px 0;
+}
+
+/* ========= Lines ========= */
+.lines .line { margin: 6px 0; }
+.lines .name { font-weight: 600; }
+.lines .sub {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 8px;
+}
+.lines .sub .price { font-variant-numeric: tabular-nums; } /* ensure right column stays aligned */
+
+/* ========= Totals ========= */
+.totals > div {
+  display: flex;
+  justify-content: space-between;
+  margin: 4px 0;
+}
+.totals .grand {
+  margin-top: 6px;
+  font-weight: 800;
+  font-size: 14px;
+}
+.totals .pay { margin-top: 6px; }
+
+/* ========= Footer ========= */
+.footer {
+  text-align: center;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+/* ========= Kitchen Ticket tweaks (optional) ========= */
+.kot .title {
+  text-align: center;
+  font-weight: 800;
+  font-size: 14px;
+}
+.kot .item {
+  margin: 4px 0;
+  font-weight: 700; /* bold qty × name */
+}
+
+/* ========= Scroll safety for long orders ========= */
+.receipt-paper .scroll {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+/* Preserve newlines & wrap long words when showing RAW text */
+.receipt-raw {
+  margin: 0;
+  white-space: pre-wrap;   /* respect \n */
+  word-break: break-word;  /* wrap very long tokens */
+  font: inherit;           /* use the same mono font */
+}
+
+/* (keep the rest of your CSS as-is) */
+/* Optional: make 58/80mm widths work (if not already): */
+.receipt-paper { --paper-width: 240px; width: var(--paper-width); }
+.receipt-paper.paper-80 { --paper-width: 300px; }
+
+.price { font-variant-numeric: tabular-nums; } /* align amounts nicely */
+.logo { display:block; margin:0 auto 6px; width:96px; height:auto; object-fit:contain; }
+
+
+/* ========= Print: clean output ========= */
+@media print {
+  .receipt-preview { align-items: stretch; }
+  .receipt-paper {
+    box-shadow: none;
+    border: none;
+    width: auto;            /* let printer decide usable width */
+    padding: 0;             /* thermal printers ignore anyway */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  @page { margin: 0; }
+}

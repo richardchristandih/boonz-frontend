@@ -1,0 +1,26 @@
+name,sku,price,quantity,description,category,image
+Espresso,COF-ESP,25000,100,Rich and bold espresso coffee,Coffee,/images/coffee/espresso.jpg
+Americano,COF-AME,27000,80,Espresso diluted with hot water,Coffee,/images/coffee/americano.jpg
+Latte,COF-LAT,35000,70,Smooth milk-based coffee with foam,Coffee,/images/coffee/latte.jpg
+Cappuccino,COF-CAP,30000,60,Creamy cappuccino with steamed milk foam,Coffee,/images/coffee/cappuccino.jpg
+Mocha,COF-MOC,37000,50,Espresso with steamed milk and chocolate syrup,Coffee,/images/coffee/mocha.jpg
+Cola,DRK-COLA,15000,100,Carbonated cola beverage,Drink,/images/drink/cola.jpg
+Orange Soda,DRK-ORSO,17500,80,Citrus-flavored carbonated drink,Drink,/images/drink/orangesoda.jpg
+Lemonade,DRK-LEM,20000,60,Refreshing lemon juice beverage,Drink,/images/drink/lemonade.jpg
+Iced Tea,DRK-ICET,22500,50,Chilled black tea with lemon,Drink,/images/drink/icedtea.jpg
+Mineral Water,DRK-WAT,10000,120,Pure bottled water,Drink,/images/drink/water.jpg
+Cheeseburger,FOD-CHB,45000,30,Grilled burger with cheese,Food,/images/food/cheeseburger.jpg
+Chicken Wings,FOD-CHW,50000,40,Crispy fried chicken wings,Food,/images/food/chickenwings.jpg
+French Fries,FOD-FFR,20000,50,Golden-fried potato sticks,Food,/images/food/fries.jpg
+Onion Rings,FOD-ONR,22500,60,Crispy battered onion rings,Food,/images/food/onionrings.jpg
+Club Sandwich,FOD-CLB,40000,35,Classic multi-layer sandwich,Food,/images/food/clubsandwich.jpg
+Lager,BER-LGR,40000,20,Light crisp and refreshing beer,Beer,/images/beer/lager.jpg
+Pale Ale,BER-PALE,45000,15,Fruity and hoppy pale ale,Beer,/images/beer/paleale.jpg
+Stout,BER-STT,50000,10,Dark roasted flavor,Beer,/images/beer/stout.jpg
+Wheat Beer,BER-WHT,42500,18,Smooth beer made with wheat malts,Beer,/images/beer/wheat.jpg
+IPA,BER-IPA,52500,12,Bold and bitter India Pale Ale,Beer,/images/beer/ipa.jpg
+Croissant,PAT-CRO,20000,30,Flaky buttery French pastry,Patisserie,/images/patisserie/croissant.jpg
+Pain au Chocolat,PAT-PCH,25000,25,Pastry with chocolate filling,Patisserie,/images/patisserie/painauchocolat.jpg
+Eclair,PAT-ECL,30000,20,Choux pastry filled with cream,Patisserie,/images/patisserie/eclair.jpg
+Macaron,PAT-MAC,17500,40,Sweet meringue-based confection,Patisserie,/images/patisserie/macaron.jpg
+Fruit Tart,PAT-TART,32500,15,Buttery crust with fresh fruit topping,Patisserie,/images/patisserie/fruittart.jpg

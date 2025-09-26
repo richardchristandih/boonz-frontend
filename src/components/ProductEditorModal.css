@@ -1,0 +1,88 @@
+.pemodal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 1000;
+}
+.pemodal__dialog {
+  background: #fff;
+  width: min(640px, 92vw);
+  max-height: 90vh;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pemodal__head, .pemodal__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #eee;
+}
+.pemodal__actions { border-top: 1px solid #eee; border-bottom: 0; justify-content: flex-end; }
+.pemodal__close {
+  background: transparent;
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.pemodal__close:hover { background: #f5f5f5; }
+.pemodal__body {
+  padding: 16px 18px;
+  overflow: auto;
+  display: block;
+}
+.pemodal__grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.pemodal__hint {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 6px;
+}
+.pemodal__error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  padding: 10px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+
+/* reuse existing .btn, .btn.primary, .btn.outline styles from your app */
+.pemodal input[type="text"],
+.pemodal input[type="number"],
+.pemodal textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  margin-bottom: 10px;
+}
+.pemodal input:focus,
+.pemodal textarea:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167,139,250,0.25);
+}
+
+@media (max-width: 640px) {
+  .pemodal__dialog { width: 96vw; }
+  .pemodal__grid2 { grid-template-columns: 1fr; }
+}
