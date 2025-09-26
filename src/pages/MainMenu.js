@@ -1,5 +1,10 @@
-// src/MainMenu.js
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import "./MainMenu.css";
 import richardImage from "./ProfilePic.png";
@@ -8,7 +13,7 @@ import { buildReceipt } from "../receipt";
 import { isAndroidBridge, androidPrintFormatted } from "../utils/androidBridge";
 import { printRaw, listPrinters } from "../utils/qzHelper";
 import SafeImage from "../components/SafeImage";
-import api from "../services/api"; // <-- use the shared Axios client
+import api from "../services/api";
 
 // ---------- Constants ----------
 const CATEGORIES = [
@@ -22,9 +27,9 @@ const CATEGORIES = [
 const TAX_RATE = 0.1;
 const SERVICE_CHARGE_RATE = 0.05;
 
-// Hints used to find printers (edit to match your setup)
-const KITCHEN_PRINTER_HINTS = [/kitchen/i, /\bKOT\b/i]; // prefer a printer with “kitchen” in its name
-const RECEIPT_PRINTER_HINT = /RPP02N/i; // your receipt printer hint
+// Printer hints
+const KITCHEN_PRINTER_HINTS = [/kitchen/i, /\bKOT\b/i];
+const RECEIPT_PRINTER_HINT = /RPP02N/i;
 
 const productImages = require.context(
   "../images",
@@ -41,13 +46,10 @@ function resolveProductImage(relPath) {
     return null;
   }
 }
-
 function formatCurrency(num) {
   const n = Number(num || 0);
   return `Rp.${n.toFixed(2)}`;
 }
-
-/** Build a simple Kitchen Order Ticket (KOT) using DantSu markup */
 function buildKitchenTicket({
   shopName,
   orderNumber,
@@ -65,19 +67,13 @@ function buildKitchenTicket({
     `[L]Time : ${dateStr}\n` +
     (customer?.name ? `[L]Cust : ${customer.name}\n` : ``) +
     `[C]------------------------------\n`;
-
   const lines = (items || [])
-    .map((it) => {
-      const qty = Number(it.quantity || 0);
-      const name = it.name || "Item";
-      return `[L]<b>${qty} × ${name}</b>\n`;
-    })
+    .map(
+      (it) => `[L]<b>${Number(it.quantity || 0)} × ${it.name || "Item"}</b>\n`
+    )
     .join("");
-
   return header + lines + `[C]------------------------------\n\n`;
 }
-
-/** Desktop (QZ) picker: try hints first, then first printer */
 function pickPrinter(printers, hints) {
   for (const h of hints) {
     const found = printers.find((p) => h.test(p));
@@ -85,12 +81,8 @@ function pickPrinter(printers, hints) {
   }
   return printers[0];
 }
-
-/** Print the KOT on Android/QZ */
 async function printKitchenTicket(kotText) {
   if (isAndroidBridge()) {
-    // On Android, your bridge filters by nameLike (if implemented).
-    // We pass “KITCHEN” so you can route to a dedicated KOT printer.
     androidPrintFormatted(kotText, "KITCHEN");
     return;
   }
@@ -100,19 +92,13 @@ async function printKitchenTicket(kotText) {
   const printerName = pickPrinter(printers, KITCHEN_PRINTER_HINTS);
   await printRaw(printerName, kotText);
 }
-
-// Compute discount for a promo object against a subtotal
 function computePromoDiscount(promo, subtotal) {
   if (!promo || !promo.active) return 0;
-  // Optional constraints
   if (promo.minSubtotal && subtotal < Number(promo.minSubtotal)) return 0;
-
-  let d = 0;
-  if (promo.type === "percentage") {
-    d = subtotal * (Number(promo.value || 0) / 100);
-  } else {
-    d = Number(promo.value || 0);
-  }
+  let d =
+    promo.type === "percentage"
+      ? subtotal * (Number(promo.value || 0) / 100)
+      : Number(promo.value || 0);
   if (promo.maxDiscount && d > Number(promo.maxDiscount))
     d = Number(promo.maxDiscount);
   return Math.max(0, d);
@@ -122,14 +108,6 @@ function computePromoDiscount(promo, subtotal) {
 export default function MenuLayout() {
   const navigate = useNavigate();
 
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("refreshToken"); // ensure refresh token is cleared too
-    localStorage.removeItem("user");
-    navigate("/login");
-  }, [navigate]);
-
-  // UI / Data state
   const [products, setProducts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("Coffee");
   const [cart, setCart] = useState([]);
@@ -139,38 +117,53 @@ export default function MenuLayout() {
   const [orderNumber, setOrderNumber] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Search bar
+  // search
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearchBar, setShowSearchBar] = useState(false);
 
-  // Promotions
+  // promos
   const [promos, setPromos] = useState([]);
   const [promosLoading, setPromosLoading] = useState(false);
   const [promosError, setPromosError] = useState("");
 
-  // Discount popup
+  // discounts
   const [showDiscountModal, setShowDiscountModal] = useState(false);
-
-  // Two modes: 'promo' | 'custom'
   const [discountMode, setDiscountMode] = useState("promo");
-
-  // PROMO state
   const [selectedPromoId, setSelectedPromoId] = useState("");
-
-  // CUSTOM state
-  const [discountValue, setDiscountValue] = useState(""); // user input (string)
-  const [discountType, setDiscountType] = useState("flat"); // "flat" | "percentage"
+  const [discountValue, setDiscountValue] = useState("");
+  const [discountType, setDiscountType] = useState("flat");
   const [discountNote, setDiscountNote] = useState("");
 
-  // User
+  // user
   const storedUser = localStorage.getItem("user");
   const user = storedUser ? JSON.parse(storedUser) : null;
+
+  // avatar dropdown
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", handleClickOutside);
+    return () =>
+      document.removeEventListener("pointerdown", handleClickOutside);
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("user");
+    navigate("/login");
+  }, [navigate]);
 
   useEffect(() => {
     if (!user) navigate("/login");
   }, [user, navigate]);
 
-  // ---------- Effects ----------
+  // fetch
   useEffect(() => {
     (async () => {
       try {
@@ -183,7 +176,6 @@ export default function MenuLayout() {
     })();
   }, []);
 
-  // Fetch promos (active)
   const fetchPromos = useCallback(async () => {
     try {
       setPromosLoading(true);
@@ -199,30 +191,25 @@ export default function MenuLayout() {
     }
   }, []);
 
-  // ---------- Derivations ----------
+  // derived
   const filteredProducts = useMemo(() => {
     const term = (searchTerm || "").toLowerCase();
     return (products || []).filter((p) => {
       const category = (p?.category ?? "").trim();
       const name = p?.name ?? "";
-      const matchesCategory = category === selectedCategory;
-      const matchesSearch = name.toLowerCase().includes(term);
-      return matchesCategory && matchesSearch;
+      return category === selectedCategory && name.toLowerCase().includes(term);
     });
   }, [products, searchTerm, selectedCategory]);
 
-  // Find selected promo object
   const selectedPromo = useMemo(
     () => promos.find((p) => (p._id || p.id) === selectedPromoId) || null,
     [promos, selectedPromoId]
   );
 
-  // Base sums
   const sub = useMemo(
     () =>
       cart.reduce(
-        (acc, item) =>
-          acc + Number(item.price ?? 0) * Number(item.quantity ?? 0),
+        (acc, it) => acc + Number(it.price ?? 0) * Number(it.quantity ?? 0),
         0
       ),
     [cart]
@@ -230,32 +217,26 @@ export default function MenuLayout() {
   const tx = useMemo(() => sub * TAX_RATE, [sub]);
   const svc = useMemo(() => sub * SERVICE_CHARGE_RATE, [sub]);
 
-  // Custom discount compute
   const customDiscount = useMemo(() => {
     const parsed = parseFloat(discountValue) || 0;
     if (discountMode !== "custom") return 0;
-    if (discountType === "percentage") return sub * (parsed / 100);
-    return parsed;
+    return discountType === "percentage" ? sub * (parsed / 100) : parsed;
   }, [discountMode, discountType, discountValue, sub]);
 
-  // Promo discount compute
   const promoDiscount = useMemo(() => {
     if (discountMode !== "promo") return 0;
     return computePromoDiscount(selectedPromo, sub);
   }, [discountMode, selectedPromo, sub]);
 
-  // Final discount & total
-  const discount = useMemo(() => {
-    return Math.max(
-      0,
-      discountMode === "promo" ? promoDiscount : customDiscount
-    );
-  }, [discountMode, promoDiscount, customDiscount]);
-
-  const total = useMemo(() => {
-    const ttl = Math.max(0, sub + tx + svc - discount);
-    return ttl;
-  }, [sub, tx, svc, discount]);
+  const discount = useMemo(
+    () =>
+      Math.max(0, discountMode === "promo" ? promoDiscount : customDiscount),
+    [discountMode, promoDiscount, customDiscount]
+  );
+  const total = useMemo(
+    () => Math.max(0, sub + tx + svc - discount),
+    [sub, tx, svc, discount]
+  );
 
   const discountLabel = useMemo(() => {
     if (discountMode === "promo") {
@@ -268,7 +249,7 @@ export default function MenuLayout() {
       : "Discount";
   }, [discountMode, selectedPromo, discountType, discountValue]);
 
-  // ---------- Cart operations ----------
+  // cart ops
   const handleAddToCart = useCallback((product) => {
     if (!product) return;
     const productId = product._id || product.id || product.sku;
@@ -278,35 +259,39 @@ export default function MenuLayout() {
         return prev.map((i) =>
           i.id === productId ? { ...i, quantity: i.quantity + 1 } : i
         );
-      const priceNum = Number(product.price ?? 0);
       return [
         ...prev,
-        { ...product, price: priceNum, quantity: 1, id: productId },
+        {
+          ...product,
+          price: Number(product.price ?? 0),
+          quantity: 1,
+          id: productId,
+        },
       ];
     });
   }, []);
+  const handleIncreaseQty = useCallback(
+    (id) =>
+      setCart((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, quantity: i.quantity + 1 } : i))
+      ),
+    []
+  );
+  const handleDecreaseQty = useCallback(
+    (id) =>
+      setCart((prev) =>
+        prev.map((i) =>
+          i.id === id && i.quantity > 1 ? { ...i, quantity: i.quantity - 1 } : i
+        )
+      ),
+    []
+  );
+  const handleRemoveItem = useCallback(
+    (id) => setCart((prev) => prev.filter((i) => i.id !== id)),
+    []
+  );
 
-  const handleIncreaseQty = useCallback((id) => {
-    setCart((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, quantity: i.quantity + 1 } : i))
-    );
-  }, []);
-
-  const handleDecreaseQty = useCallback((id) => {
-    setCart((prev) =>
-      prev.map((i) => {
-        if (i.id === id && i.quantity > 1)
-          return { ...i, quantity: i.quantity - 1 };
-        return i;
-      })
-    );
-  }, []);
-
-  const handleRemoveItem = useCallback((id) => {
-    setCart((prev) => prev.filter((i) => i.id !== id));
-  }, []);
-
-  // ---------- Checkout flow ----------
+  // checkout
   const handleCheckout = useCallback(() => {
     if (cart.length === 0) {
       window.alert("Your cart is empty!");
@@ -326,11 +311,9 @@ export default function MenuLayout() {
       return;
     }
     if (isSubmitting) return;
-
     setIsSubmitting(true);
 
-    // Prepare discount note + promo
-    let finalDiscountNote = discountNote.trim();
+    let finalDiscountNote = (discountNote || "").trim();
     let promoMeta = null;
     if (discountMode === "promo") {
       if (selectedPromo) {
@@ -339,20 +322,15 @@ export default function MenuLayout() {
           promoId: selectedPromo._id || selectedPromo.id,
           promoName: selectedPromo.name,
         };
-      } else if (!finalDiscountNote) {
-        finalDiscountNote = "Promo";
-      }
-    } else {
-      // custom
-      if (discount === 0 && !finalDiscountNote) {
-        finalDiscountNote = "None";
-      } else if (discount > 0 && !finalDiscountNote) {
-        const parsed = parseFloat(discountValue) || 0;
-        finalDiscountNote =
-          discountType === "percentage"
-            ? `Custom ${parsed}% Discount`
-            : "Custom Flat Discount";
-      }
+      } else if (!finalDiscountNote) finalDiscountNote = "Promo";
+    } else if (discount === 0 && !finalDiscountNote) {
+      finalDiscountNote = "None";
+    } else if (discount > 0 && !finalDiscountNote) {
+      const parsed = parseFloat(discountValue) || 0;
+      finalDiscountNote =
+        discountType === "percentage"
+          ? `Custom ${parsed}% Discount`
+          : "Custom Flat Discount";
     }
 
     const orderData = {
@@ -365,27 +343,24 @@ export default function MenuLayout() {
       subtotal: sub,
       tax: tx,
       serviceCharge: svc,
-      discount, // numeric discount applied
+      discount,
       discountNote: finalDiscountNote,
       totalAmount: total,
       user: user?._id,
       orderType,
       paymentMethod: selectedPaymentMethod,
       discountMode,
-      ...(promoMeta || {}), // promoId, promoName when promo chosen
+      ...(promoMeta || {}),
     };
 
     try {
-      // 1) Save order
       const response = await api.post("/orders", orderData);
       const newOrderNumber = response.data?.orderNumber;
       setOrderNumber(newOrderNumber);
 
-      // 2) PRINT — Kitchen ticket FIRST, then customer receipt
       try {
         const dateStr = new Date().toLocaleString();
 
-        // 2a) Kitchen Order Ticket (KOT)
         const kotText = buildKitchenTicket({
           shopName: "Boonz Hauz",
           orderNumber: newOrderNumber || "N/A",
@@ -396,7 +371,6 @@ export default function MenuLayout() {
         });
         await printKitchenTicket(kotText);
 
-        // 2b) Customer receipt
         const receiptText = buildReceipt({
           shopName: "Boonz",
           address: "Jl. Mekar Utama No. 61, Bandung",
@@ -432,7 +406,6 @@ export default function MenuLayout() {
         );
       }
 
-      // 3) Reset UI
       setCart([]);
       setSelectedPromoId("");
       setDiscountMode("promo");
@@ -469,35 +442,29 @@ export default function MenuLayout() {
     navigate,
   ]);
 
-  // ---------- Discount modal handlers ----------
+  // discount modal
   const handleOpenDiscountModal = async () => {
     setShowDiscountModal(true);
-    if (!promos.length && !promosLoading) {
-      await fetchPromos();
-    }
+    if (!promos.length && !promosLoading) await fetchPromos();
   };
   const handleCloseDiscountModal = () => setShowDiscountModal(false);
-  const handleApplyDiscount = () => {
-    setShowDiscountModal(false);
-  };
+  const handleApplyDiscount = () => setShowDiscountModal(false);
 
-  // ---------- Render ----------
   return (
     <div className="layout-container">
-      {/* Sidebar */}
       <Sidebar onAddProduct={() => navigate("/product-page")} />
 
-      {/* Main Content */}
       <main className="layout-main">
-        {/* Top Bar */}
+        {/* Sticky top bar */}
         <div className="layout-topbar">
-          <div className="layout-categories">
+          {/* swipeable category chips */}
+          <div className="chip-row" role="tablist" aria-label="Categories">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat}
-                className={`category-btn ${
-                  cat === selectedCategory ? "active" : ""
-                }`}
+                role="tab"
+                aria-selected={cat === selectedCategory}
+                className={`chip ${cat === selectedCategory ? "active" : ""}`}
                 onClick={() => setSelectedCategory(cat)}
               >
                 {cat}
@@ -505,28 +472,30 @@ export default function MenuLayout() {
             ))}
           </div>
 
-          {/* Search & User */}
-          <div className="layout-user">
-            {!showSearchBar && (
+          {/* right controls */}
+          <div className="topbar-actions">
+            {!showSearchBar ? (
               <button
-                className="search-icon-btn"
+                className="icon-btn"
+                aria-label="Search"
                 onClick={() => setShowSearchBar(true)}
               >
                 <i className="fas fa-search" />
               </button>
-            )}
-            {showSearchBar && (
-              <div className="search-bar-container">
+            ) : (
+              <div className="search-wrap">
+                <i className="fas fa-search search-icon" />
                 <input
                   type="text"
-                  className="search-bar"
-                  placeholder="Search products..."
+                  className="search-input"
+                  placeholder="Search products…"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   autoFocus
                 />
                 <button
-                  className="close-search-btn"
+                  className="icon-btn"
+                  aria-label="Close search"
                   onClick={() => {
                     setSearchTerm("");
                     setShowSearchBar(false);
@@ -537,28 +506,54 @@ export default function MenuLayout() {
               </div>
             )}
 
-            <div className="user-info">
-              <img src={richardImage} alt="User Avatar" className="avatar" />
-              <div>
-                <strong>{user?.name || ""}</strong>
-                <br />
-                <small style={{ color: "#999" }}>{user?.email || ""}</small>
-              </div>
-            </div>
+            {/* avatar dropdown (name/email hidden by default) */}
+            <div className="user-menu-wrap" ref={userMenuRef}>
+              <button
+                className="avatar-btn"
+                aria-label="Account"
+                onClick={() => setUserMenuOpen((o) => !o)}
+              >
+                <img src={richardImage} alt="User avatar" className="avatar" />
+                <i className="fas fa-chevron-down caret" />
+              </button>
 
-            <button
-              className="logout-btn"
-              onClick={handleLogout}
-              title="Log out"
-            >
-              <i className="fas fa-sign-out-alt" />
-            </button>
+              {userMenuOpen && (
+                <div className="user-menu">
+                  <div className="user-menu__head">
+                    <img
+                      src={richardImage}
+                      alt="User avatar"
+                      className="avatar lg"
+                    />
+                    <div className="user-text">
+                      <strong>{user?.name || "User"}</strong>
+                      <small>{user?.email || ""}</small>
+                    </div>
+                  </div>
+                  <button
+                    className="user-menu__item"
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      navigate("/settings");
+                    }}
+                  >
+                    <i className="fas fa-cog" /> Settings
+                  </button>
+                  <button
+                    className="user-menu__item danger"
+                    onClick={handleLogout}
+                  >
+                    <i className="fas fa-sign-out-alt" /> Logout
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Products */}
         <div className="products-area">
-          <h2>{selectedCategory} Menu</h2>
+          <h2 className="visually-hidden">{selectedCategory} Menu</h2>
           <div className="product-grid">
             {filteredProducts.map((prod) => {
               const key =
@@ -724,34 +719,30 @@ export default function MenuLayout() {
           <div className="discount-modal-content">
             <h3>Apply Discount</h3>
 
-            {/* Mode selector */}
-            <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
-              <label style={{ fontWeight: "bold" }}>
+            <div className="radio-row">
+              <label>
                 <input
                   type="radio"
                   name="discountMode"
                   value="promo"
                   checked={discountMode === "promo"}
                   onChange={() => setDiscountMode("promo")}
-                  style={{ marginRight: 6 }}
                 />
                 Promotion
               </label>
-              <label style={{ fontWeight: "bold" }}>
+              <label>
                 <input
                   type="radio"
                   name="discountMode"
                   value="custom"
                   checked={discountMode === "custom"}
                   onChange={() => setDiscountMode("custom")}
-                  style={{ marginRight: 6 }}
                 />
                 Custom
               </label>
             </div>
 
-            {/* PROMO UI */}
-            {discountMode === "promo" && (
+            {discountMode === "promo" ? (
               <div style={{ marginBottom: "1rem" }}>
                 <label>Choose Promotion</label>
                 <select
@@ -787,7 +778,7 @@ export default function MenuLayout() {
                 )}
 
                 {selectedPromo && (
-                  <div style={{ marginTop: 10, fontSize: 13, color: "#555" }}>
+                  <div className="preview">
                     {selectedPromo.description && (
                       <div>- {selectedPromo.description}</div>
                     )}
@@ -811,32 +802,26 @@ export default function MenuLayout() {
                   </div>
                 )}
               </div>
-            )}
-
-            {/* CUSTOM UI */}
-            {discountMode === "custom" && (
+            ) : (
               <>
-                <div style={{ marginBottom: "1rem" }}>
-                  <label style={{ fontWeight: "bold", marginRight: "10px" }}>
+                <div className="radio-row" style={{ marginBottom: "1rem" }}>
+                  <label>
                     <input
                       type="radio"
                       name="discountType"
                       value="flat"
                       checked={discountType === "flat"}
                       onChange={() => setDiscountType("flat")}
-                      style={{ marginRight: "5px" }}
                     />
                     Flat (Rp.)
                   </label>
-
-                  <label style={{ fontWeight: "bold" }}>
+                  <label>
                     <input
                       type="radio"
                       name="discountType"
                       value="percentage"
                       checked={discountType === "percentage"}
                       onChange={() => setDiscountType("percentage")}
-                      style={{ marginRight: "5px" }}
                     />
                     Percentage (%)
                   </label>
@@ -862,7 +847,7 @@ export default function MenuLayout() {
                   placeholder="(Optional) Reason for discount..."
                 />
 
-                <div style={{ marginTop: 6, fontSize: 13, color: "#555" }}>
+                <div className="preview">
                   <strong>Preview:</strong> will apply{" "}
                   <strong>{formatCurrency(customDiscount)}</strong> now
                   (Subtotal: {formatCurrency(sub)})
