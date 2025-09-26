@@ -387,7 +387,7 @@ export default function MenuLayout() {
 
         // 2a) Kitchen Order Ticket (KOT)
         const kotText = buildKitchenTicket({
-          shopName: "Boonz",
+          shopName: "Boonz Hauz",
           orderNumber: newOrderNumber || "N/A",
           dateStr,
           orderType: orderData.orderType,
