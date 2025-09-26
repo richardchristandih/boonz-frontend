@@ -1,43 +1,48 @@
 // src/pages/Login.js
 import React, { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import api from "../services/api";
 import "./Login.css";
 
-function Login() {
+export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || "/";
 
-  const handleSubmit = async (e) => {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    setLoading(true);
+
     try {
       const { data } = await api.post("/auth/login", { email, password });
-      console.log("Login response:", data);
-
-      // Handle either shape: { token } or { accessToken, refreshToken }
+      // backend may return { accessToken, refreshToken, user } or legacy { token, user }
       const access = data.accessToken || data.token;
       const refresh = data.refreshToken || null;
 
-      if (!access) throw new Error("No access token returned from server");
+      if (!access) throw new Error("No access token in response");
 
       localStorage.setItem("token", access);
       if (refresh) localStorage.setItem("refreshToken", refresh);
-
-      if (data.user) {
-        localStorage.setItem("user", JSON.stringify(data.user));
-      }
+      if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
 
       navigate(from, { replace: true });
     } catch (err) {
-      console.error(err?.response?.data || err.message);
-      setError("Login failed. Check your credentials.");
+      console.error("Login error:", err?.response?.data || err.message);
+      setError(
+        err?.response?.data?.message ||
+          "Login failed. Check your email and password."
+      );
+    } finally {
+      setLoading(false);
     }
-  };
+  }
 
   return (
     <div className="login-container">
@@ -57,32 +62,42 @@ function Login() {
             className="login-input"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
             required
           />
 
           <label htmlFor="password" className="login-label">
             Password
           </label>
-          <input
-            id="password"
-            type="password"
-            className="login-input"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          <div className="login-password-wrap">
+            <input
+              id="password"
+              type={showPw ? "text" : "password"}
+              className="login-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
+            <button
+              type="button"
+              className="toggle-password-btn"
+              onClick={() => setShowPw((s) => !s)}
+              aria-label={showPw ? "Hide password" : "Show password"}
+            >
+              {showPw ? "Hide" : "Show"}
+            </button>
+          </div>
 
-          <button type="submit" className="login-button">
-            Login
+          <button type="submit" className="login-button" disabled={loading}>
+            {loading ? "Signing in…" : "Login"}
           </button>
         </form>
 
         <p className="login-footer">
-          Don't have an account? <a href="/register">Register here</a>
+          Don&apos;t have an account? <Link to="/register">Register here</Link>
         </p>
       </div>
     </div>
   );
 }
-
-export default Login;

@@ -7,7 +7,7 @@ const REFRESH_KEY = "refreshToken";
 
 const api = axios.create({
   baseURL: API_BASE,
-  withCredentials: false, // keep cookies if your backend sets them
+  withCredentials: false,
 });
 
 // ---------------- Request Interceptor ----------------
