@@ -1,4 +1,3 @@
-// src/pages/Login.js
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import api from "../services/api";
@@ -8,34 +7,35 @@ function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || "/";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isLoading) return; // prevent double submit
     setError("");
+    setIsLoading(true);
+
     try {
       const { data } = await api.post("/auth/login", { email, password });
-      console.log("Login response:", data);
 
-      // Handle either shape: { token } or { accessToken, refreshToken }
       const access = data.accessToken || data.token;
       const refresh = data.refreshToken || null;
-
       if (!access) throw new Error("No access token returned from server");
 
       localStorage.setItem("token", access);
       if (refresh) localStorage.setItem("refreshToken", refresh);
-
-      if (data.user) {
-        localStorage.setItem("user", JSON.stringify(data.user));
-      }
+      if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
 
       navigate(from, { replace: true });
     } catch (err) {
       console.error(err?.response?.data || err.message);
       setError("Login failed. Check your credentials.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -58,6 +58,8 @@ function Login() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            disabled={isLoading}
+            autoComplete="username"
           />
 
           <label htmlFor="password" className="login-label">
@@ -70,10 +72,25 @@ function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            disabled={isLoading}
+            autoComplete="current-password"
           />
 
-          <button type="submit" className="login-button">
-            Login
+          <button
+            type="submit"
+            className={`login-button ${isLoading ? "is-loading" : ""}`}
+            disabled={isLoading}
+            aria-busy={isLoading}
+            aria-live="polite"
+          >
+            {isLoading ? (
+              <>
+                <span className="btn-spinner" aria-hidden="true" />
+                Logging in…
+              </>
+            ) : (
+              "Login"
+            )}
           </button>
         </form>
 
