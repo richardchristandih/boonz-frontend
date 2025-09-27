@@ -403,7 +403,7 @@ export default function Settings() {
         dateStr: new Date().toLocaleString(),
         items: [
           { name: "Americano", quantity: 1, price: 20000 },
-          { name: "Iced Latte", quantity: 1, price: 25000 },
+          { name: "Pistachio Latte", quantity: 1, price: 25000 },
         ],
         subtotal: 45000,
         tax: 4500,
