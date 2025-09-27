@@ -471,6 +471,7 @@ export default function MenuLayout() {
           for (let i = 0; i < kitchenCopies; i++) {
             await androidPrintText(kotText, kitchenName);
           }
+          await sleep(400);
           if (window.AndroidPrinter?.printLogoAndText && logoDataUrl) {
             for (let i = 0; i < receiptCopies; i++) {
               window.AndroidPrinter.printLogoAndText(
@@ -495,7 +496,7 @@ export default function MenuLayout() {
         } else if (isAndroidChrome()) {
           // --- ANDROID CHROME: system print (HTML) ---
           const html = buildReceiptHtml({
-            shopName: "",
+            // shopName: "",
             address: "Jl. Mekar Utama No. 61, Bandung",
             orderNumber: newOrderNumber || "N/A",
             dateStr,
@@ -573,7 +574,7 @@ export default function MenuLayout() {
 
   /** Build a simple 58mm print HTML (system print) */
   function buildReceiptHtml({
-    shopName,
+    // shopName,
     address,
     orderNumber,
     dateStr,
@@ -620,7 +621,7 @@ export default function MenuLayout() {
            ${
              logo
                ? `<div class="c"><img src="${logo}" style="height:60px;object-fit:contain" /></div>`
-               : `` /* no text fallback */
+               : ``
            }
     <div class="c">${address || ""}</div>
     <div class="line"></div>
