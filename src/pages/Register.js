@@ -4,9 +4,16 @@ import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import "./Register.css";
 
+/** Change this only if the owner email changes */
 const OWNER_EMAIL = "richardchristandi@icloud.com";
+
+/** Cooldown in seconds before user can request the PIN again */
 const PIN_COOLDOWN_SEC = 60;
 
+/** Expected PIN length */
+const PIN_LENGTH = 6;
+
+/** Tiny SVG spinner you can reuse in buttons */
 function SpinnerSVG({ size = 16, color = "#fff" }) {
   return (
     <svg
@@ -40,20 +47,25 @@ function SpinnerSVG({ size = 16, color = "#fff" }) {
   );
 }
 
-function Register() {
-  const [name, setName] = useState(""); // NEW: name field
+export default function Register() {
+  // form fields
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("user");
 
-  const [adminPin, setAdminPin] = useState(""); // NEW: pin entry
-  const [sendingPin, setSendingPin] = useState(false); // NEW: spinner for send PIN
-  const [cooldownUntil, setCooldownUntil] = useState(0); // NEW: cooldown timestamp
+  // admin pin
+  const [adminPin, setAdminPin] = useState("");
+  const [sendingPin, setSendingPin] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
 
-  const [submitting, setSubmitting] = useState(false); // spinner for register
+  // ui state
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState(""); // small success info
 
-  const [nowTs, setNowTs] = useState(Date.now()); // ticker to refresh cooldown label
+  // simple ticker for cooldown label
+  const [nowTs, setNowTs] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(id);
@@ -62,20 +74,21 @@ function Register() {
 
   const navigate = useNavigate();
 
-  // If user switches away from admin, clear pin
+  // Clear pin if user switches out of admin role
   useEffect(() => {
     if (role !== "admin") setAdminPin("");
   }, [role]);
 
+  // Request one-time PIN email for admin registration
   const sendAdminPin = async () => {
     if (sendingPin || cooldownLeft > 0) return;
     setError("");
+    setNotice("");
     setSendingPin(true);
     try {
-      // Trigger backend to email a one-time admin PIN to the owner
       await api.post("/auth/admin-pin/send", { to: OWNER_EMAIL });
-      // Start cooldown
       setCooldownUntil(Date.now() + PIN_COOLDOWN_SEC * 1000);
+      setNotice(`PIN sent to ${OWNER_EMAIL}. Please check your inbox.`);
     } catch (err) {
       console.error(err?.response?.data || err.message);
       setError("Failed to send admin PIN. Please try again.");
@@ -87,20 +100,31 @@ function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;
-    setError("");
 
-    // Basic client validation
+    setError("");
+    setNotice("");
+
+    // basic client validation
     if (!name.trim()) return setError("Please enter your name.");
     if (!email.trim()) return setError("Please enter your email.");
     if (!password.trim()) return setError("Please enter your password.");
-    if (role === "admin" && !adminPin.trim()) {
-      return setError("Admin PIN is required to register an admin account.");
+
+    if (role === "admin") {
+      const digitsOnly = adminPin.replace(/\D/g, "");
+      if (digitsOnly.length !== PIN_LENGTH) {
+        return setError(`Admin PIN must be ${PIN_LENGTH} digits.`);
+      }
     }
 
     setSubmitting(true);
     try {
-      const payload = { name, email, password, role };
-      if (role === "admin") payload.adminPin = adminPin.trim();
+      const payload = {
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        role,
+      };
+      if (role === "admin") payload.adminPin = adminPin.replace(/\D/g, "");
 
       await api.post("/auth/register", payload);
       navigate("/login");
@@ -108,7 +132,7 @@ function Register() {
       console.error(err?.response?.data || err.message);
       setError(
         err?.response?.data?.message ||
-          "Registration failed. Please check your info and try again."
+          "Registration failed. Please check your information and try again."
       );
     } finally {
       setSubmitting(false);
@@ -124,102 +148,105 @@ function Register() {
         </p>
 
         {error && <p className="register-error">{error}</p>}
+        {notice && (
+          <p
+            className="register-error"
+            style={{
+              color: "#116a36",
+              background: "#e7f7ee",
+              borderColor: "rgba(17,106,54,0.35)",
+            }}
+          >
+            {notice}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="register-form">
           {/* Name */}
-          <label htmlFor="name" className="register-label">
-            Name:
-          </label>
-          <input
-            id="name"
-            type="text"
-            className="register-input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={submitting}
-            required
-          />
+          <div className="field">
+            <label htmlFor="name" className="register-label">
+              Name:
+            </label>
+            <input
+              id="name"
+              type="text"
+              className="register-input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={submitting}
+              required
+            />
+          </div>
 
           {/* Email */}
-          <label htmlFor="email" className="register-label">
-            Email:
-          </label>
-          <input
-            id="email"
-            type="email"
-            className="register-input"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={submitting}
-            required
-          />
+          <div className="field">
+            <label htmlFor="email" className="register-label">
+              Email:
+            </label>
+            <input
+              id="email"
+              type="email"
+              className="register-input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={submitting}
+              required
+            />
+          </div>
 
           {/* Password */}
-          <label htmlFor="password" className="register-label">
-            Password:
-          </label>
-          <input
-            id="password"
-            type="password"
-            className="register-input"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={submitting}
-            required
-          />
+          <div className="field">
+            <label htmlFor="password" className="register-label">
+              Password:
+            </label>
+            <input
+              id="password"
+              type="password"
+              className="register-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={submitting}
+              required
+            />
+          </div>
 
           {/* Role */}
-          <label htmlFor="role" className="register-label">
-            Role:
-          </label>
-          <select
-            id="role"
-            className="register-input"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            disabled={submitting}
-          >
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-          </select>
+          <div className="field">
+            <label htmlFor="role" className="register-label">
+              Role:
+            </label>
+            <select
+              id="role"
+              className="register-input"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              disabled={submitting}
+            >
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
 
-          {/* Admin-only PIN section */}
+          {/* Admin-only section */}
           {role === "admin" && (
-            <div className="admin-pin-block" style={{ marginTop: 6 }}>
-              <div
-                className="row"
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  marginBottom: 6,
-                }}
-              >
-                <label
-                  htmlFor="adminPin"
-                  className="register-label"
-                  style={{ margin: 0 }}
-                >
+            <div className="field" style={{ marginTop: 6 }}>
+              {/* Label + Send PIN button on one row (matches .pin-row CSS) */}
+              <div className="pin-row">
+                <label htmlFor="adminPin" className="register-label">
                   Admin PIN:
                 </label>
+
                 <button
                   type="button"
                   onClick={sendAdminPin}
-                  className="register-button outline"
+                  className="send-pin-btn"
                   disabled={sendingPin || cooldownLeft > 0 || submitting}
                   title={`Send PIN to ${OWNER_EMAIL}`}
-                  style={{
-                    padding: "8px 10px",
-                    height: 36,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
                 >
                   {sendingPin ? (
                     <>
                       <SpinnerSVG size={16} color="#F2994A" />
-                      <span>Sending…</span>
+                      <span style={{ marginLeft: 8 }}>Sending…</span>
                     </>
                   ) : cooldownLeft > 0 ? (
                     <span>Resend in {cooldownLeft}s</span>
@@ -229,39 +256,47 @@ function Register() {
                 </button>
               </div>
 
+              {/* PIN input directly under the row (matches .pin-input CSS) */}
               <input
                 id="adminPin"
                 type="text"
-                className="register-input"
-                placeholder="Enter the 6-digit PIN"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="\d*"
+                maxLength={PIN_LENGTH}
+                className="register-input pin-input"
+                placeholder={`Enter the ${PIN_LENGTH}-digit PIN`}
                 value={adminPin}
-                onChange={(e) => setAdminPin(e.target.value)}
+                onChange={(e) => {
+                  // keep only digits, cap length
+                  const v = e.target.value
+                    .replace(/\D/g, "")
+                    .slice(0, PIN_LENGTH);
+                  setAdminPin(v);
+                }}
                 disabled={submitting}
                 required
               />
-
-              <p
-                className="register-hint"
-                style={{ fontSize: 12, color: "#666", marginTop: 4 }}
-              >
-                A one-time PIN will be emailed to <b>{OWNER_EMAIL}</b>. Enter it
-                here to complete admin registration.
-              </p>
+              <div className="help">
+                A one-time PIN is emailed to <b>{OWNER_EMAIL}</b>. Enter it here
+                to complete admin registration.
+              </div>
             </div>
           )}
 
+          {/* Submit */}
           <button
             type="submit"
-            className={`register-button ${submitting ? "is-loading" : ""}`}
+            className={`btn btn-primary register-button${
+              submitting ? " is-loading" : ""
+            }`}
             disabled={submitting}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-            }}
           >
-            {submitting && <SpinnerSVG />}
+            {submitting && (
+              <span style={{ marginRight: 8 }}>
+                <SpinnerSVG />
+              </span>
+            )}
             {submitting ? "Registering…" : "Register"}
           </button>
         </form>
@@ -269,5 +304,3 @@ function Register() {
     </div>
   );
 }
-
-export default Register;
