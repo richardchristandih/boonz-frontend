@@ -1,7 +1,8 @@
-// src/pages/Sidebar.js (or Sidebar.jsx)
+// src/pages/Sidebar.jsx (or Sidebar.js)
 import React, { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import "./Sidebar.css";
+import appLogo from "../images/logo.jpg"; // <-- use your logo.jpg
 
 const MOBILE_BP = 900; // px
 
@@ -54,7 +55,27 @@ export default function Sidebar({ onAddProduct = () => {} }) {
   return (
     <aside className={`layout-sidebar ${isCollapsed ? "collapsed" : ""}`}>
       <div className="sidebar-top">
-        <h2 className="sidebar-logo">{isCollapsed ? "Bz" : "Boonz"}</h2>
+        {/* Logo (image). Shows only the logo when collapsed; logo + text when expanded */}
+        <NavLink
+          to="/dashboard"
+          className="sidebar-logo"
+          title="Boonz Home"
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <img
+            src={appLogo}
+            alt="Boonz logo"
+            loading="lazy"
+            style={{
+              height: isCollapsed ? 28 : 32,
+              width: "auto",
+              borderRadius: 6,
+              objectFit: "contain",
+              display: "block",
+            }}
+          />
+          {!isCollapsed && <span style={{ fontWeight: 800 }}>Boonz</span>}
+        </NavLink>
 
         {/* Hide toggle on mobile; keep it inside the header row */}
         {!isMobile && (
