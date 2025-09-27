@@ -2,62 +2,92 @@
 export function isAndroidBridge() {
   return typeof window !== "undefined" && !!window.AndroidPrinter;
 }
+const AP = () =>
+  typeof window !== "undefined" ? window.AndroidPrinter || {} : {};
 
-function ap() {
-  return (typeof window !== "undefined" && window.AndroidPrinter) || {};
-}
-
-/** Print raw DantSu markup on the first paired printer (Android). */
-export function androidPrintRaw(text) {
-  const bridge = ap();
-  if (typeof bridge.printText === "function") {
-    bridge.printText(String(text));
-    return true;
-  }
-  // fallback: if only printTo exists, send with empty nameLike
-  if (typeof bridge.printTo === "function") {
-    bridge.printTo(JSON.stringify({ nameLike: "", text: String(text) }));
-    return true;
-  }
-  throw new Error("Android bridge not available: printText/printTo missing");
-}
-
-/** Prefer targeting by (partial) printer name; fall back to first paired. */
-export function androidPrintFormatted(text, nameLike = "") {
-  const bridge = ap();
-  if (typeof bridge.printTo === "function") {
-    bridge.printTo(
-      JSON.stringify({ nameLike: String(nameLike || ""), text: String(text) })
-    );
-    return true;
-  }
-  if (typeof bridge.printText === "function") {
-    bridge.printText(String(text));
-    return true;
-  }
-  throw new Error("Android bridge not available: printTo/printText missing");
-}
-
-/** Return array of paired Bluetooth printer names ([] if none). */
-export function androidListPrinters() {
-  const bridge = ap();
-  if (typeof bridge.listPrinters !== "function") return [];
+// Detailed list: [{ name, address }]
+export function androidListPrintersDetailed() {
+  const b = AP();
   try {
-    const res = bridge.listPrinters();
-    if (Array.isArray(res)) return res;
-    if (typeof res === "string") return JSON.parse(res || "[]");
-    return [];
-  } catch {
-    return [];
+    const raw =
+      typeof b.listPrintersDetailed === "function"
+        ? b.listPrintersDetailed()
+        : b.listPrinters?.();
+    const arr = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
+    if (Array.isArray(arr)) {
+      return arr.map((x) =>
+        typeof x === "string" ? { name: x, address: "" } : x
+      );
+    }
+  } catch {}
+  return [];
+}
+
+// Best-effort print: prefer address → nameLike → first paired
+export function androidPrintFormatted(
+  text,
+  { address = "", nameLike = "" } = {}
+) {
+  const b = AP();
+  const payload = String(text);
+  if (address && typeof b.printToAddress === "function") {
+    b.printToAddress(String(address), payload);
+    return;
+  }
+  if (typeof b.printTo === "function") {
+    b.printTo(
+      JSON.stringify({ nameLike: String(nameLike || ""), text: payload })
+    );
+    return;
+  }
+  if (typeof b.printText === "function") {
+    b.printText(payload);
+    return;
+  }
+  throw new Error("Android bridge missing print methods");
+}
+
+// Simple retry wrapper (sync bridge calls, backoff)
+export async function androidPrintWithRetry(text, opts = {}) {
+  const {
+    address = "",
+    nameLike = "",
+    copies = 1,
+    tries = 3,
+    baseDelay = 400,
+  } = opts;
+  let lastErr = "";
+  for (let c = 0; c < copies; c++) {
+    let ok = false;
+    for (let t = 0; t < tries && !ok; t++) {
+      try {
+        androidPrintFormatted(text, { address, nameLike });
+        ok = true;
+      } catch (e) {
+        lastErr = e?.message || String(e);
+        await new Promise((r) => setTimeout(r, baseDelay * (t + 1)));
+      }
+    }
+    if (!ok) throw new Error(lastErr || "Print failed after retries");
   }
 }
 
-/** Optional: set darkness/density if your native bridge implements it. */
-export function androidSetDensity(level) {
-  const bridge = ap();
-  if (typeof bridge.setDensity === "function") {
-    try {
-      bridge.setDensity(Number(level) || 1);
-    } catch {}
+// Optional helpers
+export function androidGetLastError() {
+  const b = AP();
+  try {
+    return typeof b.getLastError === "function" ? b.getLastError() : "";
+  } catch {
+    return "";
+  }
+}
+export function androidIsBtOn() {
+  const b = AP();
+  try {
+    return typeof b.isBluetoothEnabled === "function"
+      ? !!b.isBluetoothEnabled()
+      : true;
+  } catch {
+    return true;
   }
 }
