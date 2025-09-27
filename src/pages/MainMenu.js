@@ -15,6 +15,7 @@ import { isAndroidBridge } from "../utils/androidBridge";
 import { printRaw, listPrinters } from "../utils/qzHelper";
 import SafeImage from "../components/SafeImage";
 import api from "../services/api";
+import appLogo from "../images/logo.jpg";
 
 // ---------- Constants ----------
 const CATEGORIES = [
@@ -40,6 +41,18 @@ const productImages = require.context(
 );
 
 // ---------- Helpers ----------
+
+async function toDataUrl(url) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return await new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+}
+
 function isAndroidChrome() {
   const ua = navigator.userAgent || "";
   return /Android/i.test(ua) && /Chrome/i.test(ua) && !window.AndroidPrinter;
@@ -446,15 +459,38 @@ export default function MenuLayout() {
           discountNote: finalDiscountNote,
         });
 
+        const logoPref = localStorage.getItem("print.logo") || appLogo;
+        const logoDataUrl =
+          typeof logoPref === "string" && logoPref.startsWith("data:")
+            ? logoPref
+            : await toDataUrl(logoPref);
+
         if (isAndroidBridge()) {
           // --- ANDROID (WebView app) ---
           // print KOT
           for (let i = 0; i < kitchenCopies; i++) {
             await androidPrintText(kotText, kitchenName);
           }
-          // print receipt
-          for (let i = 0; i < receiptCopies; i++) {
-            await androidPrintText(receiptText, receiptName);
+          if (window.AndroidPrinter?.printLogoAndText && logoDataUrl) {
+            for (let i = 0; i < receiptCopies; i++) {
+              window.AndroidPrinter.printLogoAndText(
+                logoDataUrl,
+                receiptText,
+                receiptName
+              );
+              await sleep(700); // allow BT buffer flush
+            }
+          } else if (window.AndroidPrinter?.printLogoBase64 && logoDataUrl) {
+            for (let i = 0; i < receiptCopies; i++) {
+              window.AndroidPrinter.printLogoBase64(logoDataUrl, receiptName);
+              await sleep(400);
+              await androidPrintText(receiptText, receiptName);
+            }
+          } else {
+            // Fallback: text only
+            for (let i = 0; i < receiptCopies; i++) {
+              await androidPrintText(receiptText, receiptName);
+            }
           }
         } else if (isAndroidChrome()) {
           // --- ANDROID CHROME: system print (HTML) ---
@@ -473,6 +509,7 @@ export default function MenuLayout() {
             orderType: orderData.orderType,
             customer: { name: user?.name || "" },
             discountNote: finalDiscountNote,
+            logo: logoDataUrl, // <-- add this
           });
           printReceiptViaSystem(html);
         } else {
@@ -550,7 +587,9 @@ export default function MenuLayout() {
     orderType,
     customer,
     discountNote,
+    logo,
   }) {
+    Then;
     const rows = (items || [])
       .map(
         (it) => `
@@ -578,7 +617,11 @@ export default function MenuLayout() {
 </head>
 <body onload="setTimeout(()=>window.print(),300)">
   <div class="wrap">
-    <div class="c bold">${shopName || "Boonz"}</div>
+        ${
+          logo
+            ? `<div class="c"><img src="${logo}" style="height:60px;object-fit:contain" /></div>`
+            : `<div class="c bold">${shopName || "Boonz"}</div>`
+        }
     <div class="c">${address || ""}</div>
     <div class="line"></div>
     <div>Order #${orderNumber || "N/A"}</div>

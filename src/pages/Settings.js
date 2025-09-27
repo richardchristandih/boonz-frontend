@@ -262,7 +262,7 @@ export default function Settings() {
   // ----- helpers for previews -----
   function makeReceiptSample() {
     return {
-      shopName,
+      // shopName,
       address: shopAddr,
       orderNumber: "TEST",
       dateStr: new Date().toLocaleString(),
