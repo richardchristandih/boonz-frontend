@@ -1,3 +1,4 @@
+// src/pages/MainMenu.jsx
 import React, {
   useState,
   useEffect,
@@ -26,6 +27,8 @@ const CATEGORIES = [
 ];
 const TAX_RATE = 0.1;
 const SERVICE_CHARGE_RATE = 0.05;
+
+const MOBILE_BP = 900; // px
 
 // Printer hints
 const KITCHEN_PRINTER_HINTS = [/kitchen/i, /\bKOT\b/i];
@@ -118,9 +121,24 @@ function computePromoDiscount(promo, subtotal) {
   return Math.max(0, d);
 }
 
+// small hook to know when we're on mobile layout
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < MOBILE_BP : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width:${MOBILE_BP}px)`);
+    const h = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
+  return isMobile;
+}
+
 // ---------- Component ----------
 export default function MenuLayout() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const [products, setProducts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("Coffee");
@@ -131,12 +149,16 @@ export default function MenuLayout() {
   const [orderNumber, setOrderNumber] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // mobile cart bottom sheet
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
+
   // search
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearchBar, setShowSearchBar] = useState(false);
 
   // promos
   const [promos, setPromos] = useState([]);
+  thead;
   const [promosLoading, setPromosLoading] = useState(false);
   const [promosError, setPromosError] = useState("");
 
@@ -411,7 +433,7 @@ export default function MenuLayout() {
           // native Android bridge (best quality, ESC/POS)
           androidPrintFormatted(receiptText, "RPP02N");
         } else if (isAndroidChrome()) {
-          // system print via RawBT (no app build needed)
+          // system print (RawBT via Android print dialog)
           const html = buildReceiptHtml({
             shopName: "Boonz",
             address: "Jl. Mekar Utama No. 61, Bandung",
@@ -713,9 +735,127 @@ export default function MenuLayout() {
             })}
           </div>
         </div>
+
+        {/* Floating Cart button (mobile only) */}
+        <button
+          className="fab-cart"
+          aria-label="Open cart"
+          onClick={() => setMobileCartOpen(true)}
+          disabled={cart.length === 0}
+        >
+          <i className="fas fa-shopping-cart" />
+          <span className="fab-cart__label">Cart</span>
+          {cart.length > 0 && (
+            <span className="fab-cart__badge">{cart.length}</span>
+          )}
+        </button>
+
+        {/* Mobile Cart Sheet */}
+        {isMobile && (
+          <div className={`cart-sheet ${mobileCartOpen ? "open" : ""}`}>
+            <div
+              className="cart-sheet__backdrop"
+              onClick={() => setMobileCartOpen(false)}
+            />
+            <div className="cart-sheet__panel" role="dialog" aria-label="Cart">
+              <div className="cart-sheet__grab" />
+              <div className="cart-sheet__head">
+                <strong>Cart</strong>
+                <button
+                  className="cart-sheet__close"
+                  onClick={() => setMobileCartOpen(false)}
+                >
+                  <i className="fas fa-times" />
+                </button>
+              </div>
+
+              <div className="cart-delivery">
+                {["Delivery", "Dine in", "Take away"].map((t) => (
+                  <button
+                    key={t}
+                    className={orderType === t ? "active" : ""}
+                    onClick={() => setOrderType(t)}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+
+              <div className="cart-items">
+                {cart.map((item) => (
+                  <div key={item.id} className="cart-item">
+                    <div className="cart-item-left">
+                      <strong>{item.name}</strong>
+                      <br />
+                      <small>{(Number(item.quantity) || 0) * 200} ml</small>
+                    </div>
+                    <div className="cart-item-right">
+                      <p>{formatCurrency(Number(item.price ?? 0))}</p>
+                      <div className="cart-qty">
+                        <button onClick={() => handleDecreaseQty(item.id)}>
+                          -
+                        </button>
+                        <span>{item.quantity}</span>
+                        <button onClick={() => handleIncreaseQty(item.id)}>
+                          +
+                        </button>
+                      </div>
+                      <button
+                        className="cart-remove"
+                        onClick={() => handleRemoveItem(item.id)}
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="cart-summary">
+                <div className="summary-row">
+                  <span>Subtotal</span>
+                  <span>{formatCurrency(sub)}</span>
+                </div>
+                <div className="summary-row">
+                  <span>Tax (10%)</span>
+                  <span>{formatCurrency(tx)}</span>
+                </div>
+                <div className="summary-row">
+                  <span>Service Charge (5%)</span>
+                  <span>{formatCurrency(svc)}</span>
+                </div>
+                <div className="summary-row">
+                  <span>{discountLabel}</span>
+                  <span>-{formatCurrency(discount)}</span>
+                </div>
+                <div className="summary-row total-row">
+                  <strong>Total</strong>
+                  <strong>{formatCurrency(total)}</strong>
+                </div>
+
+                <button
+                  className="discount-btn"
+                  onClick={handleOpenDiscountModal}
+                >
+                  Add Discount
+                </button>
+                <button
+                  className="checkout-btn"
+                  onClick={() => {
+                    setMobileCartOpen(false);
+                    handleCheckout();
+                  }}
+                  disabled={isSubmitting || cart.length === 0}
+                >
+                  {isSubmitting ? "Processing..." : "Checkout"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* Cart */}
+      {/* Cart (desktop) */}
       <aside className="layout-cart">
         <div className="cart-header">
           <h3>Cart</h3>

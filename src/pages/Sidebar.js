@@ -1,3 +1,4 @@
+// src/pages/Sidebar.js (or Sidebar.jsx)
 import React, { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import "./Sidebar.css";
@@ -10,22 +11,31 @@ export default function Sidebar({ onAddProduct = () => {} }) {
     typeof window !== "undefined" ? window.innerWidth < MOBILE_BP : false
   );
 
-  // Load saved state (desktop only)
+  // Restore collapsed state (desktop only)
   useEffect(() => {
     const saved = localStorage.getItem("sidebarCollapsed");
     if (saved === "true") setCollapsed(true);
   }, []);
 
-  // Track viewport size
+  // Track viewport size (with addEventListener/addListener fallback)
   useEffect(() => {
     const mq = window.matchMedia(`(max-width:${MOBILE_BP}px)`);
     const handler = (e) => setIsMobile(e.matches);
-    handler(mq); // initialize
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+
+    // init once
+    handler(mq);
+
+    if (mq.addEventListener) {
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    } else {
+      // Safari < 14
+      mq.addListener(handler);
+      return () => mq.removeListener(handler);
+    }
   }, []);
 
-  // Auto expand on mobile/tablet
+  // Auto-expand on mobile/tablet (no collapsed sidebar on small screens)
   useEffect(() => {
     if (isMobile && collapsed) setCollapsed(false);
   }, [isMobile, collapsed]);
@@ -39,12 +49,12 @@ export default function Sidebar({ onAddProduct = () => {} }) {
     });
   };
 
-  const collapsedClass = !isMobile && collapsed ? "collapsed" : "";
+  const isCollapsed = !isMobile && collapsed;
 
   return (
-    <aside className={`layout-sidebar ${collapsedClass}`}>
+    <aside className={`layout-sidebar ${isCollapsed ? "collapsed" : ""}`}>
       <div className="sidebar-top">
-        <h2 className="sidebar-logo">{collapsedClass ? "Bz" : "Boonz"}</h2>
+        <h2 className="sidebar-logo">{isCollapsed ? "Bz" : "Boonz"}</h2>
 
         {/* Hide toggle on mobile; keep it inside the header row */}
         {!isMobile && (
@@ -64,14 +74,14 @@ export default function Sidebar({ onAddProduct = () => {} }) {
         )}
       </div>
 
-      <nav className="sidebar-nav">
+      <nav className="sidebar-nav" aria-label="Primary">
         <NavLink
           to="/dashboard"
           title="Dashboard"
           className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
         >
           <i className="fas fa-tachometer-alt" />
-          {!collapsedClass && <span>Dashboard</span>}
+          {!isCollapsed && <span>Dashboard</span>}
         </NavLink>
 
         <NavLink
@@ -80,7 +90,7 @@ export default function Sidebar({ onAddProduct = () => {} }) {
           className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
         >
           <i className="fas fa-shopping-bag" />
-          {!collapsedClass && <span>Orders</span>}
+          {!isCollapsed && <span>Orders</span>}
         </NavLink>
 
         <NavLink
@@ -89,7 +99,7 @@ export default function Sidebar({ onAddProduct = () => {} }) {
           className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
         >
           <i className="fas fa-cog" />
-          {!collapsedClass && <span>Settings</span>}
+          {!isCollapsed && <span>Settings</span>}
         </NavLink>
       </nav>
 
@@ -97,9 +107,10 @@ export default function Sidebar({ onAddProduct = () => {} }) {
         className="add-product-btn"
         onClick={onAddProduct}
         title="Add Product"
+        type="button"
       >
         <i className="fas fa-plus-circle" />
-        {!collapsedClass && <span>Add Product</span>}
+        {!isCollapsed && <span>Add Product</span>}
       </button>
     </aside>
   );

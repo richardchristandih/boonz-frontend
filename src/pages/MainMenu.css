@@ -3,21 +3,34 @@
    ========================= */
 
 /* ===== Base layout ===== */
-.layout-container {
-  display: flex;
-  height: 100vh;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  background: #fff;
-  color: #333;
-  overflow: hidden;
+:root {
+  --brand: #F2994A;
+  --brand-2: #eaac00;
+  --bg-soft: #FAFAFA;
+  --border: #EEE;
+  --text: #333;
 }
 
-/* Sidebar (your Sidebar component can use this if it applies) */
+* { box-sizing: border-box; }
+
+.layout-container {
+  display: flex;
+  height: 100dvh;                 /* mobile-safe dvh */
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: #fff;
+  color: var(--text);
+  overflow: hidden;               /* desktop: contain internal scrollers */
+}
+@supports not (height: 100dvh) {
+  .layout-container { height: 100vh; }
+}
+
+/* Sidebar (the Sidebar component hooks into these) */
 .layout-sidebar {
   width: 220px;
-  border-right: 1px solid #EEE;
+  border-right: 1px solid var(--border);
   padding: 20px;
-  background: #FAFAFA;
+  background: var(--bg-soft);
   display: flex;
   flex-direction: column;
 }
@@ -52,6 +65,7 @@
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   max-width: 100%;
+  scroll-snap-type: x proximity;
 }
 .chip-row::-webkit-scrollbar { display: none; }
 
@@ -59,16 +73,17 @@
   white-space: nowrap;
   border: 1px solid #d9d9d9;
   background: #fff;
-  color: #333;
+  color: var(--text);
   border-radius: 999px;
   padding: 8px 14px;
   font-size: 14px;
   cursor: pointer;
+  scroll-snap-align: start;
 }
 .chip.active {
-  background: #eaac00;
+  background: var(--brand-2);
   color: #fff;
-  border-color: #eaac00;
+  border-color: var(--brand-2);
 }
 
 /* Right side actions in topbar */
@@ -96,7 +111,7 @@
   min-width: 160px; font-size: 14px; background: transparent;
 }
 
-/* Avatar dropdown: compact by default, full details in menu */
+/* Avatar dropdown */
 .user-menu-wrap { position: relative; }
 .avatar-btn {
   display: flex; align-items: center; gap: 6px;
@@ -125,10 +140,21 @@
 .user-menu__item.danger { color: #c62828; }
 
 /* ===== Products ===== */
-.products-area { flex: 1; overflow-y: auto; min-height: 0; padding: 16px; }
+.products-area {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  min-height: 0;
+  padding: 16px;
+}
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 
-.product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; }
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 20px;
+}
 
 .product-card {
   background: #fff; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,.06);
@@ -141,11 +167,18 @@
 .product-name { font-size: 14px; font-weight: 600; margin: 6px 0 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .product-desc { font-size: 12px; color: #777; margin: 6px 0; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: calc(1.4em * 2); }
 .product-price { font-weight: 700; margin: 6px 0 8px; }
-.add-to-cart-btn { background: #F2994A; color: #fff; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; margin-top: auto; align-self: flex-start; }
+.add-to-cart-btn { background: var(--brand); color: #fff; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; margin-top: auto; align-self: flex-start; }
 .add-to-cart-btn:active { transform: translateY(1px); }
 
-/* ===== Cart ===== */
-.layout-cart { width: 300px; border-left: 1px solid #EEE; background: #FAFAFA; display: flex; flex-direction: column; padding: 20px; }
+/* ===== Cart (desktop) ===== */
+.layout-cart {
+  width: 300px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
 .cart-header { margin-bottom: 10px; }
 .cart-order-id { color: #999; font-size: 12px; }
 
@@ -168,7 +201,7 @@
 .total-row { font-weight: 700; }
 
 .checkout-btn, .discount-btn { width: 100%; padding: 10px; border: none; border-radius: 6px; cursor: pointer; margin-top: 10px; }
-.checkout-btn { background: #F2994A; color: #fff; }
+.checkout-btn { background: var(--brand); color: #fff; }
 .checkout-btn:hover { opacity: .9; }
 .discount-btn { background: #ffc107; color: #000; }
 .discount-btn:hover { opacity: .9; }
@@ -207,18 +240,122 @@
 .preview { margin-top: 6px; font-size: 13px; color: #555; }
 .discount-modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .discount-modal-actions button { padding: 10px 14px; border: none; border-radius: 6px; cursor: pointer; background: #f0f0f0; }
-.discount-modal-actions button:first-child { background: #F2994A; color: #fff; }
+.discount-modal-actions button:first-child { background: var(--brand); color: #fff; }
 
-/* ===== Responsive tweaks ===== */
+/* ===== Floating Cart (mobile) ===== */
+.fab-cart {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 999px;
+  border: none;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(0,0,0,.15);
+  font-weight: 700;
+}
+.fab-cart:disabled { opacity: .5; }
+.fab-cart__label { font-size: 14px; }
+.fab-cart__badge {
+  background: #fff;
+  color: var(--brand);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* ===== Bottom Sheet Cart (mobile) ===== */
+.cart-sheet { display: none; }
+.cart-sheet__backdrop { }
+.cart-sheet__panel { }
+
+.cart-sheet.open .cart-sheet__panel { }
+.cart-sheet.open .cart-sheet__backdrop { }
+
+.cart-sheet__grab { }
+.cart-sheet__head { }
+.cart-sheet__close { }
+
+/* ===== Responsive ===== */
 @media (max-width: 1180px) { .avatar-btn .caret { display: none; } }
 @media (max-width: 1024px) { .layout-cart { width: 280px; } }
-@media (max-width: 900px)  { .layout-topbar { padding: 8px 12px; } .search-input { min-width: 120px; } }
-@media (max-width: 820px)  {
-  .layout-container { flex-direction: column; }
-  .layout-sidebar { width: 100%; border-right: 0; border-bottom: 1px solid #EEE; }
-  .layout-cart { width: 100%; border-left: 0; border-top: 1px solid #EEE; }
-}
-@media (max-width: 480px)  {
+
+@media (max-width: 900px)  {
+  .layout-topbar { padding: 8px 12px; }
+  .search-input { min-width: 120px; }
+
+  /* Let the page (body) handle vertical scrolling on phones */
+  .layout-container {
+    height: auto;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: visible;
+    flex-direction: column;
+  }
+
+  /* Sidebar becomes a sticky, blurred top bar (defined here so it works even if Sidebar.css doesn't) */
+  .layout-sidebar {
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(250,250,250,.92);
+    backdrop-filter: blur(8px);
+    padding: 12px 16px;
+  }
+
+  /* Desktop cart is hidden; use bottom sheet + FAB */
+  .layout-cart { display: none; }
+
+  .fab-cart { display: inline-flex; }
+
+  .cart-sheet { display: block; }
+  .cart-sheet__backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.4);
+    opacity: 0; pointer-events: none; transition: opacity .2s ease;
+    z-index: 80;
+  }
+  .cart-sheet__panel {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    z-index: 81;
+    background: #fff;
+    border-top-left-radius: 16px; border-top-right-radius: 16px;
+    max-height: 78dvh;
+    display: flex; flex-direction: column;
+    transform: translateY(100%);
+    transition: transform .25s ease;
+    box-shadow: 0 -10px 30px rgba(0,0,0,.18);
+  }
+  .cart-sheet.open .cart-sheet__panel { transform: translateY(0%); }
+  .cart-sheet.open .cart-sheet__backdrop { opacity: 1; pointer-events: auto; }
+
+  .cart-sheet__grab {
+    width: 44px; height: 5px; border-radius: 999px; background: #ddd;
+    margin: 8px auto 6px;
+  }
+  .cart-sheet__head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 16px 8px; border-bottom: 1px solid #eee;
+  }
+  .cart-sheet__close {
+    border: none; background: none; font-size: 18px; cursor: pointer;
+  }
+
+  /* reuse cart styles inside the panel */
+  .cart-items { padding: 0 16px; }
+  .cart-summary { padding: 10px 16px 16px; border-top: 1px solid #EEE; }
+  .cart-delivery { padding: 10px 16px 0; }
+
+  /* product grid tighter on phones */
   .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .product-card { padding: 12px; }
   .product-image { width: 96px; height: 96px; }

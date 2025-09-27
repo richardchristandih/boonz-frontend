@@ -1,17 +1,31 @@
-/* Clean, self-contained sidebar styles */
+/* =========================
+   src/pages/Sidebar.css
+   Clean, self-contained sidebar styles
+   ========================= */
+
+:root {
+  /* used when available; falls back to hex values below */
+  --brand: #F2994A;
+  --border: #eee;
+  --bg-soft: #fafafa;
+  --text: #333;
+}
 
 /* Container */
 .layout-sidebar {
   width: 220px;
   min-width: 220px;
-  height: 100vh;
-  border-right: 1px solid #eee;
-  background: #fafafa;
+  height: 100dvh;
+  border-right: 1px solid var(--border, #eee);
+  background: var(--bg-soft, #fafafa);
   padding: 20px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+@supports not (height: 100dvh) {
+  .layout-sidebar { height: 100vh; }
 }
 
 /* Header row */
@@ -39,8 +53,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
-.sidebar-toggle:hover { background: #f2994a; color: #fff; border-color: #f2994a; }
+.sidebar-toggle:hover {
+  background: var(--brand, #F2994A);
+  color: #fff;
+  border-color: var(--brand, #F2994A);
+}
 
 /* Navigation */
 .sidebar-nav {
@@ -53,13 +72,18 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #333;
+  color: var(--text, #333);
   text-decoration: none;
   font-size: 14px;
   padding: 8px 0;
+  border-radius: 8px;
+  transition: background .15s ease, color .15s ease;
 }
+.nav-link:hover { background: rgba(0,0,0,.03); }
 .nav-link i { width: 18px; text-align: center; }
-.nav-link.active { color: #f2994a; }
+
+/* Desktop active = brand color text */
+.nav-link.active { color: var(--brand, #F2994A); }
 
 /* Add product */
 .add-product-btn {
@@ -68,13 +92,18 @@
   align-items: center;
   gap: 6px;
   background: #fff;
-  color: #333;
+  color: var(--text, #333);
   border: 1px solid #ccc;
   padding: 8px 12px;
   border-radius: 6px;
   cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
-.add-product-btn:hover { background: #f2994a; color: #fff; border-color: #f2994a; }
+.add-product-btn:hover {
+  background: var(--brand, #F2994A);
+  color: #fff;
+  border-color: var(--brand, #F2994A);
+}
 
 /* Collapsed (desktop only) */
 .layout-sidebar.collapsed {
@@ -98,33 +127,59 @@
   transform: none;
 }
 
-/* Tablet & mobile: sidebar becomes a full-width top bar */
+/* =========================
+   Tablet & Mobile
+   ========================= */
 @media (max-width: 900px) {
+  /* Sidebar becomes a sticky, blurred top bar */
   .layout-sidebar,
   .layout-sidebar.collapsed {
     width: 100%;
     min-width: 0;
     height: auto;
     border-right: 0;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--border, #eee);
     padding: 12px 16px;
     flex-direction: column;
     gap: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(250,250,250,.92);
+    backdrop-filter: blur(8px);
   }
 
-  /* show labels; collapse disabled in JS anyway */
+  /* Show labels; collapse disabled in JS anyway */
   .layout-sidebar.collapsed .nav-link span,
   .layout-sidebar.collapsed .add-product-btn span {
     display: inline;
   }
 
-  /* put nav items horizontally if you prefer */
+  /* Pills, horizontal scroll */
   .sidebar-nav {
     flex-direction: row;
-    flex-wrap: wrap;
-    gap: 14px;
+    flex-wrap: nowrap;
+    gap: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .sidebar-nav::-webkit-scrollbar { display: none; }
+
+  .nav-link {
+    padding: 8px 12px;
+    border: 1px solid #eee;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  }
+  /* Mobile active = filled pill */
+  .nav-link.active {
+    background: var(--brand, #F2994A);
+    border-color: var(--brand, #F2994A);
+    color: #fff;
   }
 
-  /* hide the collapse toggle on small screens */
+  /* Hide collapse toggle on small screens */
   .sidebar-toggle { display: none; }
 }
