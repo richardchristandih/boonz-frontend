@@ -443,7 +443,7 @@ export default function MenuLayout() {
         });
 
         const receiptText = buildReceipt({
-          shopName: "Boonz",
+          // shopName: "Boonz",
           address: "Jl. Mekar Utama No. 61, Bandung",
           orderNumber: newOrderNumber || "N/A",
           dateStr,
@@ -495,7 +495,7 @@ export default function MenuLayout() {
         } else if (isAndroidChrome()) {
           // --- ANDROID CHROME: system print (HTML) ---
           const html = buildReceiptHtml({
-            shopName: "Boonz",
+            shopName: "",
             address: "Jl. Mekar Utama No. 61, Bandung",
             orderNumber: newOrderNumber || "N/A",
             dateStr,
@@ -617,11 +617,11 @@ export default function MenuLayout() {
 </head>
 <body onload="setTimeout(()=>window.print(),300)">
   <div class="wrap">
-        ${
-          logo
-            ? `<div class="c"><img src="${logo}" style="height:60px;object-fit:contain" /></div>`
-            : `<div class="c bold">${shopName || "Boonz"}</div>`
-        }
+           ${
+             logo
+               ? `<div class="c"><img src="${logo}" style="height:60px;object-fit:contain" /></div>`
+               : `` /* no text fallback */
+           }
     <div class="c">${address || ""}</div>
     <div class="line"></div>
     <div>Order #${orderNumber || "N/A"}</div>

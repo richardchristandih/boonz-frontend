@@ -259,10 +259,15 @@ export default function Settings() {
     }
   }
 
+  const savedShopName = localStorage.getItem("biz.name") || "Boonz";
+
+  // Optional toggle (so you can turn this on/off from localStorage later)
+  const hideShopName = true; // or: localStorage.getItem("print.hideShopName")==="true"
+
   // ----- helpers for previews -----
   function makeReceiptSample() {
     return {
-      // shopName,
+      shopName: hideShopName ? "" : savedShopName,
       address: shopAddr,
       orderNumber: "TEST",
       dateStr: new Date().toLocaleString(),
