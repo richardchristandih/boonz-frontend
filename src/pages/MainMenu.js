@@ -11,7 +11,7 @@ import "./MainMenu.css";
 import richardImage from "./ProfilePic.png";
 import Sidebar from "./Sidebar";
 import { buildReceipt } from "../receipt";
-import { isAndroidBridge, androidPrintFormatted } from "../utils/androidBridge";
+import { isAndroidBridge } from "../utils/androidBridge";
 import { printRaw, listPrinters } from "../utils/qzHelper";
 import SafeImage from "../components/SafeImage";
 import api from "../services/api";
@@ -27,10 +27,9 @@ const CATEGORIES = [
 ];
 const TAX_RATE = 0.1;
 const SERVICE_CHARGE_RATE = 0.05;
-
 const MOBILE_BP = 900; // px
 
-// Printer hints
+// Printer hints (desktop/QZ only)
 const KITCHEN_PRINTER_HINTS = [/kitchen/i, /\bKOT\b/i];
 const RECEIPT_PRINTER_HINT = /RPP02N/i;
 
@@ -45,14 +44,12 @@ function isAndroidChrome() {
   const ua = navigator.userAgent || "";
   return /Android/i.test(ua) && /Chrome/i.test(ua) && !window.AndroidPrinter;
 }
-
 function printReceiptViaSystem(html) {
   const w = window.open("", "_blank");
   if (!w) return alert("Pop-up blocked. Please allow pop-ups and try again.");
   w.document.open();
   w.document.write(html);
   w.document.close();
-  // the HTML itself will auto-call window.print()
 }
 
 function resolveProductImage(relPath) {
@@ -98,17 +95,6 @@ function pickPrinter(printers, hints) {
   }
   return printers[0];
 }
-async function printKitchenTicket(kotText) {
-  if (isAndroidBridge()) {
-    androidPrintFormatted(kotText, "KITCHEN");
-    return;
-  }
-  const printers = await listPrinters();
-  if (!Array.isArray(printers) || printers.length === 0)
-    throw new Error("No printers found (QZ).");
-  const printerName = pickPrinter(printers, KITCHEN_PRINTER_HINTS);
-  await printRaw(printerName, kotText);
-}
 function computePromoDiscount(promo, subtotal) {
   if (!promo || !promo.active) return 0;
   if (promo.minSubtotal && subtotal < Number(promo.minSubtotal)) return 0;
@@ -121,7 +107,7 @@ function computePromoDiscount(promo, subtotal) {
   return Math.max(0, d);
 }
 
-// small hook to know when we're on mobile layout
+// small hook for responsive layout
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined" ? window.innerWidth < MOBILE_BP : false
@@ -133,6 +119,40 @@ function useIsMobile() {
     return () => mq.removeEventListener("change", h);
   }, []);
   return isMobile;
+}
+
+// ---------- NEW: unified Android bridge wrappers ----------
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function getPrinterPrefs() {
+  return {
+    receiptName: localStorage.getItem("printer.receipt") || "",
+    kitchenName: localStorage.getItem("printer.kitchen") || "",
+    receiptCopies: Math.max(
+      1,
+      Number(localStorage.getItem("printer.receiptCopies")) || 1
+    ),
+    kitchenCopies: Math.max(
+      1,
+      Number(localStorage.getItem("printer.kitchenCopies")) || 1
+    ),
+  };
+}
+
+/**
+ * Send formatted ESC/POS text via Android WebView bridge.
+ * Uses printTo (with nameLike) when available; falls back to printText.
+ * Adds a short delay to prevent BT “broken pipe”.
+ */
+async function androidPrintText(text, nameLike = "") {
+  const ap = window.AndroidPrinter || {};
+  if (typeof ap.printTo === "function") {
+    ap.printTo(JSON.stringify({ nameLike, text }));
+  } else if (typeof ap.printText === "function") {
+    ap.printText(text);
+  } else {
+    throw new Error("Android bridge not available");
+  }
+  await sleep(700); // let the BT buffer flush
 }
 
 // ---------- Component ----------
@@ -198,7 +218,7 @@ export default function MenuLayout() {
     if (!user) navigate("/login");
   }, [user, navigate]);
 
-  // fetch
+  // fetch products
   useEffect(() => {
     (async () => {
       try {
@@ -393,11 +413,13 @@ export default function MenuLayout() {
       const newOrderNumber = response.data?.orderNumber;
       setOrderNumber(newOrderNumber);
 
-      // 2) PRINT — Kitchen ticket FIRST, then customer receipt
+      // 2) PRINT — Kitchen ticket FIRST, then customer receipt (serialize to avoid BT drops)
       try {
+        const { receiptName, kitchenName, receiptCopies, kitchenCopies } =
+          getPrinterPrefs();
         const dateStr = new Date().toLocaleString();
 
-        // 2a) Kitchen Order Ticket (KOT) — try native bridge if available, else skip on web
+        // Build texts
         const kotText = buildKitchenTicket({
           shopName: "Boonz Hauz",
           orderNumber: newOrderNumber || "N/A",
@@ -406,11 +428,7 @@ export default function MenuLayout() {
           items: orderData.products,
           customer: { name: user?.name || "" },
         });
-        if (isAndroidBridge()) {
-          await printKitchenTicket(kotText);
-        }
 
-        // 2b) Customer receipt
         const receiptText = buildReceipt({
           shopName: "Boonz",
           address: "Jl. Mekar Utama No. 61, Bandung",
@@ -429,10 +447,17 @@ export default function MenuLayout() {
         });
 
         if (isAndroidBridge()) {
-          // native Android bridge (best quality, ESC/POS)
-          androidPrintFormatted(receiptText, "RPP02N");
+          // --- ANDROID (WebView app) ---
+          // print KOT
+          for (let i = 0; i < kitchenCopies; i++) {
+            await androidPrintText(kotText, kitchenName);
+          }
+          // print receipt
+          for (let i = 0; i < receiptCopies; i++) {
+            await androidPrintText(receiptText, receiptName);
+          }
         } else if (isAndroidChrome()) {
-          // system print (RawBT via Android print dialog)
+          // --- ANDROID CHROME: system print (HTML) ---
           const html = buildReceiptHtml({
             shopName: "Boonz",
             address: "Jl. Mekar Utama No. 61, Bandung",
@@ -451,12 +476,17 @@ export default function MenuLayout() {
           });
           printReceiptViaSystem(html);
         } else {
-          // desktop (QZ) fallback
+          // --- DESKTOP (QZ) ---
           const printers = await listPrinters();
           if (!Array.isArray(printers) || printers.length === 0)
             throw new Error("No printers found (QZ).");
           const receiptPrinterName =
             printers.find((p) => RECEIPT_PRINTER_HINT.test(p)) || printers[0];
+
+          // KOT
+          await printRaw(receiptPrinterName, kotText);
+          await sleep(300);
+          // Receipt
           await printRaw(receiptPrinterName, receiptText);
         }
       } catch (printErr) {
@@ -467,6 +497,7 @@ export default function MenuLayout() {
         );
       }
 
+      // reset state
       setCart([]);
       setSelectedPromoId("");
       setDiscountMode("promo");
@@ -589,7 +620,7 @@ export default function MenuLayout() {
 </body></html>`;
   }
 
-  // discount modal
+  // discount modal controls
   const handleOpenDiscountModal = async () => {
     setShowDiscountModal(true);
     if (!promos.length && !promosLoading) await fetchPromos();
@@ -653,7 +684,7 @@ export default function MenuLayout() {
               </div>
             )}
 
-            {/* avatar dropdown (name/email hidden by default) */}
+            {/* avatar dropdown */}
             <div className="user-menu-wrap" ref={userMenuRef}>
               <button
                 className="avatar-btn"
