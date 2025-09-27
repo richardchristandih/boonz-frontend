@@ -297,7 +297,7 @@ export default function Register() {
                 <SpinnerSVG />
               </span>
             )}
-            {submitting ? "Registering…" : "Register"}
+            {submitting ? "Registering..." : "Register"}
           </button>
         </form>
       </div>
