@@ -158,7 +158,6 @@ export default function MenuLayout() {
 
   // promos
   const [promos, setPromos] = useState([]);
-  thead;
   const [promosLoading, setPromosLoading] = useState(false);
   const [promosError, setPromosError] = useState("");
 
