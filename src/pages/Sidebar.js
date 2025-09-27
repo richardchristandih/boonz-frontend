@@ -74,7 +74,6 @@ export default function Sidebar({ onAddProduct = () => {} }) {
               display: "block",
             }}
           />
-          {!isCollapsed && <span style={{ fontWeight: 800 }}>Boonz</span>}
         </NavLink>
 
         {/* Hide toggle on mobile; keep it inside the header row */}
