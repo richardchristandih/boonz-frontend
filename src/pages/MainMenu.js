@@ -38,6 +38,20 @@ const productImages = require.context(
 );
 
 // ---------- Helpers ----------
+function isAndroidChrome() {
+  const ua = navigator.userAgent || "";
+  return /Android/i.test(ua) && /Chrome/i.test(ua) && !window.AndroidPrinter;
+}
+
+function printReceiptViaSystem(html) {
+  const w = window.open("", "_blank");
+  if (!w) return alert("Pop-up blocked. Please allow pop-ups and try again.");
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  // the HTML itself will auto-call window.print()
+}
+
 function resolveProductImage(relPath) {
   if (!relPath) return null;
   try {
@@ -358,9 +372,11 @@ export default function MenuLayout() {
       const newOrderNumber = response.data?.orderNumber;
       setOrderNumber(newOrderNumber);
 
+      // 2) PRINT — Kitchen ticket FIRST, then customer receipt
       try {
         const dateStr = new Date().toLocaleString();
 
+        // 2a) Kitchen Order Ticket (KOT) — try native bridge if available, else skip on web
         const kotText = buildKitchenTicket({
           shopName: "Boonz Hauz",
           orderNumber: newOrderNumber || "N/A",
@@ -369,8 +385,11 @@ export default function MenuLayout() {
           items: orderData.products,
           customer: { name: user?.name || "" },
         });
-        await printKitchenTicket(kotText);
+        if (isAndroidBridge()) {
+          await printKitchenTicket(kotText);
+        }
 
+        // 2b) Customer receipt
         const receiptText = buildReceipt({
           shopName: "Boonz",
           address: "Jl. Mekar Utama No. 61, Bandung",
@@ -389,8 +408,29 @@ export default function MenuLayout() {
         });
 
         if (isAndroidBridge()) {
+          // native Android bridge (best quality, ESC/POS)
           androidPrintFormatted(receiptText, "RPP02N");
+        } else if (isAndroidChrome()) {
+          // system print via RawBT (no app build needed)
+          const html = buildReceiptHtml({
+            shopName: "Boonz",
+            address: "Jl. Mekar Utama No. 61, Bandung",
+            orderNumber: newOrderNumber || "N/A",
+            dateStr,
+            items: orderData.products,
+            subtotal: orderData.subtotal,
+            tax: orderData.tax,
+            service: orderData.serviceCharge,
+            discount: orderData.discount,
+            total: orderData.totalAmount,
+            payment: orderData.paymentMethod,
+            orderType: orderData.orderType,
+            customer: { name: user?.name || "" },
+            discountNote: finalDiscountNote,
+          });
+          printReceiptViaSystem(html);
         } else {
+          // desktop (QZ) fallback
           const printers = await listPrinters();
           if (!Array.isArray(printers) || printers.length === 0)
             throw new Error("No printers found (QZ).");
@@ -441,6 +481,92 @@ export default function MenuLayout() {
     selectedPromo,
     navigate,
   ]);
+
+  /** Build a simple 58mm print HTML (system print) */
+  function buildReceiptHtml({
+    shopName,
+    address,
+    orderNumber,
+    dateStr,
+    items,
+    subtotal,
+    tax,
+    service,
+    discount,
+    total,
+    payment,
+    orderType,
+    customer,
+    discountNote,
+  }) {
+    const rows = (items || [])
+      .map(
+        (it) => `
+      <tr>
+        <td>${it.quantity || 0}× ${it.name || ""}</td>
+        <td style="text-align:right">Rp.${Number(it.price || 0).toFixed(2)}</td>
+      </tr>`
+      )
+      .join("");
+
+    return `
+<!doctype html><html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  @page { size: 58mm auto; margin: 0; }
+  body { margin: 0; font-family: monospace; font-size: 12px; }
+  .wrap { padding: 8px; }
+  .c { text-align: center; }
+  .line { border-top: 1px dashed #000; margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  td { vertical-align: top; }
+  .totals td { padding: 2px 0; }
+  .bold { font-weight: 700; }
+</style>
+</head>
+<body onload="setTimeout(()=>window.print(),300)">
+  <div class="wrap">
+    <div class="c bold">${shopName || "Boonz"}</div>
+    <div class="c">${address || ""}</div>
+    <div class="line"></div>
+    <div>Order #${orderNumber || "N/A"}</div>
+    <div>Type : ${orderType || ""}</div>
+    <div>Time : ${dateStr || ""}</div>
+    ${customer?.name ? `<div>Cust : ${customer.name}</div>` : ""}
+    <div class="line"></div>
+    <table>${rows}</table>
+    <div class="line"></div>
+    <table class="totals">
+      <tr><td>Subtotal</td><td style="text-align:right">Rp.${Number(
+        subtotal || 0
+      ).toFixed(2)}</td></tr>
+      <tr><td>Tax</td><td style="text-align:right">Rp.${Number(
+        tax || 0
+      ).toFixed(2)}</td></tr>
+      <tr><td>Service</td><td style="text-align:right">Rp.${Number(
+        service || 0
+      ).toFixed(2)}</td></tr>
+      ${
+        Number(discount || 0) > 0
+          ? `<tr><td>Discount ${
+              discountNote ? `(${discountNote})` : ""
+            }</td><td style="text-align:right">-Rp.${Number(discount).toFixed(
+              2
+            )}</td></tr>`
+          : ""
+      }
+      <tr class="bold"><td>Total</td><td style="text-align:right">Rp.${Number(
+        total || 0
+      ).toFixed(2)}</td></tr>
+      <tr><td>Payment</td><td style="text-align:right">${
+        payment || ""
+      }</td></tr>
+    </table>
+    <div class="line"></div>
+    <div class="c">Thank you!</div>
+  </div>
+</body></html>`;
+  }
 
   // discount modal
   const handleOpenDiscountModal = async () => {
