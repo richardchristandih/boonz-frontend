@@ -182,6 +182,9 @@ export default function MenuLayout() {
   const [orderNumber, setOrderNumber] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const PAUSE_AFTER_KOT_MS =
+    Number(localStorage.getItem("print.pauseAfterKotMs")) || 1200;
+
   // mobile cart bottom sheet
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
@@ -458,6 +461,7 @@ export default function MenuLayout() {
           customer: { name: user?.name || "" },
           discountNote: finalDiscountNote,
         });
+        receiptText = receiptText.replace(/^[\s\r\n]+/, "");
 
         const logoPref = localStorage.getItem("print.logo") || appLogo;
         const logoDataUrl =
@@ -471,7 +475,7 @@ export default function MenuLayout() {
           for (let i = 0; i < kitchenCopies; i++) {
             await androidPrintText(kotText, kitchenName);
           }
-          await sleep(400);
+          await sleep(PAUSE_AFTER_KOT_MS);
           if (window.AndroidPrinter?.printLogoAndText && logoDataUrl) {
             for (let i = 0; i < receiptCopies; i++) {
               window.AndroidPrinter.printLogoAndText(
@@ -590,7 +594,6 @@ export default function MenuLayout() {
     discountNote,
     logo,
   }) {
-    Then;
     const rows = (items || [])
       .map(
         (it) => `
