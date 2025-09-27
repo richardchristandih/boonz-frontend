@@ -83,7 +83,7 @@ function buildKitchenTicket({
     `[C]------------------------------\n`;
   const lines = (items || [])
     .map(
-      (it) => `[L]<b>${Number(it.quantity || 0)} × ${it.name || "Item"}</b>\n`
+      (it) => `[L]<b>${Number(it.quantity || 0)} x ${it.name || "Item"}</b>\n`
     )
     .join("");
   return header + lines + `[C]------------------------------\n\n`;
