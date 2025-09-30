@@ -1,24 +1,41 @@
 // src/components/Receipt.js
-import React from 'react';
-import './Receipt.css'; // Your custom receipt styling
+import React from "react";
+import "./Receipt.css";
+import { formatIDR } from "../utils/money"; // <-- use the shared formatter
 
 export default function Receipt({ order }) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+
+  const safeNum = (v) => Number(v ?? 0);
+
+  const subtotal = safeNum(order?.subtotal);
+  const discount = safeNum(order?.discount);
+  const total = safeNum(order?.total);
+
   return (
     <div className="receipt-container">
       <h2>Boonz Receipt</h2>
-      <p>Order #: {order.id}</p>
+      <p>Order #: {order?.id ?? "N/A"}</p>
       <hr />
       <ul>
-        {order.items.map(item => (
-          <li key={item.id}>
-            {item.name} x {item.quantity} = ${ (item.price * item.quantity).toFixed(2) }
-          </li>
-        ))}
+        {items.map((item, idx) => {
+          const qty = safeNum(item?.quantity);
+          const price = safeNum(item?.price);
+          const lineTotal = qty * price;
+          return (
+            <li key={item?.id ?? `${item?.name ?? "item"}-${idx}`}>
+              {item?.name ?? "Item"} × {qty} ={" "}
+              {formatIDR(lineTotal, { withDecimals: true })}
+            </li>
+          );
+        })}
       </ul>
       <hr />
-      <p>Subtotal: ${order.subtotal.toFixed(2)}</p>
-      <p>Discount: -${order.discount.toFixed(2)}</p>
-      <h3>Total: ${order.total.toFixed(2)}</h3>
+      <p>Subtotal: {formatIDR(subtotal, { withDecimals: true })}</p>
+      {discount > 0 && (
+        <p>Discount: -{formatIDR(discount, { withDecimals: true })}</p>
+      )}
+      <h3>Total: {formatIDR(total, { withDecimals: true })}</h3>
     </div>
   );
 }

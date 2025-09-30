@@ -18,40 +18,60 @@ import ReceiptPreview from "../components/ReceiptPreview";
 import appLogo from "../images/logo.jpg"; // fallback logo
 import api from "../services/api";
 
+import { formatIDR } from "../utils/money";
+
 export default function Settings() {
   const navigate = useNavigate();
 
-  // ----- Android BT list -----
-  const [androidPrinters, setAndroidPrinters] = useState([]); // [{name,address}]
-
-  // ----- user / auth -----
-  const user = (() => {
+  /* -------------------------- User / auth --------------------------- */
+  const userObj = (() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "null");
     } catch {
       return null;
     }
   })();
+  const [user, setUser] = useState(userObj);
   const isAdmin =
     (user?.role && String(user.role).toLowerCase() === "admin") ||
     user?.isAdmin === true;
 
-  // ----- UI status -----
+  /* ---------------------- Profile (change name) --------------------- */
+  const [profileName, setProfileName] = useState(user?.name || "");
+  const [profileMsg, setProfileMsg] = useState("");
+
+  async function saveProfile() {
+    try {
+      setProfileMsg("Saving…");
+      const { data } = await api.patch("/users/me", { name: profileName });
+      // Update localStorage + local state so UI reflects the change immediately
+      const next = { ...(user || {}), name: data?.name || profileName };
+      localStorage.setItem("user", JSON.stringify(next));
+      setUser(next);
+      setProfileMsg("Profile updated ✓");
+      setTimeout(() => setProfileMsg(""), 1500);
+    } catch (err) {
+      setProfileMsg(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to save profile."
+      );
+    }
+  }
+
+  /* --------------------- Android / QZ diagnostics ------------------- */
   const [bridgeMsg, setBridgeMsg] = useState("");
   const [btMsg, setBtMsg] = useState("");
   const [testMsg, setTestMsg] = useState("");
 
-  // ----- preview modal -----
+  // Preview modal (receipt / KOT)
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [previewVariant, setPreviewVariant] = useState("receipt"); // 'receipt' | 'kot'
 
-  // prevent body scroll + Esc to close (modal)
   useEffect(() => {
     if (!showPreview) return;
-    const onKey = (e) => {
-      if (e.key === "Escape") setShowPreview(false);
-    };
+    const onKey = (e) => e.key === "Escape" && setShowPreview(false);
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -61,12 +81,11 @@ export default function Settings() {
     };
   }, [showPreview]);
 
-  // ----- printer discovery list (desktop names) -----
+  // Desktop printer list
   const [printerList, setPrinterList] = useState([]);
 
-  // ----- routing prefs -----
-  // On Android we store MAC address in `printer.receipt` / `printer.kitchen`.
-  // On desktop we store the printer display name.
+  /* ----------------------- Printer routing prefs -------------------- */
+  // Android: store MAC in localStorage; Desktop: store printer display name
   const [receiptPrinter, setReceiptPrinter] = useState(
     localStorage.getItem("printer.receipt") || ""
   );
@@ -88,7 +107,7 @@ export default function Settings() {
     alert("Printer preferences saved.");
   }
 
-  // ----- ticket appearance -----
+  /* ----------------------- Ticket appearance prefs ------------------ */
   const [rollWidth, setRollWidth] = useState(
     localStorage.getItem("print.roll") || "58"
   ); // "58" | "80"
@@ -114,7 +133,7 @@ export default function Settings() {
     fr.readAsDataURL(f);
   }
 
-  // ----- business profile (for receipts) -----
+  /* ----------------------- Business profile text -------------------- */
   const [shopName, setShopName] = useState(
     localStorage.getItem("biz.name") || "Boonz"
   );
@@ -132,7 +151,7 @@ export default function Settings() {
     alert("Business profile saved.");
   }
 
-  // ----- promotions (API integrated) -----
+  /* ---------------------------- Promotions -------------------------- */
   const [promos, setPromos] = useState([]);
   const [pLoading, setPLoading] = useState(false);
   const [pError, setPError] = useState("");
@@ -220,7 +239,7 @@ export default function Settings() {
     }
   }
 
-  // ----- diagnostics -----
+  /* --------------------------- Diagnostics -------------------------- */
   const [bridgeCaps, setBridgeCaps] = useState(null);
   const [rawCmd, setRawCmd] = useState("[C]<b>Hello</b>\n");
 
@@ -260,11 +279,11 @@ export default function Settings() {
   }
 
   const savedShopName = localStorage.getItem("biz.name") || "Boonz";
+  // Optional toggle: hide big shop name on receipt if you prefer only logo
+  const hideShopName =
+    localStorage.getItem("print.hideShopName") === "true" ? true : false;
 
-  // Optional toggle (so you can turn this on/off from localStorage later)
-  const hideShopName = true; // or: localStorage.getItem("print.hideShopName")==="true"
-
-  // ----- helpers for previews -----
+  /* ------------------------ Preview helpers ------------------------- */
   function makeReceiptSample() {
     return {
       shopName: hideShopName ? "" : savedShopName,
@@ -350,7 +369,7 @@ export default function Settings() {
     return qz.print(cfg, job);
   }
 
-  // ----- actions -----
+  /* ------------------------------ Actions --------------------------- */
   async function handleCheckBridge() {
     try {
       const ok = isAndroidBridge();
@@ -367,7 +386,6 @@ export default function Settings() {
       setBtMsg("Working...");
       if (isAndroidBridge()) {
         const list = androidListPrintersDetailed();
-        setAndroidPrinters(list);
         setPrinterList(list.map((p) => `${p.name} (${p.address || "no-mac"})`));
         setBtMsg(
           list.length
@@ -394,7 +412,7 @@ export default function Settings() {
 
   async function handleTestPrint() {
     try {
-      setTestMsg("Sending sample receipt…");
+      setTestMsg("Sending sample receipt...");
 
       const sampleRaw = buildReceipt({
         shopName,
@@ -418,9 +436,8 @@ export default function Settings() {
 
       const copies = Math.max(1, Number(receiptCopies) || 1);
 
-      // ---------- ANDROID PATH ----------
+      // ---------- ANDROID ----------
       if (isAndroidBridge()) {
-        // density (if supported)
         if (typeof window.AndroidPrinter?.setDensity === "function") {
           try {
             window.AndroidPrinter.setDensity(Number(density) || 1);
@@ -442,13 +459,9 @@ export default function Settings() {
           return;
         }
 
-        // Prefer saved address; otherwise first paired
         const targetAddress =
           receiptPrinter || (paired.length ? paired[0].address || "" : "");
 
-        // Try to include logo if the bridge supports it (name-based only).
-        // NOTE: printLogoAndText currently targets by nameLike; when we only have MAC address,
-        // we’ll just send the text via address. (Logo support by address would require a native update.)
         const logoUrl = logoDataUrl || appLogo;
         const dataUrl = logoUrl ? await toDataUrl(logoUrl) : null;
 
@@ -457,18 +470,15 @@ export default function Settings() {
             dataUrl &&
             typeof window.AndroidPrinter?.printLogoAndText === "function"
           ) {
-            // Best-effort: pass empty nameLike -> native falls back to first paired.
-            // If you want strict targeting for logo, add a printLogoAndTextByAddress method natively.
             try {
               window.AndroidPrinter.printLogoAndText(dataUrl, sampleRaw, "");
-              continue; // already printed both logo + text
+              continue;
             } catch {}
           }
 
-          // Reliable text print via MAC address with retry
           await androidPrintWithRetry(sampleRaw, {
             address: targetAddress,
-            nameLike: "", // not needed when address is provided
+            nameLike: "",
             copies: 1,
             tries: 3,
             baseDelay: 500,
@@ -484,7 +494,7 @@ export default function Settings() {
         return;
       }
 
-      // ---------- DESKTOP (QZ) PATH ----------
+      // ---------- DESKTOP (QZ) ----------
       await connectQZ();
       const printers = await listPrinters();
       if (!Array.isArray(printers) || printers.length === 0) {
@@ -512,7 +522,7 @@ export default function Settings() {
     navigate("/login");
   }
 
-  // ----- render -----
+  /* ------------------------------ Render ---------------------------- */
   return (
     <div className="page-container">
       {/* Back */}
@@ -521,9 +531,30 @@ export default function Settings() {
       </button>
 
       <h1 className="page-title">Settings</h1>
-      <p className="settings-subtitle">Printer &amp; App Diagnostics</p>
 
       <div className="settings-grid">
+        {/* Card: Profile (change name) */}
+        <section className="card">
+          <h2>Profile</h2>
+          <label>Display name</label>
+          <input
+            type="text"
+            value={profileName}
+            onChange={(e) => setProfileName(e.target.value)}
+            placeholder="Your name"
+          />
+          {profileMsg && (
+            <p className="note" style={{ marginTop: 6 }}>
+              {profileMsg}
+            </p>
+          )}
+          <div className="actions">
+            <button className="btn" onClick={saveProfile}>
+              Save Profile
+            </button>
+          </div>
+        </section>
+
         {/* Card: Android Bridge */}
         <section className="card">
           <h2>Android Bridge</h2>
@@ -538,6 +569,112 @@ export default function Settings() {
               Check Bridge
             </button>
           </div>
+        </section>
+
+        <section className="card">
+          <h2>Bluetooth Printers (Android)</h2>
+          <p className="muted">
+            Pick paired Bluetooth printers for receipts and kitchen tickets.
+            Pair new devices in <b>Android Settings › Bluetooth</b> first.
+          </p>
+
+          <div
+            className="actions"
+            style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+          >
+            <button className="btn" onClick={() => androidRequestBtEnable()}>
+              Enable Bluetooth
+            </button>
+            <button className="btn" onClick={handleListPrinters}>
+              Refresh Paired List
+            </button>
+          </div>
+
+          {/* Selector rows */}
+          <div className="form-grid-2" style={{ marginTop: 12 }}>
+            <div>
+              <label>Receipt printer (MAC)</label>
+              <select
+                value={receiptPrinter}
+                onChange={(e) => setReceiptPrinter(e.target.value)}
+              >
+                <option value="">(Use first paired)</option>
+                {androidListPrintersDetailed().map((p) => (
+                  <option key={p.address || p.name} value={p.address || ""}>
+                    {p.name} {p.address ? `(${p.address})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label>Kitchen printer (MAC)</label>
+              <select
+                value={kitchenPrinter}
+                onChange={(e) => setKitchenPrinter(e.target.value)}
+              >
+                <option value="">(Use first paired)</option>
+                {androidListPrintersDetailed().map((p) => (
+                  <option key={p.address || p.name} value={p.address || ""}>
+                    {p.name} {p.address ? `(${p.address})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div
+            className="actions"
+            style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}
+          >
+            <button className="btn" onClick={savePrinters}>
+              Save
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                if (!receiptPrinter)
+                  return setBtMsg("Pick a receipt printer first.");
+                try {
+                  androidConnect(receiptPrinter);
+                  setBtMsg("Connect command sent ✓");
+                } catch (e) {
+                  setBtMsg("Connect failed: " + (e?.message || "Unknown"));
+                }
+              }}
+            >
+              Test Connect
+            </button>
+            <button
+              className="btn primary"
+              onClick={async () => {
+                try {
+                  if (!androidIsBtOn()) {
+                    setBtMsg("Bluetooth is OFF. Turn it on and try again.");
+                    return;
+                  }
+                  const sample = "[C]<b>BT Test</b>\n[L]Hello from POS\n\n";
+                  await androidPrintWithRetry(sample, {
+                    address: receiptPrinter,
+                    copies: 1,
+                    tries: 3,
+                    baseDelay: 500,
+                  });
+                  setBtMsg("Sent BT test to receipt printer ✓");
+                } catch (e) {
+                  setBtMsg("BT test failed: " + (e?.message || "Unknown"));
+                }
+              }}
+            >
+              Send BT Test
+            </button>
+          </div>
+
+          {btMsg && (
+            <pre className="note pre" style={{ marginTop: 8 }}>
+              {btMsg}
+            </pre>
+          )}
         </section>
 
         {/* Card: Printers */}
@@ -594,7 +731,7 @@ export default function Settings() {
                 >
                   <option value="">(Use first available)</option>
                   {isAndroidBridge()
-                    ? androidPrinters.map((p) => (
+                    ? androidListPrintersDetailed().map((p) => (
                         <option
                           key={p.address || p.name}
                           value={p.address || ""}
@@ -628,11 +765,9 @@ export default function Settings() {
                   value={kitchenPrinter}
                   onChange={(e) => setKitchenPrinter(e.target.value)}
                 >
-                  <option value="">
-                    (Use first available / name contains "kitchen")
-                  </option>
+                  <option value="">{`(Use first available / name contains "kitchen")`}</option>
                   {isAndroidBridge()
-                    ? androidPrinters.map((p) => (
+                    ? androidListPrintersDetailed().map((p) => (
                         <option
                           key={p.address || p.name}
                           value={p.address || ""}
@@ -818,7 +953,7 @@ export default function Settings() {
 
             {/* list */}
             {pLoading ? (
-              <p className="note">Loading promotions…</p>
+              <p className="note">Loading promotions</p>
             ) : pError ? (
               <p className="note" style={{ color: "#b91c1c" }}>
                 {pError}
@@ -847,7 +982,9 @@ export default function Settings() {
                           <div className="muted" style={{ margin: 0 }}>
                             {p.type === "percentage"
                               ? `${p.value}%`
-                              : `Rp.${Number(p.value || 0).toFixed(2)}`}
+                              : formatIDR(Number(p.value || 0), {
+                                  withDecimals: true,
+                                })}
                             {p.description ? ` — ${p.description}` : ""}
                           </div>
                         </div>

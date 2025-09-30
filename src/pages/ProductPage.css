@@ -1,72 +1,153 @@
-/* src/pages/ProductPage.css */
+/* ===== Theme tokens (keep in sync with your app) ===== */
+:root{
+  --bg: #f6f7fb;
+  --card: #ffffff;
+  --text: #111827;
+  --muted: #6b7280;
+  --border: #eef2f7;
+  --ring: 0 0 0 3px rgba(242,153,74,.20);
 
-/* Page shell */
-.product-page-container {
+  --brand: #f2994a;
+  --brand-900:#e68a3f;
+
+  --cta:#2e7d32;        /* same green as mobile Add button */
+  --cta-900:#256c2a;
+  --shadow: 0 10px 30px rgba(15,23,42,.06);
+}
+
+/* ===== Page shell ===== */
+.product-page{
+  min-height: 100dvh;
+  padding: max(20px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-left)) 40px max(18px, env(safe-area-inset-right));
+  box-sizing: border-box;
+  background:
+    radial-gradient(1200px 600px at 80% -20%, rgba(242,153,74,.08), transparent 60%),
+    linear-gradient(#f9fafc, var(--bg));
+  color: var(--text);
+}
+
+/* ===== Header ===== */
+.product-page__header{
+  display:flex;
+  align-items:flex-start;
+  gap:16px;
+  margin: 6px auto 20px;
+  max-width: 1200px;
+}
+
+.product-page__titles{ flex:1; }
+.product-page__title{
+  margin:0;
+  font-size: clamp(24px, 2.6vw, 32px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.product-page__subtitle{
+  margin:6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* ===== Back button ===== */
+.back-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 14px;
+  background:#fff;
+  border:1px solid #e5e7eb;
+  border-radius:12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.04);
+  cursor:pointer;
+  transition: background .15s ease, transform .06s ease, box-shadow .2s ease;
+  color: var(--text);
+}
+.back-btn__icon{ font-size: 16px; line-height: 1; }
+.back-btn:hover{ background:#f8fafc; transform: translateY(-1px); }
+
+/* ===== Grid ===== */
+.product-page__grid{
   max-width: 1200px;
   margin: 0 auto;
-  padding: 32px 24px 80px; /* consistent padding; not huge gutters */
-  box-sizing: border-box;
-}
-
-/* Title */
-.product-page-title {
-  font-size: 32px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  margin: 20px 0 24px;
-}
-
-/* Two-column grid */
-.product-page-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display:grid;
+  grid-template-columns: 1.2fr .8fr;   /* roomier list */
   gap: 24px;
 }
-@media (max-width: 1024px) {
-  .product-page-grid { grid-template-columns: 1fr; }
-}
 
-/* Cards */
-.card {
-  background: #fff;
-  border: 1px solid #eef2f7;
+/* ===== Card shell ===== */
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 18px;
-  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+  box-shadow: var(--shadow);
+  display:flex;
+  flex-direction: column;
+  min-width: 0; /* enable children to ellipsis */
 }
-.card-title {
-  margin: 0 0 12px;
-  font-size: 22px;
-  font-weight: 700;
+.card--stretch{ min-height: 520px; }
+
+.card__head{
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid #f0f3f8;
+}
+.card__title{
+  margin:0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+}
+.card__body{
+  padding: 14px 18px 18px;
 }
 
-/* Re-usable back button (same look as Settings/Dashboard) */
-.back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  border-radius: 10px;
-  padding: 8px 14px;
-  cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-  transition: background .15s ease;
-}
-.back-btn:hover { background: #f8fafc; }
-
-/* FLOATING version — always true top-left of the viewport */
-.back-btn--floating {
-  position: fixed;
+/* Make the form column sticky on desktop so actions stay in view */
+.card--sticky{
+  position: sticky;
   top: max(12px, env(safe-area-inset-top));
-  left: max(12px, env(safe-area-inset-left));
-  z-index: 1000;
+  height: fit-content;
+  align-self: start; /* so sticky respects its natural height */
 }
 
-/* (Optional) If any ancestor applies transforms that could affect fixed elements,
-   ensure those wrappers don’t. Adjust only if you know a wrapper is causing issues. */
-/*
-.some-root-wrapper-with-transform {
-  transform: none !important;
+/* Allow the list to scroll within its card body when tall */
+.card--stretch .card__body{
+  max-height: 66vh;
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
 }
-*/
+.card--stretch .card__body::-webkit-scrollbar{ width: 8px; }
+.card--stretch .card__body::-webkit-scrollbar-thumb{
+  background: #e5e7eb; border-radius: 999px;
+}
+
+/* ===== Responsiveness ===== */
+@media (max-width: 1200px){
+  .product-page__grid{ grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 1024px){
+  .product-page__grid{ grid-template-columns: 1fr; }
+  .card--sticky{
+    position: static;
+    top: auto;
+  }
+  /* Let list card grow more before scrolling on tablets */
+  .card--stretch .card__body{ max-height: none; }
+}
+@media (max-width: 560px){
+  .product-page{
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+  .product-page__header{
+    flex-direction: column;
+    gap: 10px;
+  }
+  .back-btn{ align-self: flex-start; }
+  .card__body{ padding: 12px 14px 16px; }
+}
+
+/* ===== Nice focus rings for keyboards ===== */
+.back-btn:focus-visible,
+.card :where(button, input, select, textarea):focus-visible{
+  outline: none;
+  box-shadow: var(--ring);
+}

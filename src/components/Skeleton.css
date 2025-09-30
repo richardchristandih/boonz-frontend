@@ -1,0 +1,91 @@
+/* Reuses your existing page-container/card/grid classes and adds skeleton bits */
+
+:root{
+  --sk-bg:#f3f4f6;         /* skeleton base */
+  --sk-sheen:#e5e7eb;      /* moving highlight */
+  --brand:#f2994a;
+}
+
+/* shimmer effect */
+.shimmer{
+  position: relative;
+  overflow: hidden;
+  background: var(--sk-bg);
+  border-radius: 10px;
+}
+.shimmer::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--sk-sheen), transparent);
+  animation: shimmer 1.15s infinite;
+}
+@keyframes shimmer{
+  100% { transform: translateX(100%); }
+}
+
+/* Title / subtitle / metric blocks */
+.skeleton-title{
+  height: 28px;
+  border-radius: 12px;
+  margin: 8px 0 18px;
+}
+.skeleton-subtitle{
+  height: 16px;
+  width: 50%;
+  margin-bottom: 14px;
+  border-radius: 10px;
+}
+.skeleton-metric{
+  height: 32px;
+  width: 70%;
+  border-radius: 12px;
+}
+
+/* Chart placeholder */
+.skeleton-chart{
+  height: 300px;
+  width: 100%;
+  border-radius: 16px;
+}
+
+/* Table placeholder */
+.skeleton-table{ width:100%; }
+.skeleton-table-head{
+  display:grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap:12px;
+  margin-bottom:10px;
+}
+.skeleton-table-head > *{
+  height: 18px; border-radius: 10px; background: var(--sk-bg);
+}
+.skeleton-table-body .row{
+  display:grid; grid-template-columns: 2fr 1fr 1fr; gap:12px;
+  margin:10px 0;
+}
+.skeleton-table-body .cell{
+  height: 16px; border-radius: 10px; background: var(--sk-bg);
+}
+
+/* Buttons (disabled look) */
+.skeleton-btn{
+  opacity:.7;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Error card */
+.error-card{
+  background:#fff; border:1px solid #eee; border-radius:16px; padding:24px;
+  max-width:560px; margin:40px auto; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,.06);
+}
+.error-icon{ font-size:28px; margin-bottom:8px; }
+.error-card h2{ margin:8px 0 6px; }
+.error-card p{ color:#6b7280; margin:0 0 16px; }
+.retry-btn{
+  background:var(--brand); color:#fff; border:0; padding:10px 14px;
+  border-radius:12px; cursor:pointer; box-shadow:0 6px 18px rgba(242,153,74,.35);
+}
+.retry-btn:hover{ filter: brightness(.95); }

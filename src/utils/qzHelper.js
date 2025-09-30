@@ -144,7 +144,7 @@ export async function printRaw(printerName, data) {
     return await qz.print(cfg, strings);
   } catch (e1) {
     // Fallback: explicit raw objects (older/newer variants sometimes need this)
-    console.warn("String payload failed, retrying as explicit raw objects…", e1);
+    console.warn("String payload failed, retrying as explicit raw objects", e1);
     const objects = strings.map((s) => ({ type: "raw", format: "plain", data: s }));
     return await qz.print(cfg, objects);
   }

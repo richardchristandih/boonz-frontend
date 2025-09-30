@@ -1,12 +1,26 @@
+/* Variables (put near top of file) */
+:root{
+  --brand:#F2994A;
+  --brand-900:#ea8c3c;
+
+  /* unify CTA with your mobile Add button */
+  --cta:#2e7d32;
+  --cta-900:#256c2a;
+  --cta-glow:0 10px 26px rgba(46,125,50,.28);
+}
+
+/* Overlay */
 .pemodal {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.5);
+  background: rgba(0,0,0,.45);
   display: grid;
   place-items: center;
   padding: 24px;
   z-index: 1000;
 }
+
+/* Dialog */
 .pemodal__dialog {
   background: #fff;
   width: min(640px, 92vw);
@@ -17,15 +31,30 @@
   flex-direction: column;
   overflow: hidden;
 }
-.pemodal__head, .pemodal__actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+
+/* Sticky head & footer for better mobile UX */
+.pemodal__head,
+.pemodal__actions {
+  position: sticky;
+  z-index: 1;
+  background: #fff;
+  display: flex; align-items: center;
   gap: 10px;
   padding: 14px 18px;
+}
+.pemodal__head {
+  top: 0;
+  justify-content: space-between;
   border-bottom: 1px solid #eee;
 }
-.pemodal__actions { border-top: 1px solid #eee; border-bottom: 0; justify-content: flex-end; }
+.pemodal__actions {
+  bottom: 0;
+  justify-content: flex-end;
+  border-top: 1px solid #eee;
+  box-shadow: 0 -8px 18px rgba(17,24,39,.04);
+}
+
+/* Close button */
 .pemodal__close {
   background: transparent;
   border: 0;
@@ -36,53 +65,107 @@
   border-radius: 8px;
 }
 .pemodal__close:hover { background: #f5f5f5; }
+
+/* Body */
 .pemodal__body {
   padding: 16px 18px;
   overflow: auto;
-  display: block;
+  -webkit-overflow-scrolling: touch;
 }
+
+/* 2-col grid */
 .pemodal__grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.pemodal__hint {
-  font-size: 12px;
-  color: #6b7280;
-  margin-top: 6px;
-}
+
+/* Helper text & errors */
+.pemodal__hint { font-size: 12px; color: #6b7280; margin-top: 6px; }
 .pemodal__error {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
-  padding: 10px;
-  border-radius: 10px;
-  margin-bottom: 10px;
+  background: #fef2f2; color: #991b1b;
+  border: 1px solid #fecaca; padding: 10px;
+  border-radius: 10px; margin-bottom: 10px;
 }
 
-/* reuse existing .btn, .btn.primary, .btn.outline styles from your app */
+/* Inputs */
 .pemodal input[type="text"],
+.pemodal input[type="url"],
 .pemodal input[type="number"],
 .pemodal textarea {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  color: #111827;
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 14px;
+  width: 100%; box-sizing: border-box;
+  border: 1px solid #d1d5db; background: #fff; color: #111827;
+  border-radius: 10px; padding: 10px 12px; font-size: 14px;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition: border-color .15s, box-shadow .15s, background .15s;
   margin-bottom: 10px;
 }
 .pemodal input:focus,
 .pemodal textarea:focus {
   border-color: #a78bfa;
-  box-shadow: 0 0 0 3px rgba(167,139,250,0.25);
+  box-shadow: 0 0 0 3px rgba(167,139,250,.25);
 }
 
+/* Image preview — nicer ratio & responsive cap */
+.pemodal__preview {
+  width: 100%;
+  height: auto;                 /* remove fixed height */
+  aspect-ratio: 16 / 9;         /* clean widescreen card */
+  max-height: clamp(140px, 28vh, 220px);
+  border-radius: 12px;
+  object-fit: cover;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 10px;
+  display: block;
+}
+.pemodal__preview.--empty { content: ""; display: block; }
+
+/* File input row */
+.pemodal__fileRow {
+  display: flex; align-items: center; gap: 10px;
+  margin: 6px 0 12px;
+}
+.pemodal .muted { font-size: 12px; color: #6b7280; }
+
+/* Buttons — make primary green to match CTA */
+.btn {
+  --h: 42px;
+  height: var(--h);
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff; color: #111827;
+  font-weight: 700; font-size: 14px; cursor: pointer;
+  transition: transform .04s, background .15s, border-color .15s, box-shadow .15s, opacity .2s;
+}
+.btn:hover { background: #f9fafb; }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .6; cursor: not-allowed; }
+
+.btn.primary{
+  background: var(--cta);
+  color:#fff;
+  border-color: var(--cta);
+  box-shadow: var(--cta-glow);
+}
+.btn.primary:hover{ background: var(--cta-900); border-color: var(--cta-900); }
+.btn.primary:focus-visible{ box-shadow: 0 0 0 3px rgba(46,125,50,.22); outline: none; }
+
+.btn.outline{ background:#fff; color:#374151; border-color:#e5e7eb; }
+.btn.outline:hover{ background:#f9fafb; }
+
+/* Mobile: turn dialog into a comfy bottom sheet */
 @media (max-width: 640px) {
-  .pemodal__dialog { width: 96vw; }
-  .pemodal__grid2 { grid-template-columns: 1fr; }
+  .pemodal { padding: 0; place-items: end center; } /* slide from bottom */
+  .pemodal__dialog{
+    width: 100vw;
+    max-height: 100dvh;
+    height: 92dvh;               /* sheet height */
+    border-radius: 16px 16px 0 0;
+    overflow: hidden;
+    box-shadow: 0 -20px 60px rgba(0,0,0,.25);
+  }
+  .pemodal__body{ padding: 14px 16px; }
+  .pemodal__grid2{ grid-template-columns: 1fr; }
 }

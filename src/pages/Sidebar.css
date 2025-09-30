@@ -1,185 +1,150 @@
-/* =========================
-   src/pages/Sidebar.css
-   Clean, self-contained sidebar styles
-   ========================= */
+/* Namespaced tokens */
+:root{
+  --brand:#f2994a;
+  --brand-900:#ca7c36;
+  --bg:#ffffff;
+  --bg-soft:#fafafa;
+  --text:#222;
+  --muted:#6b7280;
+  --border:#ececec;
+  --shadow:0 8px 24px rgba(0,0,0,.06);
 
-:root {
-  /* used when available; falls back to hex values below */
-  --brand: #F2994A;
-  --border: #eee;
-  --bg-soft: #fafafa;
-  --text: #333;
-}
-
-/* Container */
-.layout-sidebar {
-  width: 220px;
-  min-width: 220px;
-  height: 100dvh;
-  border-right: 1px solid var(--border, #eee);
-  background: var(--bg-soft, #fafafa);
-  padding: 20px;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-@supports not (height: 100dvh) {
-  .layout-sidebar { height: 100vh; }
+  /* CTA (mobile Add button) */
+  --cta:#2e7d32;
+  --cta-900:#256c2a;
+  --cta-glow:0 8px 24px rgba(46,125,50,.35);
 }
 
-/* Header row */
-.sidebar-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 32px;
+/* Desktop sidebar */
+.layout-sidebar{
+  width:240px;min-width:240px;height:100dvh;background:var(--bg-soft);
+  border-right:1px solid var(--border);box-sizing:border-box;
+  padding:20px;display:flex;flex-direction:column;gap:16px;
 }
+@supports not (height:100dvh){.layout-sidebar{height:100vh;}}
 
-.sidebar-logo {
-  font-size: 18px;
-  font-weight: 800;
-  color: #baf24a;
-  margin: 0;
-}
+.layout-sidebar.collapsed{width:88px;min-width:88px;padding:20px 12px;}
 
-.sidebar-toggle {
-  background: #fff;
-  border: 1px solid #ccc;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background .15s ease, color .15s ease, border-color .15s ease;
-}
-.sidebar-toggle:hover {
-  background: var(--brand, #F2994A);
-  color: #fff;
-  border-color: var(--brand, #F2994A);
-}
+.sidebar-top{display:flex;align-items:center;justify-content:space-between;min-height:40px;}
 
-/* Navigation */
-.sidebar-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+.sidebar-logo{display:inline-flex;align-items:center;gap:10px;text-decoration:none;}
+.sidebar-logo img{height:34px;width:34px;border-radius:8px;object-fit:cover;display:block;box-shadow:0 2px 8px rgba(0,0,0,.08);}
+.brand-text{font-weight:800;color:var(--text);letter-spacing:.2px;text-transform:lowercase;}
 
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text, #333);
-  text-decoration: none;
-  font-size: 14px;
-  padding: 8px 0;
-  border-radius: 8px;
-  transition: background .15s ease, color .15s ease;
+/* Namespaced buttons */
+.sb-btn{
+  border:1px solid var(--border);background:var(--bg);color:var(--text);
+  padding:10px 14px;border-radius:12px;font-size:14px;line-height:1;
+  display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+  box-shadow:0 2px 8px rgba(0,0,0,.04);
+  transition:transform .08s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
 }
-.nav-link:hover { background: rgba(0,0,0,.03); }
-.nav-link i { width: 18px; text-align: center; }
+.sb-btn:active{transform:translateY(1px);}
+.sb-btn svg{display:block}
 
-/* Desktop active = brand color text */
-.nav-link.active { color: var(--brand, #F2994A); }
-
-/* Add product */
-.add-product-btn {
-  margin-top: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #fff;
-  color: var(--text, #333);
-  border: 1px solid #ccc;
-  padding: 8px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background .15s ease, color .15s ease, border-color .15s ease;
+.sb-btn-primary{
+  background:var(--brand);border-color:var(--brand);color:#fff;
+  box-shadow:0 6px 18px rgba(242,153,74,.35);
 }
-.add-product-btn:hover {
-  background: var(--brand, #F2994A);
-  color: #fff;
-  border-color: var(--brand, #F2994A);
-}
+.sb-btn-primary:hover{background:var(--brand-900);border-color:var(--brand-900);}
 
-/* Collapsed (desktop only) */
-.layout-sidebar.collapsed {
-  width: 72px;
-  min-width: 72px;
-  padding: 20px 12px;
+.sb-icon-btn{
+  width:36px;height:36px;border-radius:10px;background:var(--bg);border:1px solid var(--border);
+  display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.04);
 }
+.sb-icon-btn:hover{background:#fff;}
 
-.layout-sidebar.collapsed .sidebar-logo { display: none; }
+/* Nav */
+.sidebar-nav{display:flex;flex-direction:column;gap:12px;}
+.nav-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);
+  padding:10px 12px;border-radius:12px;transition:background .2s ease, color .2s ease;}
+.nav-link:hover{background:rgba(0,0,0,.04);}
+.nav-link svg{color:var(--muted);}
+.nav-link.active{color:var(--brand);}
+.nav-link.active svg{color:var(--brand);}
+
+/* Desktop primary */
+.add-product-btn{margin-top:auto;width:100%;justify-content:center;}
+
+/* Collapsed tweaks */
+.layout-sidebar.collapsed .brand-text,
 .layout-sidebar.collapsed .nav-link span,
-.layout-sidebar.collapsed .add-product-btn span { display: none; }
+.layout-sidebar.collapsed .add-product-btn span{display:none;}
+.layout-sidebar.collapsed .nav-link{justify-content:center;}
+.layout-sidebar.collapsed .add-product-btn{justify-content:center;}
 
-.layout-sidebar.collapsed .nav-link { justify-content: center; }
-.layout-sidebar.collapsed .nav-link i { margin-right: 0; }
-.layout-sidebar.collapsed .add-product-btn { justify-content: center; }
-
-/* IMPORTANT: keep toggle inside the header row in all cases */
-.layout-sidebar .sidebar-toggle,
-.layout-sidebar.collapsed .sidebar-toggle {
-  position: static;
-  transform: none;
-}
-
-/* =========================
-   Tablet & Mobile
-   ========================= */
-@media (max-width: 900px) {
-  /* Sidebar becomes a sticky, blurred top bar */
+/* Mobile as top bar */
+@media (max-width:900px){
   .layout-sidebar,
-  .layout-sidebar.collapsed {
-    width: 100%;
-    min-width: 0;
-    height: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--border, #eee);
-    padding: 12px 16px;
-    flex-direction: column;
-    gap: 10px;
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    background: rgba(250,250,250,.92);
-    backdrop-filter: blur(8px);
+  .layout-sidebar.collapsed{
+    width:100%;min-width:0;height:auto;border-right:0;
+    padding:max(12px, env(safe-area-inset-top)) 16px 10px 16px;
+    position:sticky;top:0;z-index:50;backdrop-filter:blur(8px);
+    background:color-mix(in oklab, var(--bg) 86%, transparent);
+    border-bottom:1px solid var(--border);box-shadow:var(--shadow);gap:12px;
   }
 
-  /* Show labels; collapse disabled in JS anyway */
-  .layout-sidebar.collapsed .nav-link span,
-  .layout-sidebar.collapsed .add-product-btn span {
-    display: inline;
+  /* Center the logo in the header on mobile */
+  .sidebar-top{
+    justify-content:center;       /* center contents */
+    min-height:56px;              /* a bit taller for bigger logo */
+  }
+  .layout-sidebar.as-topbar .brand-text{display:none;}
+  .layout-sidebar.as-topbar .sidebar-logo{margin:0 auto;}   /* keep centered */
+  .layout-sidebar.as-topbar .sidebar-logo img{height:60px;width:60px;}
+
+  /* Pills: horizontal scroller */
+  .sidebar-nav{
+    flex-direction:row;
+    gap:10px;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    scroll-snap-type:x mandatory;
+    padding-bottom:4px;
+    flex-wrap:nowrap;             /* no wrapping -> overflow */
+  }
+  .sidebar-nav::-webkit-scrollbar{display:none;}
+
+  .nav-link{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:999px;
+    padding:10px 14px;
+    box-shadow:0 4px 14px rgba(0,0,0,.05);
+    scroll-snap-align:start;
+    white-space:nowrap;
+    flex:0 0 auto;               /* prevent shrinking so it scrolls */
   }
 
-  /* Pills, horizontal scroll */
-  .sidebar-nav {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    gap: 10px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .sidebar-nav::-webkit-scrollbar { display: none; }
+  /* hide icons in pills... */
+  .nav-link svg{display:none;}
 
-  .nav-link {
-    padding: 8px 12px;
-    border: 1px solid #eee;
-    border-radius: 999px;
-    background: #fff;
-    box-shadow: 0 2px 8px rgba(0,0,0,.04);
-  }
-  /* Mobile active = filled pill */
-  .nav-link.active {
-    background: var(--brand, #F2994A);
-    border-color: var(--brand, #F2994A);
-    color: #fff;
+  /* ...but show the plus on the Add pill */
+  .add-pill svg{display:block;}
+
+  .nav-link.active{
+    background:var(--brand);
+    border-color:var(--brand);
+    color:#fff;
+    box-shadow:0 8px 20px rgba(242,153,74,.35);
   }
 
-  /* Hide collapse toggle on small screens */
-  .sidebar-toggle { display: none; }
+  /* Mobile Add Product pill -> green */
+  .add-pill{
+    background:var(--cta) !important;
+    border-color:var(--cta) !important;
+    color:#fff !important;
+    box-shadow:var(--cta-glow) !important;
+    padding:12px 18px;            /* slightly taller */
+    font-weight:600;
+  }
+  .add-pill:hover{
+    background:var(--cta-900) !important;
+    border-color:var(--cta-900) !important;
+  }
+
+  /* Desktop-only controls hidden on mobile */
+  .sidebar-toggle{display:none;}
+  .add-product-btn{display:none;}
 }

@@ -1,8 +1,21 @@
-import React, { useState } from 'react';
-import api from '../services/api';
-import './ProductForm.css';
+// src/components/ProductForm.jsx
+import React, { useRef, useState } from "react";
+import api from "../services/api";
+import { uploadImage } from "../utils/uploadImages";
+import { normalizeImageUrl } from "../utils/driveUrl"; // <-- make sure this file exists (see note below)
+import "./ProductForm.css";
 
-const CATEGORY_OPTIONS = ['Coffee', 'Drink', 'Burger', 'Beer', 'Patisserie', 'Matcha'];
+const CATEGORY_OPTIONS = [
+  "Coffee",
+  "Drink",
+  "Burger",
+  "Beer",
+  "Patisserie",
+  "Matcha",
+];
+
+const MAX_FILE_MB = 5;
+const ACCEPTED_TYPES = /image\/(png|jpe?g|webp|gif)/i;
 
 /**
  * ProductForm
@@ -10,22 +23,68 @@ const CATEGORY_OPTIONS = ['Coffee', 'Drink', 'Burger', 'Beer', 'Patisserie', 'Ma
  * @param {boolean}  showTitle  - render internal <h2>; default false
  */
 export default function ProductForm({ onSuccess, showTitle = false }) {
-  const [name, setName] = useState('');
-  const [sku, setSku] = useState('');
-  const [price, setPrice] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Coffee');
-  const [image, setImage] = useState('');
+  const [name, setName] = useState("");
+  const [sku, setSku] = useState("");
+  const [price, setPrice] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("Coffee");
+
+  // image handling
+  const [imageUrl, setImageUrl] = useState(""); // can be uploaded URL or pasted URL
+  const [uploading, setUploading] = useState(false);
+
+  // ui state
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const fileInputRef = useRef(null);
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // quick validations
+    if (!ACCEPTED_TYPES.test(file.type)) {
+      setError("Please select a PNG, JPG, WEBP, or GIF image.");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      setError(`Image is too large. Max ${MAX_FILE_MB} MB.`);
+      e.target.value = "";
+      return;
+    }
+
+    setError("");
+    setUploading(true);
+    try {
+      const url = await uploadImage(file); // POST /uploads/image -> { url }
+      setImageUrl(url);
+    } catch (err) {
+      console.error(err);
+      setError("Image upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (saving) return;
+    if (saving || uploading) return;
+
+    setError("");
 
     // Guard numeric parsing (avoid NaN)
-    const priceNum = Number.parseFloat(price || '0');
-    const qtyNum = Number.parseInt(quantity || '0', 10);
+    const priceNum = Number.parseFloat(price || "0");
+    const qtyNum = Number.parseInt(quantity || "0", 10);
+
+    if (!name.trim()) return setError("Name is required.");
+    if (!sku.trim()) return setError("SKU is required.");
+    if (!Number.isFinite(priceNum) || priceNum < 0)
+      return setError("Price must be a non-negative number.");
+    if (!Number.isFinite(qtyNum) || qtyNum < 0)
+      return setError("Quantity must be a non-negative integer.");
 
     const productData = {
       name: name.trim(),
@@ -34,35 +93,41 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
       quantity: Number.isFinite(qtyNum) ? qtyNum : 0,
       description: description.trim(),
       category,
-      ...(image.trim() ? { image: image.trim() } : {}),
+      imageUrl: normalizeImageUrl(imageUrl.trim()),
     };
 
     try {
       setSaving(true);
-      await api.post('/products', productData);
+      await api.post("/products", productData);
       onSuccess?.();
 
       // Reset form
-      setName('');
-      setSku('');
-      setPrice('');
-      setQuantity('');
-      setDescription('');
-      setCategory('Coffee');
-      setImage('');
-    } catch (error) {
-      console.error('Error creating product:', error);
-      alert('Failed to create product. Please check the inputs and try again.');
+      setName("");
+      setSku("");
+      setPrice("");
+      setQuantity("");
+      setDescription("");
+      setCategory("Coffee");
+      setImageUrl("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err) {
+      console.error("Error creating product:", err);
+      setError(
+        err?.response?.data?.message ||
+          "Failed to create product. Please check the inputs and try again."
+      );
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className={`product-form-container${showTitle ? '' : ' no-title'}`}>
+    <div className={`product-form-container${showTitle ? "" : " no-title"}`}>
       {showTitle && <h2>Product Form</h2>}
 
       <form onSubmit={handleSubmit} className="product-form" autoComplete="off">
+        {error && <div className="error">{error}</div>}
+
         <label htmlFor="pf-name">Name:</label>
         <input
           id="pf-name"
@@ -115,15 +180,36 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
           id="pf-desc"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="(Optional) Short description…"
+          placeholder="(Optional) Short description..."
         />
 
-        <label htmlFor="pf-img">Image URL:</label>
+        {/* Image upload + URL (both supported) */}
+        <label>Image</label>
+        {imageUrl && (
+          <img src={imageUrl} alt="preview" className="image-preview" />
+        )}
+
+        <div className="file-row">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            aria-label="Choose image to upload"
+          />
+          {uploading && (
+            <span className="muted" aria-live="polite">
+              Uploading...
+            </span>
+          )}
+        </div>
+
+        <label htmlFor="pf-img">Or paste Image URL:</label>
         <input
           id="pf-img"
           type="url"
-          value={image}
-          onChange={(e) => setImage(e.target.value)}
+          value={imageUrl}
+          onChange={(e) => setImageUrl(e.target.value)}
           placeholder="https://example.com/image.jpg (optional)"
         />
 
@@ -141,8 +227,12 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
           ))}
         </select>
 
-        <button type="submit" className="create-button" disabled={saving}>
-          {saving ? 'Creating…' : 'Create'}
+        <button
+          type="submit"
+          className="create-button"
+          disabled={saving || uploading}
+        >
+          {saving ? "Creating..." : "Create"}
         </button>
       </form>
     </div>

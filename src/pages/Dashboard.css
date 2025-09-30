@@ -103,3 +103,78 @@
   background: #f8fafc;
   font-weight: 600;
 }
+
+.card {
+  background: #fff;
+  border: 1px solid #eef2f7;
+  border-radius: 16px;
+  box-shadow: 0 6px 24px rgba(15,23,42,.06);
+}
+
+.card__head {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid #f0f3f8;
+}
+.card__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+}
+
+.card__body { padding: 12px 16px 16px; }
+
+/* fixed-height, independently scrollable body */
+.scroll-card {
+  display: flex;
+  flex-direction: column;
+  height: 520px;                 /* adjust to taste */
+  min-height: 420px;
+}
+.scroll-card .scroll-body {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+}
+
+/* === Chart area === */
+/* Chart.js will fit to the container height when responsive */
+.chart-wrap {
+  position: relative;
+  height: 420px;                 /* chart height inside the scroll area */
+  min-width: 480px;              /* allow horizontal scroll if many labels */
+}
+
+/* === Table area === */
+.table-wrap {
+  overflow: auto;                /* scroll just the table if tall/wide */
+  max-height: 100%;              /* fill the scroll-body */
+}
+
+/* Nice sticky header so columns stay labeled while you scroll */
+.product-sales-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.product-sales-table thead th {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+  text-align: left;
+  font-weight: 700;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef2f7;
+}
+.product-sales-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f5f6f8;
+  white-space: nowrap;           /* if you want horizontal scroll for long names */
+}
+
+/* Responsive tweak: shorter cards on phones */
+@media (max-width: 640px){
+  .scroll-card { height: 440px; }
+  .chart-wrap { height: 340px; }
+}

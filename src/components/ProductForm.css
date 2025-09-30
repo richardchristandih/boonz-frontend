@@ -1,10 +1,21 @@
+/* src/components/ProductForm.css */
+
+/* Theme vars (optional, shared with sidebar/mobile CTA) */
+:root{
+  --brand:#f2994a;
+  --brand-900:#e68a3f;
+
+  --cta:#2e7d32;         /* green primary */
+  --cta-900:#256c2a;     /* darker hover */
+  --cta-glow:0 10px 26px rgba(46,125,50,.28);
+}
+
 .product-form-container {
   flex: 1;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
   padding: 20px;
-  /* Let it grow with the layout; keep a comfy cap on narrow screens */
   width: 100%;
   max-width: 720px;
 }
@@ -21,6 +32,7 @@
   flex-direction: column;
 }
 
+/* labels */
 .product-form label {
   margin-bottom: 6px;
   font-weight: 600;
@@ -28,6 +40,7 @@
   font-size: 14px;
 }
 
+/* inputs */
 .product-form input,
 .product-form textarea,
 .product-form select {
@@ -44,7 +57,7 @@
 .product-form input:focus,
 .product-form textarea:focus,
 .product-form select:focus {
-  border-color: #f2994a;
+  border-color: var(--brand);
   outline: none;
   box-shadow: 0 0 0 3px rgba(242, 153, 74, 0.18);
 }
@@ -54,7 +67,7 @@
   resize: vertical;
 }
 
-/* Nice custom arrow for select; keep it subtle */
+/* select caret */
 .product-form select {
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -64,37 +77,69 @@
   background-position: right 10px center;
 }
 
+/* preview image — responsive, no stretching */
+.product-form .image-preview {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;                       /* neat card ratio */
+  max-height: clamp(120px, 26vh, 200px);      /* keep it classy */
+  border-radius: 12px;
+  object-fit: cover;
+  display: block;
+  margin: 0 0 10px 0;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+}
+
+/* file input wrapper (optional) */
+.product-form .file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+/* helper / muted text */
+.muted {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+/* submit button — use green CTA to match mobile Add button */
 .create-button {
-  background-color: #f2994a;
+  background-color: var(--cta);
   color: #fff;
   border: none;
   padding: 12px 16px;
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 15px;
   cursor: pointer;
   transition: transform 0.06s ease, box-shadow 0.12s ease, background 0.12s ease;
-  box-shadow: 0 8px 22px rgba(242, 153, 74, 0.25);
+  box-shadow: var(--cta-glow);
   align-self: flex-start;
 }
+.create-button:hover { background-color: var(--cta-900); transform: translateY(-1px); }
+.create-button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
-.create-button:hover {
-  background-color: #e68a3f;
-  transform: translateY(-1px);
-}
-
-.create-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* When embedding in a page that already has a section title */
+/* embedded mode (no internal title) */
 .product-form-container.no-title h2 { display: none; }
 .product-form-container.no-title { padding-top: 8px; }
 
-/* Responsive niceties */
+/* small error reuse */
+.product-form .error {
+  color: #b91c1c;
+  background: #fee2e2;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+/* responsive */
 @media (max-width: 768px) {
-  .product-form-container {
-    max-width: 100%;
-  }
+  .product-form-container { max-width: 100%; }
+  /* prevent iOS zoom-on-focus */
+  .product-form input,
+  .product-form textarea,
+  .product-form select { font-size: 16px; }
 }

@@ -11,11 +11,20 @@ import "./MainMenu.css";
 import richardImage from "./ProfilePic.png";
 import Sidebar from "./Sidebar";
 import { buildReceipt } from "../receipt";
-import { isAndroidBridge } from "../utils/androidBridge";
 import { printRaw, listPrinters } from "../utils/qzHelper";
 import SafeImage from "../components/SafeImage";
 import api from "../services/api";
 import appLogo from "../images/logo.jpg";
+import { normalizeImageUrl } from "../utils/driveUrl";
+import {
+  isAndroidBridge,
+  androidListPrintersDetailed,
+  androidPrintWithRetry,
+  androidIsBtOn,
+  androidPrintLogoAndText,
+} from "../utils/androidBridge";
+import { sendOrderEmail, EMAIL_COOLDOWN_SEC } from "../services/orderEmail";
+import { formatIDR } from "../utils/money";
 
 // ---------- Constants ----------
 const CATEGORIES = [
@@ -31,7 +40,6 @@ const SERVICE_CHARGE_RATE = 0.05;
 const MOBILE_BP = 900; // px
 
 // Printer hints (desktop/QZ only)
-const KITCHEN_PRINTER_HINTS = [/kitchen/i, /\bKOT\b/i];
 const RECEIPT_PRINTER_HINT = /RPP02N/i;
 
 const productImages = require.context(
@@ -40,8 +48,50 @@ const productImages = require.context(
   /\.(png|jpe?g|gif|webp)$/
 );
 
-// ---------- Helpers ----------
+function SkeletonCard() {
+  return (
+    <div className="product-card skeleton">
+      <div className="skeleton-img shimmer" />
+      <div className="skeleton-line shimmer" style={{ width: "70%" }} />
+      <div className="skeleton-line shimmer" style={{ width: "50%" }} />
+      <div
+        className="skeleton-line shimmer"
+        style={{ width: "40%", marginTop: 6 }}
+      />
+      <div className="skeleton-btn shimmer" />
+    </div>
+  );
+}
 
+function SkeletonGrid({ count = 8 }) {
+  return (
+    <div className="product-grid">
+      {Array.from({ length: count }).map((_, i) => (
+        <SkeletonCard key={i} />
+      ))}
+    </div>
+  );
+}
+
+function getImageSrc(product) {
+  const raw = product?.imageUrl || product?.image || "";
+  if (!raw) return null;
+
+  // Convert Google Drive links if needed
+  const normalized = normalizeImageUrl(raw);
+
+  if (/^https?:\/\//i.test(normalized) || normalized.startsWith("data:")) {
+    return normalized;
+  }
+
+  try {
+    return productImages("./" + normalized);
+  } catch {
+    return normalized;
+  }
+}
+
+// ---------- Helpers ----------
 async function toDataUrl(url) {
   const res = await fetch(url);
   const blob = await res.blob();
@@ -57,6 +107,7 @@ function isAndroidChrome() {
   const ua = navigator.userAgent || "";
   return /Android/i.test(ua) && /Chrome/i.test(ua) && !window.AndroidPrinter;
 }
+
 function printReceiptViaSystem(html) {
   const w = window.open("", "_blank");
   if (!w) return alert("Pop-up blocked. Please allow pop-ups and try again.");
@@ -65,18 +116,6 @@ function printReceiptViaSystem(html) {
   w.document.close();
 }
 
-function resolveProductImage(relPath) {
-  if (!relPath) return null;
-  try {
-    return productImages("./" + relPath);
-  } catch {
-    return null;
-  }
-}
-function formatCurrency(num) {
-  const n = Number(num || 0);
-  return `Rp.${n.toFixed(2)}`;
-}
 function buildKitchenTicket({
   shopName,
   orderNumber,
@@ -101,13 +140,7 @@ function buildKitchenTicket({
     .join("");
   return header + lines + `[C]------------------------------\n\n`;
 }
-function pickPrinter(printers, hints) {
-  for (const h of hints) {
-    const found = printers.find((p) => h.test(p));
-    if (found) return found;
-  }
-  return printers[0];
-}
+
 function computePromoDiscount(promo, subtotal) {
   if (!promo || !promo.active) return 0;
   if (promo.minSubtotal && subtotal < Number(promo.minSubtotal)) return 0;
@@ -134,7 +167,7 @@ function useIsMobile() {
   return isMobile;
 }
 
-// ---------- NEW: unified Android bridge wrappers ----------
+// ---------- Prefs / timing ----------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function getPrinterPrefs() {
   return {
@@ -151,36 +184,66 @@ function getPrinterPrefs() {
   };
 }
 
-/**
- * Send formatted ESC/POS text via Android WebView bridge.
- * Uses printTo (with nameLike) when available; falls back to printText.
- * Adds a short delay to prevent BT “broken pipe”.
- */
-async function androidPrintText(text, nameLike = "") {
-  const ap = window.AndroidPrinter || {};
-  if (typeof ap.printTo === "function") {
-    ap.printTo(JSON.stringify({ nameLike, text }));
-  } else if (typeof ap.printText === "function") {
-    ap.printText(text);
-  } else {
-    throw new Error("Android bridge not available");
-  }
-  await sleep(700); // let the BT buffer flush
-}
-
 // ---------- Component ----------
 export default function MenuLayout() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+
+  // user
+  const storedUser = localStorage.getItem("user");
+  const user = storedUser ? JSON.parse(storedUser) : null;
+
+  // email receipt (customer optional during checkout)
+  const [wantEmailReceipt, setWantEmailReceipt] = useState(false);
+  const [customerEmail, setCustomerEmail] = useState(user?.email || "");
+  const [customerName, setCustomerName] = useState(user?.name || "");
 
   const [products, setProducts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("Coffee");
   const [cart, setCart] = useState([]);
   const [orderType, setOrderType] = useState("Delivery");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [orderNumber, setOrderNumber] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // desktop “Email Receipt” box
+  const [email, setEmail] = useState(user?.email || "");
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailNotice, setEmailNotice] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [emailCooldownUntil, setEmailCooldownUntil] = useState(0);
+  const [nowTsEmail, setNowTsEmail] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNowTsEmail(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const emailCooldownLeft = Math.max(
+    0,
+    Math.ceil((emailCooldownUntil - nowTsEmail) / 1000)
+  );
+
+  const handleEmailReceipt = async () => {
+    if (!orderNumber) return alert("Place an order first.");
+    if (!email) return alert("Enter an email address.");
+    if (sendingEmail || emailCooldownLeft > 0) return;
+
+    try {
+      setSendingEmail(true);
+      setEmailNotice("");
+      setEmailError("");
+      await sendOrderEmail(orderNumber, email); // optional 3rd arg: logoUrl
+      setEmailNotice(`Receipt sent to ${email}.`);
+      setEmailCooldownUntil(Date.now() + EMAIL_COOLDOWN_SEC * 1000);
+    } catch (e) {
+      console.error(e);
+      setEmailError("Failed to send email. Please try again.");
+    } finally {
+      setSendingEmail(false);
+    }
+  };
 
   const PAUSE_AFTER_KOT_MS =
     Number(localStorage.getItem("print.pauseAfterKotMs")) || 1200;
@@ -204,10 +267,6 @@ export default function MenuLayout() {
   const [discountValue, setDiscountValue] = useState("");
   const [discountType, setDiscountType] = useState("flat");
   const [discountNote, setDiscountNote] = useState("");
-
-  // user
-  const storedUser = localStorage.getItem("user");
-  const user = storedUser ? JSON.parse(storedUser) : null;
 
   // avatar dropdown
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -238,11 +297,19 @@ export default function MenuLayout() {
   useEffect(() => {
     (async () => {
       try {
+        setLoadingProducts(true);
         const res = await api.get("/products");
-        setProducts(res.data || []);
+        const list = Array.isArray(res.data)
+          ? res.data
+          : res.data && Array.isArray(res.data.items)
+          ? res.data.items
+          : [];
+        setProducts(list);
       } catch (err) {
         console.error("Error fetching products:", err);
         setProducts([]);
+      } finally {
+        setLoadingProducts(false);
       }
     })();
   }, []);
@@ -262,10 +329,10 @@ export default function MenuLayout() {
     }
   }, []);
 
-  // derived
   const filteredProducts = useMemo(() => {
     const term = (searchTerm || "").toLowerCase();
-    return (products || []).filter((p) => {
+    const list = Array.isArray(products) ? products : [];
+    return list.filter((p) => {
       const category = (p?.category ?? "").trim();
       const name = p?.name ?? "";
       return category === selectedCategory && name.toLowerCase().includes(term);
@@ -422,6 +489,16 @@ export default function MenuLayout() {
       paymentMethod: selectedPaymentMethod,
       discountMode,
       ...(promoMeta || {}),
+
+      // Email customer (optional)
+      sendEmail: wantEmailReceipt && !!(customerEmail || "").trim(),
+      customerEmail: wantEmailReceipt
+        ? (customerEmail || "").trim()
+        : undefined,
+      customerName: wantEmailReceipt ? (customerName || "").trim() : undefined,
+
+      // Optional logo for email template
+      logoUrl: appLogo,
     };
 
     try {
@@ -429,13 +506,11 @@ export default function MenuLayout() {
       const newOrderNumber = response.data?.orderNumber;
       setOrderNumber(newOrderNumber);
 
-      // 2) PRINT — Kitchen ticket FIRST, then customer receipt (serialize to avoid BT drops)
+      // PRINT — Kitchen ticket FIRST, then customer receipt
       try {
-        const { receiptName, kitchenName, receiptCopies, kitchenCopies } =
-          getPrinterPrefs();
+        const { receiptCopies, kitchenCopies } = getPrinterPrefs();
         const dateStr = new Date().toLocaleString();
 
-        // Build texts
         const kotText = buildKitchenTicket({
           shopName: "Boonz Hauz",
           orderNumber: newOrderNumber || "N/A",
@@ -445,8 +520,7 @@ export default function MenuLayout() {
           customer: { name: user?.name || "" },
         });
 
-        const receiptText = buildReceipt({
-          // shopName: "Boonz",
+        let receiptText = buildReceipt({
           address: "Jl. Mekar Utama No. 61, Bandung",
           orderNumber: newOrderNumber || "N/A",
           dateStr,
@@ -469,38 +543,68 @@ export default function MenuLayout() {
             ? logoPref
             : await toDataUrl(logoPref);
 
+        // ---------- ANDROID (WebView app) ----------
         if (isAndroidBridge()) {
-          // --- ANDROID (WebView app) ---
-          // print KOT
+          // Determine targets (prefer saved MAC; fallback to first paired)
+          const paired = androidListPrintersDetailed();
+          const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
+
+          const receiptTarget =
+            localStorage.getItem("printer.receipt") || fallbackAddr;
+          const kitchenTarget =
+            localStorage.getItem("printer.kitchen") || fallbackAddr;
+
+          if (!androidIsBtOn()) {
+            window.alert(
+              "Bluetooth is OFF. Please enable Bluetooth and try again."
+            );
+            throw new Error("Bluetooth disabled");
+          }
+
+          // KOT (text only; reliable)
           for (let i = 0; i < kitchenCopies; i++) {
-            await androidPrintText(kotText, kitchenName);
+            await androidPrintWithRetry(kotText, {
+              address: kitchenTarget,
+              nameLike: kitchenTarget,
+              copies: 1,
+              tries: 3,
+              baseDelay: 500,
+            });
           }
+
           await sleep(PAUSE_AFTER_KOT_MS);
-          if (window.AndroidPrinter?.printLogoAndText && logoDataUrl) {
-            for (let i = 0; i < receiptCopies; i++) {
-              window.AndroidPrinter.printLogoAndText(
-                logoDataUrl,
-                receiptText,
-                receiptName
-              );
-              await sleep(700); // allow BT buffer flush
-            }
-          } else if (window.AndroidPrinter?.printLogoBase64 && logoDataUrl) {
-            for (let i = 0; i < receiptCopies; i++) {
-              window.AndroidPrinter.printLogoBase64(logoDataUrl, receiptName);
-              await sleep(400);
-              await androidPrintText(receiptText, receiptName);
-            }
-          } else {
-            // Fallback: text only
-            for (let i = 0; i < receiptCopies; i++) {
-              await androidPrintText(receiptText, receiptName);
+
+          // Receipt (logo + text if bridge supports; else text)
+          for (let i = 0; i < receiptCopies; i++) {
+            const printedWithLogo = androidPrintLogoAndText(
+              logoDataUrl,
+              receiptText,
+              {
+                address: receiptTarget,
+                nameLike: receiptTarget,
+              }
+            );
+
+            if (!printedWithLogo) {
+              await androidPrintWithRetry(receiptText, {
+                address: receiptTarget,
+                nameLike: receiptTarget,
+                copies: 1,
+                tries: 3,
+                baseDelay: 500,
+              });
+            } else {
+              await sleep(700); // let BT buffer flush
             }
           }
-        } else if (isAndroidChrome()) {
-          // --- ANDROID CHROME: system print (HTML) ---
+
+          // stop here; don't run desktop code
+          return;
+        }
+
+        // ---------- ANDROID CHROME (no bridge): system print ----------
+        if (isAndroidChrome()) {
           const html = buildReceiptHtml({
-            // shopName: "",
             address: "Jl. Mekar Utama No. 61, Bandung",
             orderNumber: newOrderNumber || "N/A",
             dateStr,
@@ -514,21 +618,19 @@ export default function MenuLayout() {
             orderType: orderData.orderType,
             customer: { name: user?.name || "" },
             discountNote: finalDiscountNote,
-            logo: logoDataUrl, // <-- add this
+            logo: logoDataUrl,
           });
           printReceiptViaSystem(html);
         } else {
-          // --- DESKTOP (QZ) ---
+          // ---------- DESKTOP (QZ) ----------
           const printers = await listPrinters();
           if (!Array.isArray(printers) || printers.length === 0)
             throw new Error("No printers found (QZ).");
           const receiptPrinterName =
             printers.find((p) => RECEIPT_PRINTER_HINT.test(p)) || printers[0];
 
-          // KOT
           await printRaw(receiptPrinterName, kotText);
           await sleep(300);
-          // Receipt
           await printRaw(receiptPrinterName, receiptText);
         }
       } catch (printErr) {
@@ -539,7 +641,7 @@ export default function MenuLayout() {
         );
       }
 
-      // reset state
+      // reset state relevant to the cart
       setCart([]);
       setSelectedPromoId("");
       setDiscountMode("promo");
@@ -548,6 +650,7 @@ export default function MenuLayout() {
       setDiscountType("flat");
       setShowPaymentModal(false);
       setSelectedPaymentMethod("");
+
       window.alert(
         `Order placed successfully! Your order number is ${newOrderNumber}`
       );
@@ -574,11 +677,13 @@ export default function MenuLayout() {
     isSubmitting,
     selectedPromo,
     navigate,
+    wantEmailReceipt,
+    customerEmail,
+    customerName,
   ]);
 
   /** Build a simple 58mm print HTML (system print) */
   function buildReceiptHtml({
-    // shopName,
     address,
     orderNumber,
     dateStr,
@@ -599,7 +704,9 @@ export default function MenuLayout() {
         (it) => `
       <tr>
         <td>${it.quantity || 0}× ${it.name || ""}</td>
-        <td style="text-align:right">Rp.${Number(it.price || 0).toFixed(2)}</td>
+        <td style="text-align:right">${formatIDR(Number(it.price || 0), {
+          withDecimals: true,
+        })}</td>
       </tr>`
       )
       .join("");
@@ -621,11 +728,11 @@ export default function MenuLayout() {
 </head>
 <body onload="setTimeout(()=>window.print(),300)">
   <div class="wrap">
-           ${
-             logo
-               ? `<div class="c"><img src="${logo}" style="height:60px;object-fit:contain" /></div>`
-               : ``
-           }
+    ${
+      logo
+        ? `<div class="c"><img src="${logo}" style="height:60px;object-fit:contain" /></div>`
+        : ``
+    }
     <div class="c">${address || ""}</div>
     <div class="line"></div>
     <div>Order #${orderNumber || "N/A"}</div>
@@ -636,27 +743,29 @@ export default function MenuLayout() {
     <table>${rows}</table>
     <div class="line"></div>
     <table class="totals">
-      <tr><td>Subtotal</td><td style="text-align:right">Rp.${Number(
-        subtotal || 0
-      ).toFixed(2)}</td></tr>
-      <tr><td>Tax</td><td style="text-align:right">Rp.${Number(
-        tax || 0
-      ).toFixed(2)}</td></tr>
-      <tr><td>Service</td><td style="text-align:right">Rp.${Number(
-        service || 0
-      ).toFixed(2)}</td></tr>
+      <tr><td>Subtotal</td><td style="text-align:right">${formatIDR(subtotal, {
+        withDecimals: true,
+      })}</td></tr>
+      <tr><td>Tax</td><td style="text-align:right">${formatIDR(tax, {
+        withDecimals: true,
+      })}</td></tr>
+      <tr><td>Service</td><td style="text-align:right">${formatIDR(service, {
+        withDecimals: true,
+      })}</td></tr>
+
       ${
         Number(discount || 0) > 0
           ? `<tr><td>Discount ${
               discountNote ? `(${discountNote})` : ""
-            }</td><td style="text-align:right">-Rp.${Number(discount).toFixed(
-              2
-            )}</td></tr>`
+            }</td><td style="text-align:right">-${formatIDR(discount, {
+              withDecimals: true,
+            })}</td></tr>`
           : ""
       }
-      <tr class="bold"><td>Total</td><td style="text-align:right">Rp.${Number(
-        total || 0
-      ).toFixed(2)}</td></tr>
+      <tr class="bold"><td>Total</td><td style="text-align:right">${formatIDR(
+        total,
+        { withDecimals: true }
+      )}</td></tr>
       <tr><td>Payment</td><td style="text-align:right">${
         payment || ""
       }</td></tr>
@@ -713,7 +822,7 @@ export default function MenuLayout() {
                 <input
                   type="text"
                   className="search-input"
-                  placeholder="Search products…"
+                  placeholder="Search products..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   autoFocus
@@ -779,38 +888,56 @@ export default function MenuLayout() {
         {/* Products */}
         <div className="products-area">
           <h2 className="visually-hidden">{selectedCategory} Menu</h2>
-          <div className="product-grid">
-            {filteredProducts.map((prod) => {
-              const key =
-                prod?._id ||
-                prod?.id ||
-                prod?.sku ||
-                Math.random().toString(36);
-              const name = prod?.name || "Untitled";
-              const desc = prod?.description || "";
-              const imgSrc = resolveProductImage(prod?.image);
-              const priceNum = Number(prod?.price ?? 0);
+          {loadingProducts ? (
+            <SkeletonGrid count={12} />
+          ) : filteredProducts.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-art">🍽️</div>
+              <h3>No products in “{selectedCategory}”</h3>
+              <p>Try another category or add new items to this menu.</p>
+              <button
+                className="empty-cta"
+                onClick={() => navigate("/product-page")}
+              >
+                Add Product
+              </button>
+            </div>
+          ) : (
+            <div className="product-grid">
+              {filteredProducts.map((prod) => {
+                const key =
+                  prod?._id ||
+                  prod?.id ||
+                  prod?.sku ||
+                  Math.random().toString(36);
+                const name = prod?.name || "Untitled";
+                const desc = prod?.description || "";
+                const priceNum = Number(prod?.price ?? 0);
 
-              return (
-                <div key={key} className="product-card">
-                  <SafeImage
-                    className="product-image"
-                    src={imgSrc}
-                    alt={name}
-                  />
-                  <h3 className="product-name">{name}</h3>
-                  <p className="product-desc">{desc}</p>
-                  <p className="product-price">{formatCurrency(priceNum)}</p>
-                  <button
-                    onClick={() => handleAddToCart(prod)}
-                    className="add-to-cart-btn"
-                  >
-                    Add to cart
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+                return (
+                  <div key={key} className="product-card">
+                    <SafeImage
+                      className="product-image"
+                      src={getImageSrc(prod)}
+                      alt={name}
+                    />
+                    <h3 className="product-name">{name}</h3>
+                    <p className="product-desc">{desc}</p>
+                    <p className="product-price">
+                      {formatIDR(priceNum, { withDecimals: true })}
+                    </p>
+
+                    <button
+                      onClick={() => handleAddToCart(prod)}
+                      className="add-to-cart-btn"
+                    >
+                      Add to cart
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Floating Cart button (mobile only) */}
@@ -867,7 +994,12 @@ export default function MenuLayout() {
                       <small>{(Number(item.quantity) || 0) * 200} ml</small>
                     </div>
                     <div className="cart-item-right">
-                      <p>{formatCurrency(Number(item.price ?? 0))}</p>
+                      <p>
+                        {formatIDR(Number(item.price ?? 0), {
+                          withDecimals: true,
+                        })}
+                      </p>
+
                       <div className="cart-qty">
                         <button onClick={() => handleDecreaseQty(item.id)}>
                           -
@@ -891,23 +1023,23 @@ export default function MenuLayout() {
               <div className="cart-summary">
                 <div className="summary-row">
                   <span>Subtotal</span>
-                  <span>{formatCurrency(sub)}</span>
+                  <span>{formatIDR(sub, { withDecimals: true })}</span>
                 </div>
                 <div className="summary-row">
                   <span>Tax (10%)</span>
-                  <span>{formatCurrency(tx)}</span>
+                  <span>{formatIDR(tx, { withDecimals: true })}</span>
                 </div>
                 <div className="summary-row">
                   <span>Service Charge (5%)</span>
-                  <span>{formatCurrency(svc)}</span>
+                  <span>{formatIDR(svc, { withDecimals: true })}</span>
                 </div>
                 <div className="summary-row">
                   <span>{discountLabel}</span>
-                  <span>-{formatCurrency(discount)}</span>
+                  <span>-{formatIDR(discount, { withDecimals: true })}</span>
                 </div>
                 <div className="summary-row total-row">
                   <strong>Total</strong>
-                  <strong>{formatCurrency(total)}</strong>
+                  <strong>{formatIDR(total, { withDecimals: true })}</strong>
                 </div>
 
                 <button
@@ -962,7 +1094,7 @@ export default function MenuLayout() {
                 <small>{(Number(item.quantity) || 0) * 200} ml</small>
               </div>
               <div className="cart-item-right">
-                <p>{formatCurrency(Number(item.price ?? 0))}</p>
+                <p>{formatIDR(Number(item.price ?? 0))}</p>
                 <div className="cart-qty">
                   <button onClick={() => handleDecreaseQty(item.id)}>-</button>
                   <span>{item.quantity}</span>
@@ -983,23 +1115,23 @@ export default function MenuLayout() {
         <div className="cart-summary">
           <div className="summary-row">
             <span>Subtotal</span>
-            <span>{formatCurrency(sub)}</span>
+            <span>{formatIDR(sub)}</span>
           </div>
           <div className="summary-row">
             <span>Tax (10%)</span>
-            <span>{formatCurrency(tx)}</span>
+            <span>{formatIDR(tx)}</span>
           </div>
           <div className="summary-row">
             <span>Service Charge (5%)</span>
-            <span>{formatCurrency(svc)}</span>
+            <span>{formatIDR(svc)}</span>
           </div>
           <div className="summary-row">
             <span>{discountLabel}</span>
-            <span>-{formatCurrency(discount)}</span>
+            <span>-{formatIDR(discount)}</span>
           </div>
           <div className="summary-row total-row">
             <strong>Total</strong>
-            <strong>{formatCurrency(total)}</strong>
+            <strong>{formatIDR(total)}</strong>
           </div>
 
           <button className="discount-btn" onClick={handleOpenDiscountModal}>
@@ -1013,45 +1145,165 @@ export default function MenuLayout() {
             {isSubmitting ? "Processing..." : "Checkout"}
           </button>
         </div>
+
+        {/* Email Receipt (desktop) */}
+        <div className="email-receipt">
+          <h4>Email Receipt (Optional)</h4>
+          <div className="email-receipt__row">
+            <input
+              className="email-receipt__input"
+              type="email"
+              placeholder="customer@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <button
+              className="email-receipt__btn"
+              onClick={handleEmailReceipt}
+              disabled={!orderNumber || sendingEmail || emailCooldownLeft > 0}
+              title={
+                emailCooldownLeft > 0
+                  ? `Resend in ${emailCooldownLeft}s`
+                  : "Email receipt"
+              }
+            >
+              {sendingEmail
+                ? "Sending…"
+                : emailCooldownLeft > 0
+                ? `Resend in ${emailCooldownLeft}s`
+                : "Email Receipt"}
+            </button>
+          </div>
+
+          {emailNotice && <p className="email-receipt__note">{emailNotice}</p>}
+          {emailError && <p className="email-receipt__error">{emailError}</p>}
+        </div>
       </aside>
 
       {/* Payment Modal */}
       {showPaymentModal && (
-        <div className="payment-modal">
-          <div className="payment-modal-content">
-            <h3>Select Payment Method</h3>
-            <ul className="payment-method-list">
-              {["Credit Card", "Debit Card", "QRIS", "Go Pay", "Grab Pay"].map(
-                (method) => (
-                  <li key={method}>
-                    <button
-                      className={`payment-method-btn ${
-                        selectedPaymentMethod === method ? "active" : ""
-                      }`}
-                      onClick={() => setSelectedPaymentMethod(method)}
-                    >
-                      {method}
-                    </button>
-                  </li>
-                )
-              )}
-            </ul>
-            <div className="payment-modal-actions">
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="paymodal-title"
+          onClick={() => !isSubmitting && setShowPaymentModal(false)}
+        >
+          <div
+            className="paymodal__dialog"
+            onClick={(e) => e.stopPropagation()}
+            role="document"
+          >
+            <header className="paymodal__head">
+              <h3 id="paymodal-title">Select Payment Method</h3>
               <button
-                className="confirm-payment-btn"
-                onClick={confirmPayment}
+                className="paymodal__close"
+                aria-label="Close"
+                onClick={() => setShowPaymentModal(false)}
                 disabled={isSubmitting}
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="paymodal__body">
+              <ul
+                className="paylist"
+                role="listbox"
+                aria-label="Payment methods"
+              >
+                {[
+                  { k: "Credit Card", i: "💳" },
+                  { k: "Debit Card", i: "🏦" },
+                  { k: "QRIS", i: "🔳" },
+                  { k: "Go Pay", i: "🟦" },
+                  { k: "Grab Pay", i: "🟩" },
+                ].map(({ k, i }) => {
+                  const selected = selectedPaymentMethod === k;
+                  return (
+                    <li key={k}>
+                      <button
+                        type="button"
+                        className={`payitem ${selected ? "is-selected" : ""}`}
+                        aria-pressed={selected}
+                        onClick={() => setSelectedPaymentMethod(k)}
+                      >
+                        <span className="payitem__icon" aria-hidden="true">
+                          {i}
+                        </span>
+                        <span className="payitem__label">{k}</span>
+                        {selected && <span className="payitem__check">✓</span>}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <hr style={{ margin: "12px 0", borderTop: "1px solid #eee" }} />
+
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={wantEmailReceipt}
+                  onChange={(e) => setWantEmailReceipt(e.target.checked)}
+                />
+                Email receipt to customer
+              </label>
+
+              {wantEmailReceipt && (
+                <div style={{ marginTop: 10 }}>
+                  <label
+                    className="register-label"
+                    style={{ display: "block", marginBottom: 4 }}
+                  >
+                    Customer Email (optional)
+                  </label>
+                  <input
+                    type="email"
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                    placeholder="customer@example.com"
+                    className="register-input"
+                    autoComplete="email"
+                  />
+                  <label
+                    className="register-label"
+                    style={{ display: "block", marginTop: 10, marginBottom: 4 }}
+                  >
+                    Customer Name (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Customer name"
+                    className="register-input"
+                  />
+                </div>
+              )}
+            </div>
+
+            <footer className="paymodal__actions">
+              <button
+                className="btn btn-primary"
+                onClick={confirmPayment}
+                disabled={isSubmitting || !selectedPaymentMethod}
+                title={
+                  !selectedPaymentMethod
+                    ? "Pick a method to continue"
+                    : "Confirm payment"
+                }
               >
                 {isSubmitting ? "Confirming…" : "Confirm Payment"}
               </button>
               <button
-                className="cancel-payment-btn"
+                className="btn btn-ghost"
                 onClick={() => setShowPaymentModal(false)}
                 disabled={isSubmitting}
               >
                 Cancel
               </button>
-            </div>
+            </footer>
           </div>
         </div>
       )}
@@ -1100,7 +1352,9 @@ export default function MenuLayout() {
                         {p.name}{" "}
                         {p.type === "percentage"
                           ? `(${p.value}% off)`
-                          : `(Rp.${Number(p.value || 0).toFixed(0)} off)`}
+                          : `(${formatIDR(Number(p.value || 0), {
+                              withDecimals: true,
+                            })} off)`}
                       </option>
                     );
                   })}
@@ -1108,7 +1362,7 @@ export default function MenuLayout() {
 
                 {promosLoading && (
                   <p className="muted" style={{ marginTop: 8 }}>
-                    Loading promotions…
+                    Loading promotions...
                   </p>
                 )}
                 {promosError && (
@@ -1125,22 +1379,29 @@ export default function MenuLayout() {
                     {selectedPromo.description && (
                       <div>- {selectedPromo.description}</div>
                     )}
+                    {/* selected promo details */}
                     {selectedPromo.minSubtotal ? (
                       <div>
                         - Min subtotal:{" "}
-                        {formatCurrency(Number(selectedPromo.minSubtotal))}
+                        {formatIDR(Number(selectedPromo.minSubtotal), {
+                          withDecimals: true,
+                        })}
                       </div>
                     ) : null}
                     {selectedPromo.maxDiscount ? (
                       <div>
                         - Max discount:{" "}
-                        {formatCurrency(Number(selectedPromo.maxDiscount))}
+                        {formatIDR(Number(selectedPromo.maxDiscount), {
+                          withDecimals: true,
+                        })}
                       </div>
                     ) : null}
                     <div style={{ marginTop: 6 }}>
                       <strong>Preview:</strong> will apply{" "}
-                      <strong>{formatCurrency(promoDiscount)}</strong> now
-                      (Subtotal: {formatCurrency(sub)})
+                      <strong>
+                        {formatIDR(promoDiscount, { withDecimals: true })}
+                      </strong>{" "}
+                      now (Subtotal: {formatIDR(sub, { withDecimals: true })})
                     </div>
                   </div>
                 )}
@@ -1192,8 +1453,10 @@ export default function MenuLayout() {
 
                 <div className="preview">
                   <strong>Preview:</strong> will apply{" "}
-                  <strong>{formatCurrency(customDiscount)}</strong> now
-                  (Subtotal: {formatCurrency(sub)})
+                  <strong>
+                    {formatIDR(customDiscount, { withDecimals: true })}
+                  </strong>
+                  ( Subtotal: {formatIDR(sub, { withDecimals: true })} )
                 </div>
               </>
             )}

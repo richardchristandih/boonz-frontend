@@ -1,13 +1,36 @@
 // src/services/api.js
 import axios from "axios";
 
-const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:5001/api";
 const ACCESS_KEY = "token";
 const REFRESH_KEY = "refreshToken";
+
+function pickBaseURL() {
+  const envUrl =
+    process.env.REACT_APP_API_URL || process.env.REACT_APP_API_BASE;
+  if (envUrl) return envUrl;
+
+  const host = window.location.hostname;
+  const isLocal =
+    host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+
+  if (isLocal) {
+    const usingProxy =
+      String(process.env.REACT_APP_USE_PROXY || "").toLowerCase() === "true";
+    return usingProxy ? "/api" : "http://localhost:5001/api";
+  }
+
+  return "/api";
+}
+
+const API_BASE = pickBaseURL();
 
 const api = axios.create({
   baseURL: API_BASE,
   withCredentials: false,
+  timeout: 15000,
+  headers: {
+    Accept: "application/json",
+  },
 });
 
 // ---------------- Request Interceptor ----------------
@@ -20,7 +43,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// ---------------- Response Interceptor ----------------
+// ---------------- Response Interceptor (401 refresh) ----------------
 let refreshPromise = null;
 
 api.interceptors.response.use(
@@ -29,28 +52,32 @@ api.interceptors.response.use(
     const { response, config } = error;
     if (!response) return Promise.reject(error);
 
-    // If not 401 or already retried → just reject
+    // Not 401 or already retried once -> just bubble up
     if (response.status !== 401 || config._retry) {
       return Promise.reject(error);
     }
 
-    config._retry = true; // avoid infinite loops
+    config._retry = true;
 
-    // One refresh request at a time
+    // One refresh request in flight at a time
     if (!refreshPromise) {
       const refreshToken = localStorage.getItem(REFRESH_KEY);
 
       if (!refreshToken) {
-        // No refresh token → force logout
-        localStorage.removeItem(ACCESS_KEY);
-        localStorage.removeItem(REFRESH_KEY);
-        localStorage.removeItem("user");
-        window.location.assign("/login");
+        localLogout();
         return Promise.reject(error);
       }
 
+      // Use a bare axios (not the instance) to avoid interceptor recursion
       refreshPromise = axios
-        .post(`${API_BASE}/auth/refresh`, { refreshToken })
+        .post(
+          `${API_BASE.replace(/\/$/, "")}/auth/refresh`,
+          { refreshToken },
+          {
+            headers: { "Content-Type": "application/json" },
+            timeout: 10000,
+          }
+        )
         .then((res) => {
           const newAccess = res.data?.accessToken;
           const newRefresh = res.data?.refreshToken ?? refreshToken;
@@ -61,15 +88,10 @@ api.interceptors.response.use(
           return newAccess;
         })
         .catch((err) => {
-          // Refresh failed → logout
-          localStorage.removeItem(ACCESS_KEY);
-          localStorage.removeItem(REFRESH_KEY);
-          localStorage.removeItem("user");
-          window.location.assign("/login");
+          localLogout();
           throw err;
         })
         .finally(() => {
-          // allow new refresh next time
           setTimeout(() => (refreshPromise = null), 0);
         });
     }
@@ -78,11 +100,21 @@ api.interceptors.response.use(
       await refreshPromise; // wait for token refresh
       const newToken = localStorage.getItem(ACCESS_KEY);
       if (newToken) config.headers.Authorization = `Bearer ${newToken}`;
-      return api(config); // retry original request
+      return api(config); // retry original request with new token
     } catch (err) {
       return Promise.reject(err);
     }
   }
 );
+
+function localLogout() {
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem("user");
+  // Hard redirect so app state resets
+  if (window.location.pathname !== "/login") {
+    window.location.assign("/login");
+  }
+}
 
 export default api;

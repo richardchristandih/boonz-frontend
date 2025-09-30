@@ -1,4 +1,3 @@
-// src/pages/Register.js
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
@@ -62,9 +61,8 @@ export default function Register() {
   // ui state
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState(""); // small success info
+  const [notice, setNotice] = useState("");
 
-  // simple ticker for cooldown label
   const [nowTs, setNowTs] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setNowTs(Date.now()), 1000);
@@ -79,7 +77,6 @@ export default function Register() {
     if (role !== "admin") setAdminPin("");
   }, [role]);
 
-  // Request one-time PIN email for admin registration
   const sendAdminPin = async () => {
     if (sendingPin || cooldownLeft > 0) return;
     setError("");
@@ -104,7 +101,6 @@ export default function Register() {
     setError("");
     setNotice("");
 
-    // basic client validation
     if (!name.trim()) return setError("Please enter your name.");
     if (!email.trim()) return setError("Please enter your email.");
     if (!password.trim()) return setError("Please enter your password.");
@@ -227,15 +223,13 @@ export default function Register() {
             </select>
           </div>
 
-          {/* Admin-only section */}
+          {/* Admin-only */}
           {role === "admin" && (
             <div className="field" style={{ marginTop: 6 }}>
-              {/* Label + Send PIN button on one row (matches .pin-row CSS) */}
               <div className="pin-row">
                 <label htmlFor="adminPin" className="register-label">
                   Admin PIN:
                 </label>
-
                 <button
                   type="button"
                   onClick={sendAdminPin}
@@ -246,7 +240,7 @@ export default function Register() {
                   {sendingPin ? (
                     <>
                       <SpinnerSVG size={16} color="#F2994A" />
-                      <span style={{ marginLeft: 8 }}>Sending…</span>
+                      <span style={{ marginLeft: 8 }}>Sending...</span>
                     </>
                   ) : cooldownLeft > 0 ? (
                     <span>Resend in {cooldownLeft}s</span>
@@ -256,7 +250,6 @@ export default function Register() {
                 </button>
               </div>
 
-              {/* PIN input directly under the row (matches .pin-input CSS) */}
               <input
                 id="adminPin"
                 type="text"
@@ -267,13 +260,11 @@ export default function Register() {
                 className="register-input pin-input"
                 placeholder={`Enter the ${PIN_LENGTH}-digit PIN`}
                 value={adminPin}
-                onChange={(e) => {
-                  // keep only digits, cap length
-                  const v = e.target.value
-                    .replace(/\D/g, "")
-                    .slice(0, PIN_LENGTH);
-                  setAdminPin(v);
-                }}
+                onChange={(e) =>
+                  setAdminPin(
+                    e.target.value.replace(/\D/g, "").slice(0, PIN_LENGTH)
+                  )
+                }
                 disabled={submitting}
                 required
               />
@@ -287,7 +278,7 @@ export default function Register() {
           {/* Submit */}
           <button
             type="submit"
-            className={`btn btn-primary register-button${
+            className={`reg-btn reg-btn-primary register-button${
               submitting ? " is-loading" : ""
             }`}
             disabled={submitting}

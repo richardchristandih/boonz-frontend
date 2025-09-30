@@ -86,7 +86,7 @@ function Login() {
             {isLoading ? (
               <>
                 <span className="btn-spinner" aria-hidden="true" />
-                Logging in…
+                Logging in...
               </>
             ) : (
               "Login"
