@@ -271,13 +271,31 @@ export default function MenuLayout() {
   const [orderNumber, setOrderNumber] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const handleDecreaseQty = useCallback((id) => {
+    setCart((prev) =>
+      prev.reduce((acc, it) => {
+        if (it.id !== id) {
+          acc.push(it);
+          return acc;
+        }
+        const q = Number(it.quantity || 0);
+        if (q <= 1) {
+          // remove the item when user clicks "–" at qty 1
+          return acc; // skip push => removed
+        }
+        acc.push({ ...it, quantity: q - 1 });
+        return acc;
+      }, [])
+    );
+  }, []);
+
   const reloadCategories = useCallback(async () => {
     try {
       setCategoriesLoading(true);
       const cats = await listCategories();
       setCategories(Array.isArray(cats) ? cats : []);
     } catch (e) {
-      console.error("Failed to load categories", e);
+      // listCategories already handles/logs; keep this lean
       setCategories([]);
     } finally {
       setCategoriesLoading(false);
@@ -352,6 +370,13 @@ export default function MenuLayout() {
 
   // mobile cart bottom sheet
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  useEffect(() => {
+    if (!mobileCartOpen) return;
+    // reset any stale transforms when the sheet opens
+    rowRefs.current.forEach?.((el) => {
+      if (el) el.style.transform = "translateX(0)";
+    });
+  }, [mobileCartOpen]);
 
   // search
   const [searchTerm, setSearchTerm] = useState("");
@@ -565,19 +590,108 @@ export default function MenuLayout() {
       ),
     []
   );
-  const handleDecreaseQty = useCallback(
-    (id) =>
-      setCart((prev) =>
-        prev.map((i) =>
-          i.id === id && i.quantity > 1 ? { ...i, quantity: i.quantity - 1 } : i
-        )
-      ),
-    []
-  );
+
   const handleRemoveItem = useCallback(
     (id) => setCart((prev) => prev.filter((i) => i.id !== id)),
     []
   );
+
+  /* ---------- Swipe-to-delete (mobile & desktop via Pointer Events) ---------- */
+  const rowRefs = useRef(new Map());
+  const pointerStartX = useRef(0);
+  const pointerDeltaX = useRef({});
+  const activePointerById = useRef({});
+  const isDraggingById = useRef({});
+  const SWIPE_THRESHOLD = 60; // px
+  const MAX_LEFT = -120;
+
+  const handlePointerDown = useCallback((e, id) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const el = rowRefs.current.get(id);
+    if (!el) return;
+
+    activePointerById.current[id] = e.pointerId;
+    isDraggingById.current[id] = false;
+    pointerStartX.current = e.clientX ?? 0;
+    pointerDeltaX.current[id] = 0;
+    try {
+      el.setPointerCapture?.(e.pointerId);
+    } catch {}
+    el.classList.add("swiping");
+  }, []);
+
+  const handlePointerMove = useCallback((e, id) => {
+    const el = rowRefs.current.get(id);
+    if (!el) return;
+    const expectedPid = activePointerById.current[id];
+    if (expectedPid == null || e.pointerId !== expectedPid) return;
+
+    const x = e.clientX ?? 0;
+    const delta = Math.min(0, x - pointerStartX.current);
+    pointerDeltaX.current[id] = delta;
+    if (!isDraggingById.current[id] && Math.abs(delta) > 3) {
+      isDraggingById.current[id] = true;
+    }
+    const clamped = Math.max(delta, MAX_LEFT);
+    el.style.transform = `translateX(${clamped}px)`;
+  }, []);
+
+  const snapBack = (el) => {
+    el.style.transition = "transform .18s ease";
+    el.style.transform = "translateX(0)";
+    const clean = () => {
+      el.style.transition = "";
+      el.removeEventListener("transitionend", clean);
+    };
+    el.addEventListener("transitionend", clean);
+  };
+
+  const slideOutAndRemove = (el, id, removeCb) => {
+    el.style.transition = "transform .18s ease";
+    el.style.transform = "translateX(-100%)";
+    const after = () => {
+      el.style.transition = "";
+      el.removeEventListener("transitionend", after);
+      removeCb(id);
+    };
+    el.addEventListener("transitionend", after);
+  };
+
+  const handlePointerUpOrCancel = useCallback((id, removeCb) => {
+    const el = rowRefs.current.get(id);
+    if (!el) return;
+
+    const delta = pointerDeltaX.current[id] || 0;
+    const wasDragging = !!isDraggingById.current[id];
+
+    delete activePointerById.current[id];
+    delete isDraggingById.current[id];
+    el.classList.remove("swiping");
+    try {
+      el.releasePointerCapture?.();
+    } catch {}
+
+    if (wasDragging && Math.abs(delta) > SWIPE_THRESHOLD) {
+      slideOutAndRemove(el, id, removeCb);
+    } else if (wasDragging) {
+      snapBack(el);
+    } else {
+      // treat as normal click/tap — do nothing to avoid interfering with buttons
+    }
+  }, []);
+
+  const getSwipeHandlers = (id) => ({
+    ref: (el) => {
+      if (el) rowRefs.current.set(id, el);
+      else rowRefs.current.delete(id);
+    },
+    onPointerDown: (e) => handlePointerDown(e, id),
+    onPointerMove: (e) => handlePointerMove(e, id),
+    onPointerUp: () => handlePointerUpOrCancel(id, handleRemoveItem),
+    onPointerCancel: () => handlePointerUpOrCancel(id, handleRemoveItem),
+    // Keep vertical scroll smooth on touch
+    style: { touchAction: "pan-y" },
+  });
 
   /* ---------- Checkout ---------- */
   const handleCheckout = useCallback(() => {
@@ -720,7 +834,7 @@ export default function MenuLayout() {
               baseDelay: 500,
             });
           }
-          await sleep(2000);
+          await sleep(PAUSE_AFTER_KOT_MS);
           for (let i = 0; i < receiptCopies; i++) {
             const printedWithLogo = androidPrintLogoAndText(
               logoDataUrl,
@@ -817,6 +931,7 @@ export default function MenuLayout() {
     wantEmailReceipt,
     customerEmail,
     customerName,
+    PAUSE_AFTER_KOT_MS,
   ]);
 
   /** Build a simple 58mm print HTML (system print) */
@@ -840,7 +955,7 @@ export default function MenuLayout() {
       .map(
         (it) => `
     <tr>
-      <td>${it.quantity || 0}× ${it.name || ""}</td>
+      <td>${it.quantity || 0}x ${it.name || ""}</td>
       <td style="text-align:right">${formatIDR(Number(it.price || 0), {
         withDecimals: true,
       })}</td>
@@ -1151,7 +1266,6 @@ export default function MenuLayout() {
                           {item.note ? "Edit note" : "Add note"}
                         </button>
                       </div>
-
                       {item.note ? (
                         <div
                           style={{
@@ -1165,28 +1279,48 @@ export default function MenuLayout() {
                         </div>
                       ) : null}
                     </div>
-                    <div className="cart-item-right">
+
+                    <div
+                      className="cart-item-right"
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        flexDirection: "column",
+                        alignItems: "flex-end",
+                        marginLeft: 8,
+                      }}
+                    >
                       <p>
                         {formatIDR(Number(item.price ?? 0), {
                           withDecimals: true,
                         })}
                       </p>
 
-                      <div className="cart-qty">
-                        <button onClick={() => handleDecreaseQty(item.id)}>
-                          -
+                      <div
+                        className="stepper"
+                        role="group"
+                        aria-label="Quantity"
+                      >
+                        <button
+                          type="button"
+                          className="stepper-btn"
+                          onClick={() => handleDecreaseQty(item.id)}
+                          aria-label="Decrease quantity"
+                        >
+                          –
                         </button>
-                        <span>{item.quantity}</span>
-                        <button onClick={() => handleIncreaseQty(item.id)}>
+                        <span className="stepper-qty" aria-live="polite">
+                          {item.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          className="stepper-btn"
+                          onClick={() => handleIncreaseQty(item.id)}
+                          aria-label="Increase quantity"
+                        >
                           +
                         </button>
                       </div>
-                      <button
-                        className="cart-remove"
-                        onClick={() => handleRemoveItem(item.id)}
-                      >
-                        &times;
-                      </button>
                     </div>
                   </div>
                 ))}
@@ -1256,7 +1390,6 @@ export default function MenuLayout() {
             </button>
           ))}
         </div>
-
         <div className="cart-items">
           {cart.map((item) => (
             <div key={item.id} className="cart-item">
@@ -1274,7 +1407,6 @@ export default function MenuLayout() {
                     {item.note ? "Edit note" : "Add note"}
                   </button>
                 </div>
-
                 {item.note ? (
                   <div
                     style={{
@@ -1288,19 +1420,42 @@ export default function MenuLayout() {
                   </div>
                 ) : null}
               </div>
-              <div className="cart-item-right">
-                <p>{formatIDR(Number(item.price ?? 0))}</p>
-                <div className="cart-qty">
-                  <button onClick={() => handleDecreaseQty(item.id)}>-</button>
-                  <span>{item.quantity}</span>
-                  <button onClick={() => handleIncreaseQty(item.id)}>+</button>
+
+              <div
+                className="cart-item-right"
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexDirection: "column",
+                  alignItems: "flex-end",
+                  marginLeft: 8,
+                }}
+              >
+                <p>
+                  {formatIDR(Number(item.price ?? 0), { withDecimals: true })}
+                </p>
+
+                <div className="stepper" role="group" aria-label="Quantity">
+                  <button
+                    type="button"
+                    className="stepper-btn"
+                    onClick={() => handleDecreaseQty(item.id)}
+                    aria-label="Decrease quantity"
+                  >
+                    –
+                  </button>
+                  <span className="stepper-qty" aria-live="polite">
+                    {item.quantity}
+                  </span>
+                  <button
+                    type="button"
+                    className="stepper-btn"
+                    onClick={() => handleIncreaseQty(item.id)}
+                    aria-label="Increase quantity"
+                  >
+                    +
+                  </button>
                 </div>
-                <button
-                  className="cart-remove"
-                  onClick={() => handleRemoveItem(item.id)}
-                >
-                  &times;
-                </button>
               </div>
             </div>
           ))}

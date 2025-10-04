@@ -26,7 +26,7 @@ body{
   font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
   background:#fff;
   color:var(--text);
-  overflow:hidden;
+  overflow:hidden; /* parent stays non-scrollable; side panels manage their own scroll */
 }
 @supports not (height:100dvh){ .layout-container{ height:100vh; } }
 
@@ -156,7 +156,16 @@ body{
 .layout-cart{
   width:300px; border-left:1px solid var(--border); background:var(--bg-soft);
   display:flex; flex-direction:column; padding:20px;
+
+  /* make the entire cart its own scroll area */
+  position:sticky; top:0;
+  height:100dvh;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding-bottom:max(20px, env(safe-area-inset-bottom));
 }
+@supports not (height:100dvh){ .layout-cart{ height:100vh; } }
+
 .cart-header{ margin-bottom:10px; }
 .cart-order-id{ color:#999; font-size:12px; }
 
@@ -174,34 +183,64 @@ body{
 
 /* Cart list */
 .cart-items{
-  flex:1 1 160px; min-height:160px; overflow-y:auto; margin-bottom:20px;
+  flex:0 0 auto;
+  min-height:160px;
+  overflow:visible;
+  margin-bottom:20px;
 }
-@media (max-height:600px){ .cart-items{ min-height:120px; flex-basis:120px; } }
+@media (max-height:600px){
+  .cart-items{ min-height:120px; }
+}
 
+/* === Row visual polish (card look) === */
 .cart-item{
-  display:flex; justify-content:space-between; align-items:flex-start;
-  gap:12px; border-bottom:1px solid #EEE; padding:10px 0;
+  display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+  padding:12px;
+  margin:10px 0;
+  border:1px solid #ececec;
+  border-radius:12px;
+  background:#fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.04);
 }
 .cart-item-left{ flex:1; overflow-wrap:normal; word-break:normal; }
 .cart-item-right{
-  display:flex; align-items:center; gap:10px; margin-left:8px;
+  display:flex;
+  gap:8px;
+  margin-left:8px;
+  align-items:flex-end;   /* right edge alignment */
+  flex-direction:column;  /* price on top, stepper below */
 }
 .cart-item-right p{
-  margin:0 6px 0 0; font-weight:700; min-width:84px; text-align:right;
+  margin:0;
+  font-weight:800;
+  text-align:right;
+  min-width:auto;
+  font-size:14px;
 }
 
-/* Quantity control */
-.cart-qty{ display:flex; align-items:center; gap:8px; }
-.cart-qty button{
-  background:#e5e7eb; border:1px solid #e5e7eb; border-radius:8px;
-  width:28px; height:28px; cursor:pointer; font-weight:800;
-  transition:background .12s,transform .06s,filter .12s;
+/* Quantity control / stepper */
+.stepper{
+  display:inline-flex;
+  align-items:center;
+  height:34px;
+  border:1px solid #e2e8f0;
+  border-radius:12px;
+  background:#fff;
+  overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.03);
 }
-.cart-qty button:hover{ background:#e2e8f0; }
-.cart-qty button:active{ transform:translateY(1px); }
-.cart-qty span{ min-width:16px; text-align:center; font-weight:700; }
+.stepper-btn{
+  width:34px;
+  height:34px;
+  display:grid; place-items:center;
+  font-weight:800; border:none; background:#fff; cursor:pointer;
+  transition:background .12s, transform .06s;
+}
+.stepper-btn:hover{ background:#f3f4f6; }
+.stepper-btn:active{ transform:translateY(1px); }
+.stepper-qty{ min-width:28px; text-align:center; font-weight:800; padding:0 8px; }
 
-/* Remove button */
+/* Remove button (icon style used elsewhere) */
 .cart-remove{
   background:#fff; border:1px solid #e5e7eb; color:#9ca3af; width:28px; height:28px;
   border-radius:8px; cursor:pointer; display:grid; place-items:center; font-size:18px;
@@ -209,6 +248,7 @@ body{
 }
 .cart-remove:hover{ color:#dc2626; border-color:#f3c1c1; background:#fff5f5; }
 .cart-remove:active{ transform:translateY(1px); }
+.cart-remove{ align-self:flex-end; }
 
 /* Summary */
 .cart-summary{ border-top:1px solid #EEE; padding-top:10px; }
@@ -229,7 +269,10 @@ body{
 /* =========================
    Email Receipt (desktop cart)
    ========================= */
-.email-receipt{ margin-top:16px; padding-top:14px; border-top:1px solid #eee; }
+.email-receipt{
+  margin-top:16px; padding-top:14px; border-top:1px solid #eee;
+  margin-bottom:16px;
+}
 .email-receipt h4{ margin:0 0 8px; font-size:18px; letter-spacing:.2px; }
 
 .email-receipt__row{
@@ -262,7 +305,7 @@ body{
 .danger{ color:#b91c1c; }
 
 /* =========================
-   Payment Modal
+   Payment Modal — refined sizing
    ========================= */
 .paymodal{
   position:fixed; inset:0; z-index:999; display:grid; place-items:center; padding:16px;
@@ -272,69 +315,87 @@ body{
 @keyframes payfade{ from{opacity:0;} to{opacity:1;} }
 
 .paymodal__dialog{
-  width:min(560px,96vw); background:#fff; border-radius:16px; box-shadow:0 18px 60px rgba(0,0,0,.18);
-  overflow:hidden; transform:translateY(6px) scale(.98); animation:payin .2s ease-out forwards;
+  width:min(420px,92vw);
+  max-height:88vh;
+  background:#fff;
+  border-radius:14px;
+  box-shadow:0 14px 40px rgba(0,0,0,.18);
+  overflow-y:auto;
+  transform:translateY(6px) scale(.98);
+  animation:payin .2s ease-out forwards;
 }
 @keyframes payin{ to{ transform:translateY(0) scale(1); } }
 
 .paymodal__head{
   display:flex; align-items:center; justify-content:space-between;
-  padding:18px 20px; border-bottom:1px solid #f0f0f0;
+  padding:14px 18px; border-bottom:1px solid #f0f0f0; background:#fafafa;
 }
-.paymodal__head h3{ margin:0; font-size:24px; font-weight:800; color:#0f172a; letter-spacing:.2px; }
+.paymodal__head h3{ margin:0; font-size:18px; font-weight:800; color:#0f172a; letter-spacing:.2px; }
 .paymodal__close{
-  border:none; background:#f3f4f6; width:34px; height:34px; border-radius:10px; cursor:pointer; font-size:16px;
+  border:none; background:#f3f4f6; width:30px; height:30px; border-radius:8px; cursor:pointer; font-size:16px;
+  transition:background .12s;
 }
 .paymodal__close:hover{ background:#eceff3; }
-.paymodal__body{ padding:16px 18px 6px; }
 
-.paylist{ list-style:none; margin:0; padding:0; display:grid; gap:12px; }
+.paymodal__body{ padding:14px 16px 6px; overflow-y:auto; }
+
+/* Payment list */
+.paylist{ list-style:none; margin:0; padding:0; display:grid; gap:10px; }
 .payitem{
-  width:100%; display:grid; grid-template-columns:40px 1fr auto; align-items:center; gap:12px;
-  padding:14px 16px; border-radius:12px; border:1px solid #e5e7eb;
-  background:linear-gradient(#f9fafb,#f8fafc);
+  width:100%; display:grid; grid-template-columns:36px 1fr auto; align-items:center; gap:10px;
+  padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb;
+  background:linear-gradient(#fafafa,#f9fafb);
   cursor:pointer; text-align:left;
   transition:transform .05s, box-shadow .15s, border-color .15s, background .15s;
 }
-.payitem:hover{ box-shadow:0 8px 18px rgba(0,0,0,.06); border-color:#dbe3ea; background:#fff; }
+.payitem:hover{ box-shadow:0 6px 14px rgba(0,0,0,.06); border-color:#dbe3ea; background:#fff; }
 .payitem:active{ transform:translateY(1px); }
 .payitem__icon{
-  width:40px; height:40px; border-radius:10px; background:#f3f4f6; display:grid; place-items:center; font-size:18px;
+  width:36px; height:36px; border-radius:8px; background:#f3f4f6; display:grid; place-items:center; font-size:18px;
 }
 .payitem__label{ font-weight:700; color:#0f172a; letter-spacing:.2px; }
 .payitem__check{ font-weight:800; color:#16a34a; }
 .payitem.is-selected{
-  border-color:#c7d2fe; box-shadow:0 12px 26px rgba(99,102,241,.16); background:linear-gradient(#fff,#f8faff);
+  border-color:#c7d2fe; box-shadow:0 8px 20px rgba(99,102,241,.16); background:linear-gradient(#fff,#f8faff);
 }
 .payitem.is-selected .payitem__icon{ background:#eef2ff; }
 
+/* Footer buttons */
 .paymodal__actions{
-  display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:16px 18px 20px; border-top:1px solid #f0f0f0;
+  display:flex; justify-content:flex-end; gap:10px; padding:14px 16px 16px; border-top:1px solid #f0f0f0; background:#fafafa;
 }
 
 .btn{
-  height:44px; border-radius:12px; font-weight:800; letter-spacing:.3px; cursor:pointer; border:1px solid transparent;
+  height:40px; border-radius:10px; font-weight:800; letter-spacing:.3px; cursor:pointer; border:1px solid transparent;
   transition:transform .05s, box-shadow .12s, background .12s, border-color .12s;
 }
 .btn:active{ transform:translateY(1px); }
 .btn:disabled{ opacity:.6; cursor:not-allowed; transform:none; }
 .btn-primary{
-  background:linear-gradient(180deg,#22c55e,#16a34a); color:#fff; border-color:#16a34a; box-shadow:0 10px 24px rgba(34,197,94,.25);
+  background:linear-gradient(180deg,#22c55e,#16a34a); color:#fff; border-color:#16a34a; box-shadow:0 6px 14px rgba(34,197,94,.25);
 }
 .btn-primary:hover{ filter:brightness(.98); }
 .btn-ghost{ background:#fff; color:#b91c1c; border-color:#f3c1c1; }
 .btn-ghost:hover{ background:#fff5f5; border-color:#dc2626; }
 
-/* Inputs in modal (fallback) */
-.paymodal input.register-input{
-  width:100%; height:44px; padding:10px 12px; border:1px solid #d9d9d9; border-radius:10px; font-size:14px; outline:none;
-}
-.paymodal .register-input:focus{ box-shadow:var(--ring); border-color:#16a34a; }
+/* Inputs in modal */
+.paymodal input.register-input,
 .paymodal textarea.register-input{
-  width:100%; min-height:100px; height:auto; line-height:1.35; padding:10px 12px;
-  border:1px solid #d9d9d9; border-radius:10px; font-size:14px; resize:vertical;
+  width:100%; font-size:14px; border:1px solid #d9d9d9; border-radius:8px; padding:8px 10px; line-height:1.35; outline:none;
+  transition:border-color .15s, box-shadow .15s;
 }
-.register-label{ display:block; font-weight:700; font-size:14px; color:#111827; margin-bottom:6px; }
+.paymodal input.register-input:focus,
+.paymodal textarea.register-input:focus{ box-shadow:var(--ring); border-color:#16a34a; }
+.paymodal textarea.register-input{ min-height:80px; resize:vertical; }
+
+/* Compact on smaller screens */
+@media (max-width:480px){
+  .paymodal__dialog{ width:94vw; max-height:90vh; }
+  .paymodal__head h3{ font-size:16px; }
+  .payitem{ padding:8px 10px; gap:8px; }
+  .paymodal__actions{ flex-direction:column; }
+  .btn{ width:100%; }
+}
 
 /* =========================
    Discount Modal
@@ -476,8 +537,7 @@ body{
 .link-btn{
   background:none; border:none; padding:0; font:inherit;
   color:#2563eb; text-decoration:underline; cursor:pointer;
-  white-space:nowrap;                     /* keep "Add note" on one line */
-  display:inline-flex; align-items:center; line-height:1.2;
+  white-space:nowrap; display:inline-flex; align-items:center; line-height:1.2;
 }
 .link-btn:hover{ filter:brightness(.95); }
 .link-btn:focus{ outline:2px solid #93c5fd; outline-offset:2px; }

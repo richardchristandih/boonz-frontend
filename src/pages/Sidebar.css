@@ -18,7 +18,7 @@
   --shadow:0 8px 24px rgba(0,0,0,.08);
 
   /* CTA (mobile Add pill) */
-  --cta:#2e7d32;
+  --cta:#2e7d3a;
   --cta-900:#7bc239;
   --cta-glow:0 10px 28px rgba(46,125,50,.35);
 
@@ -353,16 +353,22 @@
 /* ---------- NEW: Landscape (short-height) assurance ---------- */
 /* On short landscape viewports, don't pin actions to the very bottom.
    Show Add Product and Add Category side-by-side so both remain visible. */
+/* ---------- FIX: Landscape (short-height) keep column & bottom ---------- */
 @media (max-height: 580px) and (min-width: 901px){
   .sidebar-actions-stack{
-    margin-top:12px !important;        /* stop pushing to bottom */
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:10px;
+    /* Stay pinned to the bottom in all heights */
+    margin-top: auto !important;
+
+    /* Keep vertical stack (no grid) */
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px;
   }
+
   .add-product-btn,
   .add-category-btn{
-    width:auto;
-    justify-content:center;
+    width: 100%;
+    justify-content: center;
   }
 }
+
