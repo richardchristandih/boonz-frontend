@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import api from "../services/api";
 import { uploadImage } from "../utils/uploadImages";
 import "./ProductEditorModal.css";
@@ -12,23 +13,55 @@ export default function ProductEditorModal({
   onClose, // () => void
   onSaved, // (updatedProduct) => void
 }) {
-  // form state
+  // ----- form state -----
   const [form, setForm] = useState({
     name: "",
     price: "",
     category: "",
     description: "",
-    imageUrl: "", // canonical field we’ll save
+    imageUrl: "",
   });
 
-  // ui state
+  // ----- ui state -----
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
+  const [imgOk, setImgOk] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const fileInputRef = useRef(null);
 
-  // Pre-fill when opening / product changes
+  // Freeze background scroll + disable background pointer events
+  useEffect(() => {
+    if (!open) return;
+
+    const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    const prev = {
+      position: document.body.style.position,
+      top: document.body.style.top,
+      width: document.body.style.width,
+      overflow: document.body.style.overflow,
+    };
+
+    document.body.classList.add("pemodal-open");
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = "100%";
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "contain";
+
+    return () => {
+      document.body.style.position = prev.position;
+      document.body.style.top = prev.top;
+      document.body.style.width = prev.width;
+      document.body.style.overflow = prev.overflow;
+      document.documentElement.style.overscrollBehavior = "";
+      window.scrollTo(0, scrollY);
+      document.body.classList.remove("pemodal-open");
+    };
+  }, [open]);
+
+  // Init/refresh form when product changes
   useEffect(() => {
     if (!product) return;
     setForm({
@@ -36,27 +69,30 @@ export default function ProductEditorModal({
       price: product.price ?? "",
       category: product.category ?? "",
       description: product.description ?? "",
-      // prefer imageUrl, fall back to legacy image
       imageUrl: product.imageUrl || product.image || "",
     });
     setErr("");
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [product]);
 
+  // Close on ESC
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => e.key === "Escape" && onClose?.();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   const isCreate = useMemo(
     () => !product?._id && !product?.id && !product?.sku,
     [product]
   );
 
-  function setField(key, val) {
-    setForm((f) => ({ ...f, [key]: val }));
-  }
+  const setField = (key, val) => setForm((f) => ({ ...f, [key]: val }));
 
   async function handleFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // validations
     if (!ACCEPTED_TYPES.test(file.type)) {
       setErr("Please choose a PNG, JPG, WEBP, or GIF image.");
       e.target.value = "";
@@ -71,7 +107,7 @@ export default function ProductEditorModal({
     setErr("");
     setUploading(true);
     try {
-      const url = await uploadImage(file); // -> backend /uploads/image
+      const url = await uploadImage(file);
       setField("imageUrl", url);
     } catch (error) {
       console.error("Upload failed:", error);
@@ -84,7 +120,6 @@ export default function ProductEditorModal({
   async function handleSave() {
     try {
       setErr("");
-
       const name = String(form.name || "").trim();
       const priceNum = Number(form.price);
       const category = String(form.category || "").trim();
@@ -96,8 +131,6 @@ export default function ProductEditorModal({
         return setErr("Price must be a valid non-negative number.");
 
       setSaving(true);
-
-      // Send canonical field imageUrl; backend controller supports it
       const payload = {
         name,
         price: priceNum,
@@ -106,15 +139,14 @@ export default function ProductEditorModal({
         imageUrl,
       };
 
-      let updated;
-      if (isCreate) {
-        const res = await api.post("/products", payload);
-        updated = res.data;
-      } else {
-        const id = product._id || product.id || product.sku;
-        const res = await api.put(`/products/${id}`, payload);
-        updated = res.data;
-      }
+      const updated = isCreate
+        ? (await api.post("/products", payload)).data
+        : (
+            await api.put(
+              `/products/${product._id || product.id || product.sku}`,
+              payload
+            )
+          ).data;
 
       onSaved?.(updated);
       onClose?.();
@@ -130,9 +162,17 @@ export default function ProductEditorModal({
 
   if (!open) return null;
 
-  return (
+  // Render as a true centered popup (portal to body)
+  return createPortal(
     <div className="pemodal" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="pemodal__dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="pemodal__dialog"
+        onClick={(e) => e.stopPropagation()}
+        role="document"
+        tabIndex={-1}
+      >
+        <div className="pemodal__grab" aria-hidden="true" />
+
         <header className="pemodal__head">
           <strong>
             {isCreate ? "Add Product" : `Edit: ${product?.name ?? ""}`}
@@ -141,13 +181,42 @@ export default function ProductEditorModal({
             className="pemodal__close"
             aria-label="Close"
             onClick={onClose}
+            type="button"
           >
             ✕
           </button>
         </header>
 
         <div className="pemodal__body">
-          {err && <div className="pemodal__error">{err}</div>}
+          {previewOpen && form.imageUrl && imgOk && (
+            <div
+              className="pemodal__lightbox"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Image preview"
+              onClick={() => setPreviewOpen(false)}
+            >
+              <img
+                src={form.imageUrl}
+                alt="full preview"
+                className="pemodal__lightboxImg"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <button
+                type="button"
+                className="pemodal__lightboxClose"
+                aria-label="Close preview"
+                onClick={() => setPreviewOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          {err && (
+            <div className="pemodal__error" role="alert">
+              {err}
+            </div>
+          )}
 
           <label>Product Name</label>
           <input
@@ -197,17 +266,41 @@ export default function ProductEditorModal({
             placeholder="Optional description..."
           />
 
-          {/* Image upload & URL */}
           <label>Image</label>
-          {form.imageUrl ? (
-            <img
-              src={form.imageUrl}
-              alt="preview"
-              className="pemodal__preview"
-            />
-          ) : (
-            <div className="pemodal__preview --empty" aria-hidden="true" />
-          )}
+          <div className="pemodal__thumbRow">
+            {/* Small square thumbnail */}
+            <button
+              type="button"
+              className={`pemodal__thumb${form.imageUrl ? " has-img" : ""}`}
+              onClick={() => form.imageUrl && setPreviewOpen(true)}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && form.imageUrl) {
+                  e.preventDefault();
+                  setPreviewOpen(true);
+                }
+              }}
+              aria-label={
+                form.imageUrl ? "Open image preview" : "No image selected"
+              }
+              disabled={!form.imageUrl}
+            >
+              {form.imageUrl ? (
+                <img
+                  src={form.imageUrl}
+                  alt="thumbnail"
+                  className="pemodal__thumbImg"
+                  onError={() => setImgOk(false)}
+                  onLoad={() => setImgOk(true)}
+                />
+              ) : (
+                <span className="pemodal__thumbPlaceholder">+</span>
+              )}
+            </button>
+
+            <div className="pemodal__thumbHelp">
+              Click the square to preview (after selecting or pasting an image).
+            </div>
+          </div>
 
           <div className="pemodal__fileRow">
             <input
@@ -230,9 +323,8 @@ export default function ProductEditorModal({
           />
 
           <div className="pemodal__hint">
-            You can either upload a file (recommended) or paste an absolute URL.
-            Uploaded files are served from your backend at{" "}
-            <code>/static/&lt;filename&gt;</code>.
+            Upload a file (recommended) or paste an absolute URL. Uploaded files
+            are served at <code>/static/&lt;filename&gt;</code>.
           </div>
         </div>
 
@@ -241,6 +333,7 @@ export default function ProductEditorModal({
             className="btn outline"
             onClick={onClose}
             disabled={saving || uploading}
+            type="button"
           >
             Cancel
           </button>
@@ -248,11 +341,13 @@ export default function ProductEditorModal({
             className="btn primary"
             onClick={handleSave}
             disabled={saving || uploading}
+            type="button"
           >
             {saving ? "Saving..." : "Save"}
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -25,25 +25,19 @@ export default function ProductPage() {
 
         <div className="product-page__titles">
           <h1 className="product-page__title">Products</h1>
-          <p className="product-page__subtitle">
-            Manage your catalog: review items on the left, add new ones on the
-            right.
-          </p>
         </div>
       </header>
 
       <main className="product-page__grid">
-        {/* Left: List */}
         <section className="card card--stretch">
           <div className="card__head">
             <h2 className="card__title">Product List</h2>
           </div>
           <div className="card__body">
-            <ProductList showTitle={false} scroll />
+            <ProductList key={refreshKey} showTitle={false} scroll />
           </div>
         </section>
 
-        {/* Right: Form (sticky on desktop) */}
         <aside className="card card--sticky">
           <div className="card__head">
             <h2 className="card__title">Add Product</h2>

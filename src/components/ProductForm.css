@@ -1,38 +1,74 @@
-/* src/components/ProductForm.css */
+/* ===== Theme tokens (inherits from app if already defined) ===== */
+:root {
+  --brand: #f2994a;
+  --brand-900: #e68a3f;
 
-/* Theme vars (optional, shared with sidebar/mobile CTA) */
-:root{
-  --brand:#f2994a;
-  --brand-900:#e68a3f;
+  --cta: #2e7d32;
+  --cta-900: #256c2a;
+  --cta-glow: 0 10px 26px rgba(46, 125, 50, 0.28);
 
-  --cta:#2e7d32;         /* green primary */
-  --cta-900:#256c2a;     /* darker hover */
-  --cta-glow:0 10px 26px rgba(46,125,50,.28);
+  --text: #0f172a;
+  --muted: #6b7280;
+  --card: #ffffff;
+  --border: #e5e7eb;
+  --ring: 0 0 0 3px rgba(242, 153, 74, 0.18);
 }
 
+/* =========================
+   PARENT LAYOUT FIX (center)
+   ========================= */
+/* Only center the body of the right column card that hosts the form */
+.product-page .card--sticky .card__body {
+  display: flex;              /* enable centering */
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* ===== Container ===== */
 .product-form-container {
-  flex: 1;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
-  padding: 20px;
+  /* Center it inside the flex parent */
+  align-self: center;
+  margin-left: auto;
+  margin-right: auto;
+
+  /* Match ProductEditorModal sizing/feel */
+  max-width: min(560px, 92vw);
   width: 100%;
-  max-width: 720px;
+  max-height: 84svh;          /* mobile-safe viewport height */
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+
+  background: var(--card);
+  border: 1px solid #e9eef6;
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(2, 8, 23, 0.06);
+  padding: 20px;
+
+  color: var(--text);
+  box-sizing: border-box;
 }
+
+/* Prevent stretching to full width due to inherited flex styles */
+.product-form-container { flex: 0 0 auto; }
 
 .product-form-container h2 {
   margin: 0 0 16px;
   font-size: 20px;
-  color: #111827;
-  text-align: left;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
+/* Embedded mode (no internal title) */
+.product-form-container.no-title h2 { display: none; }
+.product-form-container.no-title { padding-top: 8px; }
+
+/* ===== Form ===== */
 .product-form {
   display: flex;
   flex-direction: column;
 }
 
-/* labels */
+/* Labels */
 .product-form label {
   margin-bottom: 6px;
   font-weight: 600;
@@ -40,34 +76,43 @@
   font-size: 14px;
 }
 
-/* inputs */
+/* Inputs */
 .product-form input,
 .product-form textarea,
 .product-form select {
   padding: 10px 12px;
   margin-bottom: 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
   font-size: 14px;
   width: 100%;
   box-sizing: border-box;
-  background: #fff;
+  color: var(--text);
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
 }
 
+.product-form input::placeholder,
+.product-form textarea::placeholder {
+  color: #9ca3af;
+}
+
+/* Focus ring */
 .product-form input:focus,
 .product-form textarea:focus,
 .product-form select:focus {
   border-color: var(--brand);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(242, 153, 74, 0.18);
+  box-shadow: var(--ring);
 }
 
+/* Textarea sizing */
 .product-form textarea {
   min-height: 72px;
   resize: vertical;
 }
 
-/* select caret */
+/* Select caret */
 .product-form select {
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -75,23 +120,36 @@
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M0 0l5 6 5-6z' fill='%23999'/></svg>");
   background-repeat: no-repeat;
   background-position: right 10px center;
+  background-size: 10px 6px;
+  padding-right: 28px;
 }
 
-/* preview image — responsive, no stretching */
-.product-form .image-preview {
+/* Error box */
+.product-form .error {
+  color: #b91c1c;
+  background: #fee2e2;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+/* Image preview (hidden until loaded) */
+.product-form .image-preview { display: none; }
+.product-form .image-preview.is-ready {
+  display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 16 / 9;                       /* neat card ratio */
-  max-height: clamp(120px, 26vh, 200px);      /* keep it classy */
+  aspect-ratio: 16 / 9;
+  max-height: clamp(120px, 26vh, 200px);
   border-radius: 12px;
   object-fit: cover;
-  display: block;
   margin: 0 0 10px 0;
   background: #f3f4f6;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
 }
 
-/* file input wrapper (optional) */
+/* File input row */
 .product-form .file-row {
   display: flex;
   align-items: center;
@@ -99,13 +157,9 @@
   margin-bottom: 14px;
 }
 
-/* helper / muted text */
-.muted {
-  color: #6b7280;
-  font-size: 13px;
-}
+.muted { color: var(--muted); font-size: 13px; }
 
-/* submit button — use green CTA to match mobile Add button */
+/* Submit button */
 .create-button {
   background-color: var(--cta);
   color: #fff;
@@ -113,33 +167,100 @@
   padding: 12px 16px;
   border-radius: 12px;
   font-size: 15px;
+  font-weight: 700;
   cursor: pointer;
-  transition: transform 0.06s ease, box-shadow 0.12s ease, background 0.12s ease;
+  transition: transform .06s ease, box-shadow .12s ease, background .12s ease;
   box-shadow: var(--cta-glow);
   align-self: flex-start;
 }
 .create-button:hover { background-color: var(--cta-900); transform: translateY(-1px); }
-.create-button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+.create-button:active { transform: translateY(0); }
+.create-button:disabled { opacity: .6; cursor: not-allowed; transform: none; }
 
-/* embedded mode (no internal title) */
-.product-form-container.no-title h2 { display: none; }
-.product-form-container.no-title { padding-top: 8px; }
-
-/* small error reuse */
-.product-form .error {
-  color: #b91c1c;
-  background: #fee2e2;
-  border: 1px solid rgba(220, 38, 38, 0.35);
-  padding: 10px 12px;
-  border-radius: 8px;
-  margin-bottom: 12px;
+/* Keyboard focus (nice ring) */
+.product-form :where(button, input, select, textarea):focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
-/* responsive */
-@media (max-width: 768px) {
-  .product-form-container { max-width: 100%; }
-  /* prevent iOS zoom-on-focus */
-  .product-form input,
-  .product-form textarea,
-  .product-form select { font-size: 16px; }
+/* --- ProductForm refresh styles --- */
+.cat-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pf-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #6b7280; /* gray-500 */
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+
+.pf-refresh-btn:hover {
+  background: #f3f4f6;   /* gray-100 */
+  color: #111827;        /* gray-900 */
+  border-color: #e5e7eb; /* gray-200 */
+}
+
+.pf-refresh-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.pf-icn {
+  display: inline-block;
+}
+
+@keyframes pf-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.spin {
+  animation: pf-spin .9s linear infinite;
+}
+
+/* ===== Responsiveness & Orientation ===== */
+
+/* Phone & small tablets: same proportions as the modal */
+@media (max-width: 640px) {
+  .product-form-container {
+    max-width: 96vw;           /* modal uses 96vw on phones */
+    max-height: 88svh;         /* match modal cap */
+    padding: 16px;
+    border-radius: 12px;
+  }
+  .product-form .image-preview.is-ready {
+    aspect-ratio: 16 / 10;
+    max-height: 180px;         /* match modal phone preview cap */
+  }
+}
+
+/* Portrait: a touch more headroom for keyboard/address bar */
+@media (orientation: portrait) {
+  .product-form-container { max-height: 82svh; }
+}
+
+/* Landscape on short screens: avoid cramped layout */
+@media (orientation: landscape) and (max-height: 640px) {
+  .product-form-container { max-height: 78svh; }
+}
+
+/* Respect safe areas on notched devices */
+.product-form-container {
+  padding-left: max(18px, env(safe-area-inset-left, 0px));
+  padding-right: max(18px, env(safe-area-inset-right, 0px));
+}
+
+/* ===== Reduced motion ===== */
+@media (prefers-reduced-motion: reduce) {
+  .create-button { transition: none; }
 }

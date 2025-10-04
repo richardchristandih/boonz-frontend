@@ -16,6 +16,7 @@ import SafeImage from "../components/SafeImage";
 import api from "../services/api";
 import appLogo from "../images/logo.jpg";
 import { normalizeImageUrl } from "../utils/driveUrl";
+import { listCategories } from "../services/categories";
 import {
   isAndroidBridge,
   androidListPrintersDetailed,
@@ -25,22 +26,17 @@ import {
 } from "../utils/androidBridge";
 import { sendOrderEmail, EMAIL_COOLDOWN_SEC } from "../services/orderEmail";
 import { formatIDR } from "../utils/money";
+import AddCategoryModal from "../components/AddCategoryModal";
 
-// ---------- Constants ----------
-const CATEGORIES = [
-  "Coffee",
-  "Drink",
-  "Burger",
-  "Beer",
-  "Patisserie",
-  "Matcha",
-];
+/* ---------------- Constants ---------------- */
 const TAX_RATE = 0.1;
 const SERVICE_CHARGE_RATE = 0.05;
-const MOBILE_BP = 900; // px
-
-// Printer hints (desktop/QZ only)
+const MOBILE_BP = 1024; // px
 const RECEIPT_PRINTER_HINT = /RPP02N/i;
+
+// Category UX preferences
+const DEFAULT_CATEGORY = "Coffee";
+const PRIMARY_ORDER = ["Coffee", "Burger"]; // force these to the front (after "All")
 
 const productImages = require.context(
   "../images",
@@ -48,6 +44,7 @@ const productImages = require.context(
   /\.(png|jpe?g|gif|webp)$/
 );
 
+/* ---------------- Small components ---------------- */
 function SkeletonCard() {
   return (
     <div className="product-card skeleton">
@@ -62,7 +59,6 @@ function SkeletonCard() {
     </div>
   );
 }
-
 function SkeletonGrid({ count = 8 }) {
   return (
     <div className="product-grid">
@@ -72,18 +68,43 @@ function SkeletonGrid({ count = 8 }) {
     </div>
   );
 }
+/** Lightweight pill skeletons for the chip row (no CSS changes required) */
+function ChipsSkeleton({ count = 6 }) {
+  const widths = [64, 72, 88, 70, 96, 84, 60, 90];
+  return (
+    <div className="chip-row" aria-hidden="true" style={{ gap: 8 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <span
+          key={i}
+          style={{
+            display: "inline-block",
+            height: 32,
+            width: widths[i % widths.length],
+            borderRadius: 16,
+            background:
+              "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.12), rgba(0,0,0,0.06))",
+            backgroundSize: "200% 100%",
+            animation: "chip-shimmer 1.2s linear infinite",
+          }}
+        />
+      ))}
+      <style>{`
+        @keyframes chip-shimmer { 
+          0% { background-position: 200% 0 }
+          100% { background-position: -200% 0 }
+        }
+      `}</style>
+    </div>
+  );
+}
 
 function getImageSrc(product) {
   const raw = product?.imageUrl || product?.image || "";
   if (!raw) return null;
-
-  // Convert Google Drive links if needed
   const normalized = normalizeImageUrl(raw);
-
   if (/^https?:\/\//i.test(normalized) || normalized.startsWith("data:")) {
     return normalized;
   }
-
   try {
     return productImages("./" + normalized);
   } catch {
@@ -91,7 +112,7 @@ function getImageSrc(product) {
   }
 }
 
-// ---------- Helpers ----------
+/* ---------------- Helpers ---------------- */
 async function toDataUrl(url) {
   const res = await fetch(url);
   const blob = await res.blob();
@@ -102,12 +123,10 @@ async function toDataUrl(url) {
     fr.readAsDataURL(blob);
   });
 }
-
 function isAndroidChrome() {
   const ua = navigator.userAgent || "";
   return /Android/i.test(ua) && /Chrome/i.test(ua) && !window.AndroidPrinter;
 }
-
 function printReceiptViaSystem(html) {
   const w = window.open("", "_blank");
   if (!w) return alert("Pop-up blocked. Please allow pop-ups and try again.");
@@ -115,7 +134,6 @@ function printReceiptViaSystem(html) {
   w.document.write(html);
   w.document.close();
 }
-
 function buildKitchenTicket({
   shopName,
   orderNumber,
@@ -134,13 +152,16 @@ function buildKitchenTicket({
     (customer?.name ? `[L]Cust : ${customer.name}\n` : ``) +
     `[C]------------------------------\n`;
   const lines = (items || [])
-    .map(
-      (it) => `[L]<b>${Number(it.quantity || 0)} x ${it.name || "Item"}</b>\n`
-    )
+    .map((it) => {
+      const qtyLine = `[L]<b>${Number(it.quantity || 0)} x ${
+        it.name || "Item"
+      }</b>\n`;
+      const noteLine = it.note ? `[L]   - ${it.note}\n` : "";
+      return qtyLine + noteLine;
+    })
     .join("");
   return header + lines + `[C]------------------------------\n\n`;
 }
-
 function computePromoDiscount(promo, subtotal) {
   if (!promo || !promo.active) return 0;
   if (promo.minSubtotal && subtotal < Number(promo.minSubtotal)) return 0;
@@ -152,8 +173,6 @@ function computePromoDiscount(promo, subtotal) {
     d = Number(promo.maxDiscount);
   return Math.max(0, d);
 }
-
-// small hook for responsive layout
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined" ? window.innerWidth < MOBILE_BP : false
@@ -166,8 +185,6 @@ function useIsMobile() {
   }, []);
   return isMobile;
 }
-
-// ---------- Prefs / timing ----------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function getPrinterPrefs() {
   return {
@@ -183,11 +200,57 @@ function getPrinterPrefs() {
     ),
   };
 }
+function deriveCategoryNames(products = []) {
+  const set = new Set();
+  products.forEach((p) => {
+    const c = (p?.category || "").trim();
+    if (c) set.add(c);
+  });
+  return Array.from(set);
+}
+const includesCI = (arr, name) =>
+  arr.some((n) => n.toLowerCase() === (name || "").toLowerCase());
 
-// ---------- Component ----------
+function buildOrderedChips(apiCats, prodCats) {
+  const map = new Map();
+  const add = (name) => {
+    const clean = (name || "").trim();
+    if (!clean) return;
+    const key = clean.toLowerCase();
+    if (!map.has(key)) map.set(key, clean);
+  };
+  (apiCats || []).forEach(add);
+  (prodCats || []).forEach(add);
+
+  if (map.size === 0) {
+    ["Coffee", "Drink", "Burger", "Beer", "Patisserie", "Matcha"].forEach(add);
+  }
+
+  const allNames = Array.from(map.values());
+  const primary = ["Coffee", "Burger"]
+    .filter((p) => includesCI(allNames, p))
+    .map((p) => allNames.find((n) => n.toLowerCase() === p.toLowerCase()));
+
+  const rest = allNames
+    .filter((n) => !includesCI(primary, n))
+    .sort((a, b) => a.localeCompare(b));
+
+  const ordered = [...primary, ...rest];
+  return ordered.length > 1 ? ["All", ...ordered] : ordered;
+}
+
+/* ---------------- Component ---------------- */
 export default function MenuLayout() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+
+  // categories from API (preferred)
+  const [categories, setCategories] = useState([]); // [{_id, name}]
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORY);
+  const [addCatOpen, setAddCatOpen] = useState(false); // stays but won't be opened
+
+  const initRef = useRef(true);
 
   // user
   const storedUser = localStorage.getItem("user");
@@ -199,14 +262,55 @@ export default function MenuLayout() {
   const [customerName, setCustomerName] = useState(user?.name || "");
 
   const [products, setProducts] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState("Coffee");
+  const [loadingProducts, setLoadingProducts] = useState(true);
+
   const [cart, setCart] = useState([]);
   const [orderType, setOrderType] = useState("Delivery");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [loadingProducts, setLoadingProducts] = useState(true);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [orderNumber, setOrderNumber] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const reloadCategories = useCallback(async () => {
+    try {
+      setCategoriesLoading(true);
+      const cats = await listCategories();
+      setCategories(Array.isArray(cats) ? cats : []);
+    } catch (e) {
+      console.error("Failed to load categories", e);
+      setCategories([]);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, []);
+
+  // note modal
+  const [noteModal, setNoteModal] = useState({
+    open: false,
+    id: null,
+    text: "",
+  });
+
+  const openNoteModal = useCallback((item) => {
+    setNoteModal({
+      open: true,
+      id: item.id,
+      text: (item.note || "").toString(),
+    });
+  }, []);
+  const closeNoteModal = useCallback(() => {
+    setNoteModal({ open: false, id: null, text: "" });
+  }, []);
+  const saveNoteModal = useCallback(() => {
+    setCart((prev) =>
+      prev.map((i) =>
+        i.id === noteModal.id
+          ? { ...i, note: (noteModal.text || "").trim() }
+          : i
+      )
+    );
+    closeNoteModal();
+  }, [noteModal, closeNoteModal, setCart]);
 
   // desktop “Email Receipt” box
   const [email, setEmail] = useState(user?.email || "");
@@ -215,7 +319,6 @@ export default function MenuLayout() {
   const [emailError, setEmailError] = useState("");
   const [emailCooldownUntil, setEmailCooldownUntil] = useState(0);
   const [nowTsEmail, setNowTsEmail] = useState(Date.now());
-
   useEffect(() => {
     const id = setInterval(() => setNowTsEmail(Date.now()), 1000);
     return () => clearInterval(id);
@@ -229,12 +332,11 @@ export default function MenuLayout() {
     if (!orderNumber) return alert("Place an order first.");
     if (!email) return alert("Enter an email address.");
     if (sendingEmail || emailCooldownLeft > 0) return;
-
     try {
       setSendingEmail(true);
       setEmailNotice("");
       setEmailError("");
-      await sendOrderEmail(orderNumber, email); // optional 3rd arg: logoUrl
+      await sendOrderEmail(orderNumber, email);
       setEmailNotice(`Receipt sent to ${email}.`);
       setEmailCooldownUntil(Date.now() + EMAIL_COOLDOWN_SEC * 1000);
     } catch (e) {
@@ -293,7 +395,7 @@ export default function MenuLayout() {
     if (!user) navigate("/login");
   }, [user, navigate]);
 
-  // fetch products
+  /* 1) Load products once */
   useEffect(() => {
     (async () => {
       try {
@@ -314,6 +416,19 @@ export default function MenuLayout() {
     })();
   }, []);
 
+  /* 2) Load categories from backend on mount */
+  useEffect(() => {
+    reloadCategories();
+  }, [reloadCategories]);
+
+  /* 3) Final safety fallback if absolutely nothing known after both load */
+  useEffect(() => {
+    if (!selectedCategory && products.length && categories.length === 0) {
+      const derived = deriveCategoryNames(products);
+      setSelectedCategory(derived[0] || DEFAULT_CATEGORY);
+    }
+  }, [categories.length, products, selectedCategory]);
+
   const fetchPromos = useCallback(async () => {
     try {
       setPromosLoading(true);
@@ -329,13 +444,47 @@ export default function MenuLayout() {
     }
   }, []);
 
+  /* ---------- Chips (stable order) ---------- */
+  const chipNames = useMemo(() => {
+    const fromApi = (categories || []).map((c) => c?.name).filter(Boolean);
+    const fromProducts = deriveCategoryNames(products);
+    return buildOrderedChips(fromApi, fromProducts);
+  }, [categories, products]);
+
+  const dataReady = !loadingProducts && !categoriesLoading;
+  const chipReady = dataReady && chipNames.length > 0;
+
+  useEffect(() => {
+    if (!chipReady) return;
+    const prefer =
+      chipNames.find(
+        (n) => n.toLowerCase() === DEFAULT_CATEGORY.toLowerCase()
+      ) || chipNames[0];
+
+    if (initRef.current) {
+      if (!includesCI(chipNames, selectedCategory)) {
+        setSelectedCategory(prefer);
+      }
+      initRef.current = false;
+      return;
+    }
+    if (!includesCI(chipNames, selectedCategory)) {
+      setSelectedCategory(prefer);
+    }
+  }, [chipReady, chipNames, selectedCategory]);
+
+  /* ---------- Product filtering ---------- */
   const filteredProducts = useMemo(() => {
     const term = (searchTerm || "").toLowerCase();
     const list = Array.isArray(products) ? products : [];
     return list.filter((p) => {
       const category = (p?.category ?? "").trim();
       const name = p?.name ?? "";
-      return category === selectedCategory && name.toLowerCase().includes(term);
+      const categoryOk =
+        !selectedCategory || selectedCategory === "All"
+          ? true
+          : category.toLowerCase() === selectedCategory.toLowerCase();
+      return categoryOk && name.toLowerCase().includes(term);
     });
   }, [products, searchTerm, selectedCategory]);
 
@@ -387,7 +536,7 @@ export default function MenuLayout() {
       : "Discount";
   }, [discountMode, selectedPromo, discountType, discountValue]);
 
-  // cart ops
+  /* ---------- Cart ops ---------- */
   const handleAddToCart = useCallback((product) => {
     if (!product) return;
     const productId = product._id || product.id || product.sku;
@@ -404,6 +553,7 @@ export default function MenuLayout() {
           price: Number(product.price ?? 0),
           quantity: 1,
           id: productId,
+          note: "",
         },
       ];
     });
@@ -429,7 +579,7 @@ export default function MenuLayout() {
     []
   );
 
-  // checkout
+  /* ---------- Checkout ---------- */
   const handleCheckout = useCallback(() => {
     if (cart.length === 0) {
       window.alert("Your cart is empty!");
@@ -477,6 +627,7 @@ export default function MenuLayout() {
         name: item.name,
         quantity: item.quantity,
         price: Number(item.price ?? 0),
+        note: item.note || undefined,
       })),
       subtotal: sub,
       tax: tx,
@@ -506,7 +657,6 @@ export default function MenuLayout() {
       const newOrderNumber = response.data?.orderNumber;
       setOrderNumber(newOrderNumber);
 
-      // PRINT — Kitchen ticket FIRST, then customer receipt
       try {
         const { receiptCopies, kitchenCopies } = getPrinterPrefs();
         const dateStr = new Date().toLocaleString();
@@ -520,11 +670,16 @@ export default function MenuLayout() {
           customer: { name: user?.name || "" },
         });
 
+        const itemsForReceipt = orderData.products.map((it) => ({
+          ...it,
+          name: it.note ? `${it.name} [${it.note}]` : it.name,
+        }));
+
         let receiptText = buildReceipt({
           address: "Jl. Mekar Utama No. 61, Bandung",
           orderNumber: newOrderNumber || "N/A",
           dateStr,
-          items: orderData.products,
+          items: itemsForReceipt,
           subtotal: orderData.subtotal,
           tax: orderData.tax,
           service: orderData.serviceCharge,
@@ -534,8 +689,7 @@ export default function MenuLayout() {
           orderType: orderData.orderType,
           customer: { name: user?.name || "" },
           discountNote: finalDiscountNote,
-        });
-        receiptText = receiptText.replace(/^[\s\r\n]+/, "");
+        }).replace(/^[\s\r\n]+/, "");
 
         const logoPref = localStorage.getItem("print.logo") || appLogo;
         const logoDataUrl =
@@ -543,12 +697,9 @@ export default function MenuLayout() {
             ? logoPref
             : await toDataUrl(logoPref);
 
-        // ---------- ANDROID (WebView app) ----------
         if (isAndroidBridge()) {
-          // Determine targets (prefer saved MAC; fallback to first paired)
           const paired = androidListPrintersDetailed();
           const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
-
           const receiptTarget =
             localStorage.getItem("printer.receipt") || fallbackAddr;
           const kitchenTarget =
@@ -560,8 +711,6 @@ export default function MenuLayout() {
             );
             throw new Error("Bluetooth disabled");
           }
-
-          // KOT (text only; reliable)
           for (let i = 0; i < kitchenCopies; i++) {
             await androidPrintWithRetry(kotText, {
               address: kitchenTarget,
@@ -571,20 +720,13 @@ export default function MenuLayout() {
               baseDelay: 500,
             });
           }
-
-          await sleep(PAUSE_AFTER_KOT_MS);
-
-          // Receipt (logo + text if bridge supports; else text)
+          await sleep(2000);
           for (let i = 0; i < receiptCopies; i++) {
             const printedWithLogo = androidPrintLogoAndText(
               logoDataUrl,
               receiptText,
-              {
-                address: receiptTarget,
-                nameLike: receiptTarget,
-              }
+              { address: receiptTarget, nameLike: receiptTarget }
             );
-
             if (!printedWithLogo) {
               await androidPrintWithRetry(receiptText, {
                 address: receiptTarget,
@@ -594,15 +736,12 @@ export default function MenuLayout() {
                 baseDelay: 500,
               });
             } else {
-              await sleep(700); // let BT buffer flush
+              await sleep(700);
             }
           }
-
-          // stop here; don't run desktop code
           return;
         }
 
-        // ---------- ANDROID CHROME (no bridge): system print ----------
         if (isAndroidChrome()) {
           const html = buildReceiptHtml({
             address: "Jl. Mekar Utama No. 61, Bandung",
@@ -622,7 +761,6 @@ export default function MenuLayout() {
           });
           printReceiptViaSystem(html);
         } else {
-          // ---------- DESKTOP (QZ) ----------
           const printers = await listPrinters();
           if (!Array.isArray(printers) || printers.length === 0)
             throw new Error("No printers found (QZ).");
@@ -641,7 +779,6 @@ export default function MenuLayout() {
         );
       }
 
-      // reset state relevant to the cart
       setCart([]);
       setSelectedPromoId("");
       setDiscountMode("promo");
@@ -702,12 +839,14 @@ export default function MenuLayout() {
     const rows = (items || [])
       .map(
         (it) => `
-      <tr>
-        <td>${it.quantity || 0}× ${it.name || ""}</td>
-        <td style="text-align:right">${formatIDR(Number(it.price || 0), {
-          withDecimals: true,
-        })}</td>
-      </tr>`
+    <tr>
+      <td>${it.quantity || 0}× ${it.name || ""}</td>
+      <td style="text-align:right">${formatIDR(Number(it.price || 0), {
+        withDecimals: true,
+      })}</td>
+    </tr>
+    ${it.note ? `<tr><td colspan="2"><em>Note: ${it.note}</em></td></tr>` : ""}
+  `
       )
       .join("");
 
@@ -786,25 +925,35 @@ export default function MenuLayout() {
 
   return (
     <div className="layout-container">
-      <Sidebar onAddProduct={() => navigate("/product-page")} />
+      <Sidebar
+        onAddProduct={() => navigate("/product-page")}
+        // ⬇️ change: go to Categories page instead of opening the modal
+        onAddCategory={() => navigate("/admin/categories")}
+      />
 
       <main className="layout-main">
         {/* Sticky top bar */}
         <div className="layout-topbar">
-          {/* swipeable category chips */}
-          <div className="chip-row" role="tablist" aria-label="Categories">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                role="tab"
-                aria-selected={cat === selectedCategory}
-                className={`chip ${cat === selectedCategory ? "active" : ""}`}
-                onClick={() => setSelectedCategory(cat)}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          {/* category chips (only after BOTH lists finish) */}
+          {chipReady ? (
+            <div className="chip-row" role="tablist" aria-label="Categories">
+              {chipNames.map((name) => (
+                <button
+                  key={name}
+                  role="tab"
+                  aria-selected={name === selectedCategory}
+                  className={`chip ${
+                    name === selectedCategory ? "active" : ""
+                  }`}
+                  onClick={() => setSelectedCategory(name)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <ChipsSkeleton />
+          )}
 
           {/* right controls */}
           <div className="topbar-actions">
@@ -887,13 +1036,13 @@ export default function MenuLayout() {
 
         {/* Products */}
         <div className="products-area">
-          <h2 className="visually-hidden">{selectedCategory} Menu</h2>
+          <h2 className="visually-hidden">{selectedCategory || "All"} Menu</h2>
           {loadingProducts ? (
             <SkeletonGrid count={12} />
           ) : filteredProducts.length === 0 ? (
             <div className="empty-state">
               <div className="empty-art">🍽️</div>
-              <h3>No products in “{selectedCategory}”</h3>
+              <h3>No products in “{selectedCategory || "All"}”</h3>
               <p>Try another category or add new items to this menu.</p>
               <button
                 className="empty-cta"
@@ -992,6 +1141,29 @@ export default function MenuLayout() {
                       <strong>{item.name}</strong>
                       <br />
                       <small>{(Number(item.quantity) || 0) * 200} ml</small>
+                      <div style={{ marginTop: 6 }}>
+                        <button
+                          className="link-btn"
+                          onClick={() => openNoteModal(item)}
+                          type="button"
+                          style={{ fontSize: 12 }}
+                        >
+                          {item.note ? "Edit note" : "Add note"}
+                        </button>
+                      </div>
+
+                      {item.note ? (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 12,
+                            fontStyle: "italic",
+                            opacity: 0.8,
+                          }}
+                        >
+                          “{item.note}”
+                        </div>
+                      ) : null}
                     </div>
                     <div className="cart-item-right">
                       <p>
@@ -1092,6 +1264,29 @@ export default function MenuLayout() {
                 <strong>{item.name}</strong>
                 <br />
                 <small>{(Number(item.quantity) || 0) * 200} ml</small>
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    className="link-btn"
+                    onClick={() => openNoteModal(item)}
+                    type="button"
+                    style={{ fontSize: 12 }}
+                  >
+                    {item.note ? "Edit note" : "Add note"}
+                  </button>
+                </div>
+
+                {item.note ? (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 12,
+                      fontStyle: "italic",
+                      opacity: 0.8,
+                    }}
+                  >
+                    “{item.note}”
+                  </div>
+                ) : null}
               </div>
               <div className="cart-item-right">
                 <p>{formatIDR(Number(item.price ?? 0))}</p>
@@ -1308,6 +1503,61 @@ export default function MenuLayout() {
         </div>
       )}
 
+      {noteModal.open && (
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="note-title"
+          onClick={closeNoteModal}
+        >
+          <div
+            className="paymodal__dialog"
+            role="document"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="paymodal__head">
+              <h3 id="note-title">Add a note</h3>
+              <button
+                className="paymodal__close"
+                aria-label="Close"
+                onClick={closeNoteModal}
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="paymodal__body">
+              <label
+                className="register-label"
+                style={{ display: "block", marginBottom: 6 }}
+              >
+                Note for this item (e.g., “no onion”, “extra spicy”)
+              </label>
+              <textarea
+                rows={4}
+                className="register-input"
+                value={noteModal.text}
+                onChange={(e) =>
+                  setNoteModal((m) => ({ ...m, text: e.target.value }))
+                }
+                placeholder="Type note…"
+                autoFocus
+              />
+            </div>
+
+            <footer className="paymodal__actions">
+              <button className="btn btn-primary" onClick={saveNoteModal}>
+                Save
+              </button>
+              <button className="btn btn-ghost" onClick={closeNoteModal}>
+                Cancel
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
       {/* Discount Modal */}
       {showDiscountModal && (
         <div className="discount-modal">
@@ -1379,7 +1629,6 @@ export default function MenuLayout() {
                     {selectedPromo.description && (
                       <div>- {selectedPromo.description}</div>
                     )}
-                    {/* selected promo details */}
                     {selectedPromo.minSubtotal ? (
                       <div>
                         - Min subtotal:{" "}
@@ -1468,6 +1717,17 @@ export default function MenuLayout() {
           </div>
         </div>
       )}
+
+      {/* Add Category Modal (kept, but never opened from here) */}
+      <AddCategoryModal
+        open={addCatOpen}
+        onClose={() => setAddCatOpen(false)}
+        onCreated={(newCat) => {
+          reloadCategories().then(() => {
+            if (newCat?.name) setSelectedCategory(newCat.name);
+          });
+        }}
+      />
     </div>
   );
 }

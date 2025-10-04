@@ -7,9 +7,11 @@ import DashboardSkeleton from "../components/DashboardSkeleton";
 import ErrorState from "../components/ErrorState";
 import api from "../services/api";
 import "./Dashboard.css";
-import { formatIDR } from "../utils/money"; // <-- shared Rupiah formatter
+import { formatIDR } from "../utils/money";
 
 ChartJS.register(...registerables);
+
+// Inline SVG so the arrow never "pops in" late
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -24,7 +26,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       const { data } = await api.get("/dashboard");
       setDashboardData(data);
@@ -35,105 +37,115 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
     fetchData();
   }, []);
 
-  if (loading) return <DashboardSkeleton />;
-
-  if (error) {
-    return (
-      <ErrorState
-        message={error}
-        onRetry={() => {
-          setLoading(true);
-          fetchData();
-        }}
-      />
-    );
-  }
-
-  const { totalSales, orderCount, averageOrder, productSales } = dashboardData;
-
   return (
     <div className="page-container">
+      {/* Back button always rendered */}
       <button className="back-btn" onClick={() => navigate("/")}>
         <i className="fas fa-arrow-left" /> Back
       </button>
 
-      <h1 className="page-title">Sales Dashboard</h1>
+      {/* Error state (keeps back button visible) */}
+      {error && (
+        <ErrorState
+          message={error}
+          onRetry={() => {
+            setLoading(true);
+            fetchData();
+          }}
+        />
+      )}
 
-      <section className="cards-grid">
-        <div className="card">
-          <h3>Today&apos;s Sales</h3>
-          <p className="metric">
-            {formatIDR(totalSales.day, { withDecimals: true })}
-          </p>
-        </div>
-        <div className="card">
-          <h3>This Month&apos;s Sales</h3>
-          <p className="metric">
-            {formatIDR(totalSales.month, { withDecimals: true })}
-          </p>
-        </div>
-        <div className="card">
-          <h3>This Year&apos;s Sales</h3>
-          <p className="metric">
-            {formatIDR(totalSales.year, { withDecimals: true })}
-          </p>
-        </div>
-        <div className="card">
-          <h3>Total Orders</h3>
-          <p className="metric">{orderCount}</p>
-        </div>
-        <div className="card">
-          <h3>Average Order</h3>
-          <p className="metric">
-            {formatIDR(averageOrder, { withDecimals: true })}
-          </p>
-        </div>
-      </section>
+      {/* Loading skeleton (keeps back button visible) */}
+      {loading && !error && <DashboardSkeleton />}
 
-      <section className="card scroll-card">
-        <div className="card__head">
-          <h2 className="card__title">Product Sales (Chart)</h2>
-        </div>
-        <div className="card__body scroll-body">
-          <div className="chart-wrap">
-            <ProductSalesChart productSales={productSales} />
-          </div>
-        </div>
-      </section>
+      {/* Main content */}
+      {!loading && !error && dashboardData && (
+        <>
+          <h1 className="page-title">Sales Dashboard</h1>
 
-      <section className="card scroll-card">
-        <div className="card__head">
-          <h2 className="card__title">Product Sales (Table)</h2>
-        </div>
-        <div className="card__body scroll-body">
-          <div className="table-wrap">
-            <table className="product-sales-table">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Quantity Sold</th>
-                  <th>Total Sales</th>
-                </tr>
-              </thead>
-              <tbody>
-                {productSales.map((item) => (
-                  <tr key={item.productId || item.name}>
-                    <td>{item.name}</td>
-                    <td>{item.quantity}</td>
-                    <td>{formatIDR(item.total, { withDecimals: true })}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
+          <section className="cards-grid">
+            <div className="card">
+              <h3>Today&apos;s Sales</h3>
+              <p className="metric">
+                {formatIDR(dashboardData.totalSales.day, {
+                  withDecimals: true,
+                })}
+              </p>
+            </div>
+            <div className="card">
+              <h3>This Month&apos;s Sales</h3>
+              <p className="metric">
+                {formatIDR(dashboardData.totalSales.month, {
+                  withDecimals: true,
+                })}
+              </p>
+            </div>
+            <div className="card">
+              <h3>This Year&apos;s Sales</h3>
+              <p className="metric">
+                {formatIDR(dashboardData.totalSales.year, {
+                  withDecimals: true,
+                })}
+              </p>
+            </div>
+            <div className="card">
+              <h3>Total Orders</h3>
+              <p className="metric">{dashboardData.orderCount}</p>
+            </div>
+            <div className="card">
+              <h3>Average Order</h3>
+              <p className="metric">
+                {formatIDR(dashboardData.averageOrder, { withDecimals: true })}
+              </p>
+            </div>
+          </section>
+
+          <section className="card scroll-card">
+            <div className="card__head">
+              <h2 className="card__title">Product Sales (Chart)</h2>
+            </div>
+            <div className="card__body scroll-body">
+              <div className="chart-wrap">
+                <ProductSalesChart productSales={dashboardData.productSales} />
+              </div>
+            </div>
+          </section>
+
+          <section className="card scroll-card">
+            <div className="card__head">
+              <h2 className="card__title">Product Sales (Table)</h2>
+            </div>
+            <div className="card__body scroll-body">
+              <div className="table-wrap">
+                <table className="product-sales-table">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Quantity Sold</th>
+                      <th>Total Sales</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboardData.productSales.map((item) => (
+                      <tr key={item.productId || item.name}>
+                        <td>{item.name}</td>
+                        <td>{item.quantity}</td>
+                        <td>{formatIDR(item.total, { withDecimals: true })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }

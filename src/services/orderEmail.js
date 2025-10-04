@@ -1,10 +1,9 @@
 // src/services/orderEmail.js
-import api from "../services/api";
+import api from "./api";
+export const EMAIL_COOLDOWN_SEC = 15;
 
-export const EMAIL_COOLDOWN_SEC = 60;
-
-export async function sendOrderEmail(orderId, to, extra = {}) {
-  if (!orderId) throw new Error("sendOrderEmail: Missing orderId");
-  if (!to) throw new Error("sendOrderEmail: Missing 'to' email");
-  await api.post(`/orders/${orderId}/send-email`, { to, ...extra });
+export async function sendOrderEmail(orderId, to, logoUrl) {
+  const id = encodeURIComponent(orderId);
+  const res = await api.post(`/orders/${id}/email`, { to, logoUrl });
+  return res.data;
 }

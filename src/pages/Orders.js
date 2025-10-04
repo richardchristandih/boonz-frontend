@@ -156,7 +156,7 @@ export default function Orders() {
         <i className="fas fa-arrow-left" /> Back
       </button>
 
-      <h2 className="orders-heading">Orders</h2>
+      <h1 className="orders-heading">Orders</h1>
 
       {/* Filter + Summary Row */}
       <div className="orders-toolbar">

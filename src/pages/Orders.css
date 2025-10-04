@@ -14,27 +14,31 @@
   box-sizing: border-box;
 }
 
+
 /* Back */
 .back-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid #e5e7eb;
+  gap: 10px;
+  padding: 10px 14px;
   background: #fff;
-  border-radius: 10px;
-  padding: 8px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-  margin-bottom: 10px;
+  color: var(--text);
+  transition: transform .06s ease, box-shadow .2s ease, background .15s ease, border-color .15s ease;
 }
 .back-btn:hover { background: #f8fafc; }
+.back-icon { font-weight: 600; }
 
 /* Heading */
 .orders-heading {
-  text-align: left;
-  margin: 6px 0 12px;
-  font-size: 22px;
-  font-weight: 800;
+  font-size: 26px;       
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 16px 0 20px;
+  color: #111827;       
 }
 
 /* Toolbar */

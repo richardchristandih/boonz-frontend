@@ -1,11 +1,12 @@
-// src/components/ProductForm.jsx
-import React, { useRef, useState } from "react";
+// src/components/ProductForm.js
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import api from "../services/api";
 import { uploadImage } from "../utils/uploadImages";
-import { normalizeImageUrl } from "../utils/driveUrl"; // <-- make sure this file exists (see note below)
+import { normalizeImageUrl } from "../utils/driveUrl";
+import { listCategories } from "../services/categories";
 import "./ProductForm.css";
 
-const CATEGORY_OPTIONS = [
+const SEED_CATEGORIES = [
   "Coffee",
   "Drink",
   "Burger",
@@ -13,38 +14,103 @@ const CATEGORY_OPTIONS = [
   "Patisserie",
   "Matcha",
 ];
+const PREFERRED_ORDER_FIRST = ["Coffee", "Burger"];
 
 const MAX_FILE_MB = 5;
 const ACCEPTED_TYPES = /image\/(png|jpe?g|webp|gif)/i;
 
-/**
- * ProductForm
- * @param {Function} onSuccess  - callback after successful create
- * @param {boolean}  showTitle  - render internal <h2>; default false
- */
+function sortAndMergeCategories(seed = [], fromApi = []) {
+  const merged = Array.from(new Set([...seed, ...fromApi.filter(Boolean)]));
+  const preferred = PREFERRED_ORDER_FIRST.filter((n) => merged.includes(n));
+  const rest = merged
+    .filter((n) => !preferred.includes(n))
+    .sort((a, b) => a.localeCompare(b));
+  return [...preferred, ...rest];
+}
+
+const RefreshIcon = ({ spinning = false }) => (
+  <svg
+    className={spinning ? "pf-icn spin" : "pf-icn"}
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    <path
+      d="M20 12a8 8 0 10-2.34 5.66M20 4v6h-6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 export default function ProductForm({ onSuccess, showTitle = false }) {
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [price, setPrice] = useState("");
   const [quantity, setQuantity] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("Coffee");
+  const [category, setCategory] = useState("Coffee"); // default
 
-  // image handling
-  const [imageUrl, setImageUrl] = useState(""); // can be uploaded URL or pasted URL
+  const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [imgReady, setImgReady] = useState(false);
 
-  // ui state
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const [catOptions, setCatOptions] = useState(SEED_CATEGORIES);
+  const [catsLoading, setCatsLoading] = useState(true);
+
   const fileInputRef = useRef(null);
+
+  const loadCategories = useCallback(async () => {
+    try {
+      setCatsLoading(true);
+      const cats = await listCategories(); // [{_id,name}]
+      const fromApi = (Array.isArray(cats) ? cats : [])
+        .map((c) => c?.name)
+        .filter(Boolean);
+      const merged = sortAndMergeCategories(SEED_CATEGORIES, fromApi);
+      setCatOptions(merged);
+
+      // keep selection valid; prefer Coffee if available
+      if (!merged.includes(category)) {
+        setCategory(
+          merged.includes("Coffee") ? "Coffee" : merged[0] || "Coffee"
+        );
+      }
+    } catch (e) {
+      console.error("Failed to load categories in ProductForm:", e);
+      setCatOptions(SEED_CATEGORIES);
+      if (!SEED_CATEGORIES.includes(category)) setCategory("Coffee");
+    } finally {
+      setCatsLoading(false);
+    }
+  }, [category]);
+
+  useEffect(() => {
+    loadCategories();
+  }, [loadCategories]);
+
+  useEffect(() => {
+    setImgReady(false);
+  }, [imageUrl]);
+
+  function handleImgError() {
+    setImgReady(false);
+  }
+  function handleImgLoad() {
+    setImgReady(true);
+  }
 
   async function handleFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // quick validations
     if (!ACCEPTED_TYPES.test(file.type)) {
       setError("Please select a PNG, JPG, WEBP, or GIF image.");
       e.target.value = "";
@@ -59,7 +125,7 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
     setError("");
     setUploading(true);
     try {
-      const url = await uploadImage(file); // POST /uploads/image -> { url }
+      const url = await uploadImage(file);
       setImageUrl(url);
     } catch (err) {
       console.error(err);
@@ -74,8 +140,6 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
     if (saving || uploading) return;
 
     setError("");
-
-    // Guard numeric parsing (avoid NaN)
     const priceNum = Number.parseFloat(price || "0");
     const qtyNum = Number.parseInt(quantity || "0", 10);
 
@@ -88,9 +152,9 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
 
     const productData = {
       name: name.trim(),
-      sku: sku.trim(),
-      price: Number.isFinite(priceNum) ? priceNum : 0,
-      quantity: Number.isFinite(qtyNum) ? qtyNum : 0,
+      sku: sku.trim().toUpperCase(),
+      price: priceNum,
+      quantity: qtyNum,
       description: description.trim(),
       category,
       imageUrl: normalizeImageUrl(imageUrl.trim()),
@@ -101,13 +165,15 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
       await api.post("/products", productData);
       onSuccess?.();
 
-      // Reset form
+      // Reset form (keep Coffee default if available)
       setName("");
       setSku("");
       setPrice("");
       setQuantity("");
       setDescription("");
-      setCategory("Coffee");
+      setCategory(
+        catOptions.includes("Coffee") ? "Coffee" : catOptions[0] || "Coffee"
+      );
       setImageUrl("");
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
@@ -126,7 +192,11 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
       {showTitle && <h2>Product Form</h2>}
 
       <form onSubmit={handleSubmit} className="product-form" autoComplete="off">
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        )}
 
         <label htmlFor="pf-name">Name:</label>
         <input
@@ -183,10 +253,16 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
           placeholder="(Optional) Short description..."
         />
 
-        {/* Image upload + URL (both supported) */}
         <label>Image</label>
         {imageUrl && (
-          <img src={imageUrl} alt="preview" className="image-preview" />
+          <img
+            src={imageUrl}
+            alt="preview"
+            className={`image-preview${imgReady ? " is-ready" : ""}`}
+            onLoad={handleImgLoad}
+            onError={handleImgError}
+            style={{ display: imgReady ? "block" : "none" }}
+          />
         )}
 
         <div className="file-row">
@@ -213,14 +289,30 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
           placeholder="https://example.com/image.jpg (optional)"
         />
 
-        <label htmlFor="pf-cat">Category:</label>
+        <div className="cat-label-row">
+          <label htmlFor="pf-cat" style={{ marginBottom: 0 }}>
+            Category:
+          </label>
+          <button
+            type="button"
+            className="pf-refresh-btn"
+            onClick={loadCategories}
+            disabled={catsLoading}
+            aria-label="Reload categories"
+            title="Reload categories"
+          >
+            <RefreshIcon spinning={catsLoading} />
+            {catsLoading ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+
         <select
           id="pf-cat"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           required
         >
-          {CATEGORY_OPTIONS.map((opt) => (
+          {catOptions.map((opt) => (
             <option key={opt} value={opt}>
               {opt}
             </option>
