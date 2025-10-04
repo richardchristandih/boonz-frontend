@@ -15,7 +15,7 @@ import { buildReceipt } from "../receipt";
 import { connectQZ, listPrinters } from "../utils/qzHelper";
 
 import ReceiptPreview from "../components/ReceiptPreview";
-import appLogo from "../images/logo.jpg"; // fallback logo
+import appLogo from "../images/receipt-logo.png"; // fallback logo
 import api from "../services/api";
 
 import { formatIDR } from "../utils/money";
@@ -134,9 +134,9 @@ export default function Settings() {
   }
 
   /* ----------------------- Business profile text -------------------- */
-  const [shopName, setShopName] = useState(
-    localStorage.getItem("biz.name") || "Boonz"
-  );
+  // const [shopName, setShopName] = useState(
+  //   localStorage.getItem("biz.name") || "Boonz"
+  // );
   const [shopAddr, setShopAddr] = useState(
     localStorage.getItem("biz.addr") || "Jl. Mekar Utama No. 61, Bandung"
   );
@@ -415,7 +415,6 @@ export default function Settings() {
       setTestMsg("Sending sample receipt...");
 
       const sampleRaw = buildReceipt({
-        shopName,
         address: shopAddr,
         orderNumber: "TEST",
         dateStr: new Date().toLocaleString(),

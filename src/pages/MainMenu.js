@@ -134,6 +134,7 @@ function printReceiptViaSystem(html) {
   w.document.write(html);
   w.document.close();
 }
+
 function buildKitchenTicket({
   orderNumber,
   dateStr,
@@ -795,6 +796,9 @@ export default function MenuLayout() {
         const { receiptCopies, kitchenCopies } = getPrinterPrefs();
         const dateStr = new Date().toLocaleString();
 
+        const printedCustomerName =
+          (wantEmailReceipt && (customerName || "").trim()) || user?.name || "";
+
         const kotText = buildKitchenTicket({
           orderNumber: newOrderNumber || "N/A",
           dateStr,
@@ -875,9 +879,6 @@ export default function MenuLayout() {
           finishOrder(newOrderNumber);
           return;
         }
-
-        const printedCustomerName =
-          (wantEmailReceipt && (customerName || "").trim()) || user?.name || "";
 
         if (isAndroidChrome()) {
           const html = buildReceiptHtml({

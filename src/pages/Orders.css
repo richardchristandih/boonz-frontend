@@ -222,6 +222,52 @@
 }
 .empty-art { font-size: 40px; }
 
+.custom-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  flex-wrap: wrap;
+}
+
+.custom-range label {
+  font-weight: 500;
+}
+
+.custom-range input[type="date"] {
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}.custom-range .btn.small {
+  font-size: 13px;
+  padding: 5px 12px;
+  background: #f7f7f7;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #333;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.custom-range .btn.small:hover {
+  background: #e8e8e8;
+  border-color: #bcbcbc;
+}
+
+.custom-range .btn.small:active {
+  background: #ddd;
+  transform: scale(0.97);
+}
+
+.custom-range .btn.small:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+
+
 /* ========= Skeletons ========= */
 .skeleton .shimmer {
   position: relative;

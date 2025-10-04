@@ -67,6 +67,8 @@ export default function Orders() {
   const [timeRangeLabel, setTimeRangeLabel] = useState("today"); // DEFAULT: today
   const [loading, setLoading] = useState(true);
   const [fetchErr, setFetchErr] = useState("");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   useEffect(() => {
     fetchOrders();
@@ -90,26 +92,39 @@ export default function Orders() {
   const handleTimeRangeChange = (e) => setTimeRangeLabel(e.target.value);
 
   const filteredOrders = useMemo(() => {
-    if (!timeRangeLabel) return orders; // All time
+    if (!orders.length) return [];
+
+    // If both custom dates are set, use them instead of the dropdown
+    if (customFrom && customTo) {
+      const fromDate = new Date(customFrom);
+      const toDate = new Date(customTo);
+      // include full "to" day by setting time to end of day
+      toDate.setHours(23, 59, 59, 999);
+      return orders.filter((o) => {
+        const created = new Date(o.createdAt);
+        return created >= fromDate && created <= toDate;
+      });
+    }
+
+    // otherwise use predefined time range logic
+    if (!timeRangeLabel) return orders;
 
     const now = new Date();
-
-    // 'today' => start of today's date (local timezone) to now
     if (timeRangeLabel === "today") {
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
       return orders.filter((o) => new Date(o.createdAt) >= startOfToday);
     }
 
-    // other labeled windows => now minus N days (same time of day)
     const days = timeRangeMapping[timeRangeLabel];
     if (!Number.isFinite(days)) return orders;
 
     const from = new Date(now);
     from.setDate(from.getDate() - days);
     return orders.filter((o) => new Date(o.createdAt) >= from);
-  }, [orders, timeRangeLabel]);
+  }, [orders, timeRangeLabel, customFrom, customTo]);
 
+  // ✅ Summary stats for filtered list
   const totalTransactions = filteredOrders.length;
   const totalRevenue = filteredOrders.reduce(
     (acc, order) => acc + (Number(order.totalAmount) || 0),
@@ -179,6 +194,33 @@ export default function Orders() {
             <option value="month">Last 30 days (1 month)</option>
             <option value="year">Last 365 days (1 year)</option>
           </select>
+
+          {/* Custom range picker */}
+          <div className="custom-range">
+            <label>Or pick range:</label>
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+            />
+            <span>to</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+            />
+            {(customFrom || customTo) && (
+              <button
+                className="btn small"
+                onClick={() => {
+                  setCustomFrom("");
+                  setCustomTo("");
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="orders-summary">
