@@ -14,7 +14,7 @@ import { buildReceipt } from "../receipt";
 import { printRaw, listPrinters } from "../utils/qzHelper";
 import SafeImage from "../components/SafeImage";
 import api from "../services/api";
-import appLogo from "../images/receipt-logo.png";
+import appLogo from "../images/logo.jpg";
 import { normalizeImageUrl } from "../utils/driveUrl";
 import { listCategories } from "../services/categories";
 import {
@@ -150,6 +150,7 @@ function buildKitchenTicket({
     `[L]Time : ${dateStr}\n` +
     (customer?.name ? `[L]Cust : ${customer.name}\n` : ``) +
     `[C]------------------------------\n`;
+
   const lines = (items || [])
     .map((it) => {
       const qtyLine = `[L]<b>${Number(it.quantity || 0)} x ${
@@ -159,8 +160,12 @@ function buildKitchenTicket({
       return qtyLine + noteLine;
     })
     .join("");
-  return header + lines;
+
+  const cutMark = `\n[C]------------------------------\n[C]✂️\n\n\n`;
+
+  return header + lines + cutMark;
 }
+
 function computePromoDiscount(promo, subtotal) {
   if (!promo || !promo.active) return 0;
   if (promo.minSubtotal && subtotal < Number(promo.minSubtotal)) return 0;
