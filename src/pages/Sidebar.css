@@ -19,7 +19,7 @@
 
   /* CTA (mobile Add pill) */
   --cta:#2e7d3a;
-  --cta-900:#7bc239;
+  --cta-900:#99de58;
   --cta-glow:0 10px 28px rgba(46,125,50,.35);
 
   /* Focus ring */
@@ -343,6 +343,23 @@
 .layout-sidebar .add-pill svg {
   filter: none;
   mix-blend-mode: normal;
+}
+
+/* Make the Add Product button text white */
+.sb-btn-primary.add-product-btn {
+  color: #fff !important;            /* white text */
+  background: var(--brand);          /* keep your brand orange background */
+  border: none;                      /* optional cleaner look */
+  font-weight: 700;
+  transition: filter .15s, transform .06s;
+}
+
+.sb-btn-primary.add-product-btn:hover {
+  filter: brightness(.95);
+}
+
+.sb-btn-primary.add-product-btn:active {
+  transform: translateY(1px);
 }
 
 /* Optional: subtle separator under header on very light themes */

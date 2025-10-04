@@ -548,6 +548,11 @@ body{
   overflow-wrap:anywhere; word-break:break-word;
 }
 
+.products-area .empty-state .empty-cta{
+  color:#fff !important;      /* ensure it wins over any global button styles */
+  border-color: transparent;  /* optional: keeps edges clean */
+}
+
 /* Smaller link on phones */
 @media (max-width:900px){ .link-btn{ font-size:12px; } }
 

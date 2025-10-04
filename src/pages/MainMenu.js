@@ -14,7 +14,7 @@ import { buildReceipt } from "../receipt";
 import { printRaw, listPrinters } from "../utils/qzHelper";
 import SafeImage from "../components/SafeImage";
 import api from "../services/api";
-import appLogo from "../images/logo.jpg";
+import appLogo from "../images/receipt-logo.png";
 import { normalizeImageUrl } from "../utils/driveUrl";
 import { listCategories } from "../services/categories";
 import {
@@ -135,7 +135,6 @@ function printReceiptViaSystem(html) {
   w.document.close();
 }
 function buildKitchenTicket({
-  shopName,
   orderNumber,
   dateStr,
   orderType,
@@ -144,7 +143,6 @@ function buildKitchenTicket({
 }) {
   const header =
     `[C]<b><font size='big'>KITCHEN ORDER</font></b>\n` +
-    `[C]${shopName}\n` +
     `[C]------------------------------\n` +
     `[L]Order #${orderNumber}\n` +
     `[L]Type : ${orderType}\n` +
@@ -160,7 +158,7 @@ function buildKitchenTicket({
       return qtyLine + noteLine;
     })
     .join("");
-  return header + lines + `[C]------------------------------\n\n`;
+  return header + lines;
 }
 function computePromoDiscount(promo, subtotal) {
   if (!promo || !promo.active) return 0;
@@ -366,7 +364,7 @@ export default function MenuLayout() {
   };
 
   const PAUSE_AFTER_KOT_MS =
-    Number(localStorage.getItem("print.pauseAfterKotMs")) || 1200;
+    Number(localStorage.getItem("print.pauseAfterKotMs")) || 3000;
 
   // mobile cart bottom sheet
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
@@ -702,6 +700,28 @@ export default function MenuLayout() {
     setShowPaymentModal(true);
   }, [cart.length]);
 
+  const finishOrder = (newOrderNumber) => {
+    // close modals/sheets
+    setShowPaymentModal(false);
+    setMobileCartOpen(false);
+
+    // clear cart & discount state
+    setCart([]);
+    setSelectedPromoId("");
+    setDiscountMode("promo");
+    setDiscountValue("0");
+    setDiscountNote("");
+    setDiscountType("flat");
+
+    // clear payment selection
+    setSelectedPaymentMethod("");
+
+    // let the user know
+    window.alert(
+      `Order placed successfully! Your order number is ${newOrderNumber}`
+    );
+  };
+
   const confirmPayment = useCallback(async () => {
     if (!user) {
       window.alert("Your session expired. Please log in again.");
@@ -776,12 +796,11 @@ export default function MenuLayout() {
         const dateStr = new Date().toLocaleString();
 
         const kotText = buildKitchenTicket({
-          shopName: "Boonz Hauz",
           orderNumber: newOrderNumber || "N/A",
           dateStr,
           orderType: orderData.orderType,
           items: orderData.products,
-          customer: { name: user?.name || "" },
+          customer: { name: printedCustomerName || user?.name },
         });
 
         const itemsForReceipt = orderData.products.map((it) => ({
@@ -801,7 +820,7 @@ export default function MenuLayout() {
           total: orderData.totalAmount,
           payment: orderData.paymentMethod,
           orderType: orderData.orderType,
-          customer: { name: user?.name || "" },
+          customer: { name: printedCustomerName || user?.name },
           discountNote: finalDiscountNote,
         }).replace(/^[\s\r\n]+/, "");
 
@@ -853,8 +872,12 @@ export default function MenuLayout() {
               await sleep(700);
             }
           }
+          finishOrder(newOrderNumber);
           return;
         }
+
+        const printedCustomerName =
+          (wantEmailReceipt && (customerName || "").trim()) || user?.name || "";
 
         if (isAndroidChrome()) {
           const html = buildReceiptHtml({

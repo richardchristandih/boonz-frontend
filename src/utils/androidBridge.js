@@ -91,6 +91,7 @@ export function androidPrintFormatted(
 }
 
 // --- Simple retry wrapper around androidPrintFormatted ---
+// --- Simple retry wrapper around androidPrintFormatted ---
 export async function androidPrintWithRetry(text, opts = {}) {
   const {
     address = "",
@@ -98,6 +99,7 @@ export async function androidPrintWithRetry(text, opts = {}) {
     copies = 1,
     tries = 3,
     baseDelay = 400,
+    postDelay = 800, // 🆕 delay between copies to let printer finish
   } = opts;
 
   let lastErr = "";
@@ -112,7 +114,13 @@ export async function androidPrintWithRetry(text, opts = {}) {
         await new Promise((r) => setTimeout(r, baseDelay * (t + 1)));
       }
     }
+
     if (!ok) throw new Error(lastErr || "Print failed after retries");
+
+    // 💤 Optional: give printer breathing time between copies
+    if (c < copies - 1 && postDelay > 0) {
+      await new Promise((r) => setTimeout(r, postDelay));
+    }
   }
 }
 
