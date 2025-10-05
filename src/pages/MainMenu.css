@@ -4,13 +4,13 @@
 
 /* ===== Base layout / tokens ===== */
 :root{
-  --brand:#F2994A;
+  --brand:#F2994A;        /* keep for other brandy accents */
   --brand-2:#eaac00;
-  --bg-soft:#FAFAFA;
-  --border:#EEE;
-  --text:#111827;
-  --muted:#6b7280;
-  --ring:0 0 0 3px rgba(34,197,94,.25);
+
+  /* NEW: dedicated tokens */
+  --price:#16a34a;        /* emerald-600: clear “money” green */
+  --cta:#2563eb;          /* blue-600: strong call-to-action */
+  --cta-contrast:#ffffff; /* text color on CTA */
 }
 
 *{ box-sizing:border-box; }
@@ -143,10 +143,23 @@ body{
   font-size:12px; color:#6b7280; margin:6px 0; line-height:1.45;
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:calc(1.45em * 2);
 }
-.product-price{ font-weight:800; margin:6px 0 10px; }
+.product-price{
+  font-weight:800;
+  margin:6px 0 10px;
+  color:var(--price);           /* << add this line */
+}
+
 .add-to-cart-btn{
-  background:var(--brand); color:#fff; border:none; padding:9px 12px; border-radius:8px; cursor:pointer;
-  margin-top:auto; align-self:flex-start; font-weight:800; letter-spacing:.2px;
+  background:var(--cta);        /* << was var(--brand) / green elsewhere */
+  color:var(--cta-contrast);
+  border:none;
+  padding:9px 12px;
+  border-radius:8px;
+  cursor:pointer;
+  margin-top:auto;
+  align-self:flex-start;
+  font-weight:800;
+  letter-spacing:.2px;
   transition:filter .12s, transform .06s;
 }
 .add-to-cart-btn:hover{ filter:brightness(.98); }
@@ -552,6 +565,150 @@ body{
   color:#fff !important;      /* ensure it wins over any global button styles */
   border-color: transparent;  /* optional: keeps edges clean */
 }
+
+/* =========================
+   Customize Modal — polish
+   ========================= */
+.paymodal__dialog.paymodal__dialog--customize{
+  width:min(520px,94vw);
+  border-radius:16px;
+  box-shadow:
+    0 12px 24px rgba(0,0,0,.12),
+    0 2px 0 rgba(0,0,0,.02) inset;
+  overflow:hidden;
+  background:#fff;
+}
+
+/* Header */
+.paymodal__dialog.paymodal__dialog--customize .paymodal__head{
+  padding:16px 20px;
+  background:linear-gradient(180deg,#fafafa,#f6f8fb);
+  border-bottom:1px solid #eef0f3;
+}
+.paymodal__dialog.paymodal__dialog--customize .paymodal__head h3{
+  font-size:20px;
+  font-weight:800;
+  letter-spacing:.2px;
+  color:#0f172a;
+}
+
+/* Close button hover */
+.paymodal__dialog.paymodal__dialog--customize .paymodal__close{
+  background:#f3f4f6;
+  border:1px solid #e5e7eb;
+  border-radius:10px;
+  width:34px; height:34px;
+}
+.paymodal__dialog.paymodal__dialog--customize .paymodal__close:hover{
+  background:#eef2f7;
+}
+
+/* Body */
+.paymodal__dialog.paymodal__dialog--customize .paymodal__body{
+  padding:18px 20px 8px;
+}
+.paymodal__dialog.paymodal__dialog--customize .register-label{
+  font-weight:800;
+  color:#0f172a;
+}
+
+/* Options layout */
+.paymodal__dialog.paymodal__dialog--customize .radio-row{
+  display:flex;
+  gap:18px;
+  flex-wrap:wrap;
+}
+
+/* Pretty radios & checkboxes (accessible) */
+.paymodal__dialog.paymodal__dialog--customize input[type="radio"],
+.paymodal__dialog.paymodal__dialog--customize input[type="checkbox"]{
+  appearance:none;
+  inline-size:18px; block-size:18px;
+  border:2px solid #cbd5e1;
+  border-radius:6px;
+  display:inline-grid; place-items:center;
+  transition:border-color .18s, background .18s, box-shadow .18s;
+  cursor:pointer;
+  vertical-align:-3px;
+  background:#fff;
+}
+.paymodal__dialog.paymodal__dialog--customize input[type="radio"]{
+  border-radius:50%;
+}
+.paymodal__dialog.paymodal__dialog--customize input[type="radio"]::before{
+  content:""; inline-size:8px; block-size:8px; border-radius:50%;
+  transform:scale(0); transition:transform .14s ease-out;
+  background:#0ea5e9;
+}
+.paymodal__dialog.paymodal__dialog--customize input[type="checkbox"]::before{
+  content:"✓"; font-weight:900; font-size:12px; line-height:1;
+  transform:scale(0); color:#fff; transition:transform .14s ease-out;
+}
+.paymodal__dialog.paymodal__dialog--customize input[type="radio"]:checked{
+  border-color:#0ea5e9; background:#eaf6fd;
+}
+.paymodal__dialog.paymodal__dialog--customize input[type="radio"]:checked::before{
+  transform:scale(1);
+}
+.paymodal__dialog.paymodal__dialog--customize input[type="checkbox"]:checked{
+  border-color:#22c55e; background:#22c55e;
+  box-shadow:0 0 0 3px rgba(34,197,94,.18);
+}
+.paymodal__dialog.paymodal__dialog--customize input[type="checkbox"]:checked::before{
+  transform:scale(1);
+}
+.paymodal__dialog.paymodal__dialog--customize input[type="radio"]:focus-visible,
+.paymodal__dialog.paymodal__dialog--customize input[type="checkbox"]:focus-visible{
+  outline:none;
+  box-shadow:0 0 0 3px rgba(59,130,246,.25);
+  border-color:#3b82f6;
+}
+
+/* Label alignment */
+.paymodal__dialog.paymodal__dialog--customize .radio-row label{
+  display:flex; align-items:center; gap:10px;
+  padding:6px 8px; border-radius:10px;
+}
+
+/* Section spacing */
+.paymodal__dialog.paymodal__dialog--customize .pay-section + .pay-section{
+  margin-top:12px;
+}
+
+/* Footer */
+.paymodal__dialog.paymodal__dialog--customize .paymodal__actions{
+  position:sticky; bottom:0;
+  display:flex; gap:10px; justify-content:flex-end;
+  padding:14px 16px 16px;
+  background:linear-gradient(180deg,rgba(255,255,255,.4),#fff);
+  border-top:1px solid #eef0f3;
+}
+
+/* Primary CTA a bit larger & rounded */
+.paymodal__dialog.paymodal__dialog--customize .btn{
+  height:44px; border-radius:12px;
+  padding:0 20px; font-weight:800;
+}
+.paymodal__dialog.paymodal__dialog--customize .btn-primary{
+  background:linear-gradient(180deg,#F2994A,#f08a2f);
+  border-color:#ee8c2f;
+  box-shadow:0 8px 18px rgba(242,153,74,.25);
+}
+.paymodal__dialog.paymodal__dialog--customize .btn-primary:hover{
+  filter:brightness(.98);
+}
+
+/* Small screens */
+@media (max-width:520px){
+  .paymodal__dialog.paymodal__dialog--customize{
+    width:95vw;
+    border-radius:14px;
+  }
+  .paymodal__dialog.paymodal__dialog--customize .paymodal__head h3{
+    font-size:18px;
+  }
+}
+
 
 /* Smaller link on phones */
 @media (max-width:900px){ .link-btn{ font-size:12px; } }

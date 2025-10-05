@@ -1,23 +1,20 @@
-// src/pages/Settings.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Settings.css";
 
 import {
   isAndroidBridge,
-  androidListPrintersDetailed, // [{ name, address }]
-  androidPrintWithRetry, // retry wrapper (text)
+  androidListPrintersDetailed,
+  androidPrintWithRetry,
   androidIsBtOn,
   androidGetLastError,
 } from "../utils/androidBridge";
 
 import { buildReceipt } from "../receipt";
 import { connectQZ, listPrinters } from "../utils/qzHelper";
-
 import ReceiptPreview from "../components/ReceiptPreview";
-import appLogo from "../images/logo.jpg"; // fallback logo
+import appLogo from "../images/logo.jpg";
 import api from "../services/api";
-
 import { formatIDR } from "../utils/money";
 
 export default function Settings() {
@@ -36,7 +33,7 @@ export default function Settings() {
     (user?.role && String(user.role).toLowerCase() === "admin") ||
     user?.isAdmin === true;
 
-  /* ---------------------- Profile (change name) --------------------- */
+  /* ----------------------- Profile (change name) -------------------- */
   const [profileName, setProfileName] = useState(user?.name || "");
   const [profileMsg, setProfileMsg] = useState("");
 
@@ -44,7 +41,6 @@ export default function Settings() {
     try {
       setProfileMsg("Saving…");
       const { data } = await api.patch("/users/me", { name: profileName });
-      // Update localStorage + local state so UI reflects the change immediately
       const next = { ...(user || {}), name: data?.name || profileName };
       localStorage.setItem("user", JSON.stringify(next));
       setUser(next);
@@ -59,33 +55,8 @@ export default function Settings() {
     }
   }
 
-  /* --------------------- Android / QZ diagnostics ------------------- */
-  const [bridgeMsg, setBridgeMsg] = useState("");
-  const [btMsg, setBtMsg] = useState("");
-  const [testMsg, setTestMsg] = useState("");
-
-  // Preview modal (receipt / KOT)
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewData, setPreviewData] = useState(null);
-  const [previewVariant, setPreviewVariant] = useState("receipt"); // 'receipt' | 'kot'
-
-  useEffect(() => {
-    if (!showPreview) return;
-    const onKey = (e) => e.key === "Escape" && setShowPreview(false);
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [showPreview]);
-
-  // Desktop printer list
+  /* ------------------------ Printer Settings ------------------------ */
   const [printerList, setPrinterList] = useState([]);
-
-  /* ----------------------- Printer routing prefs -------------------- */
-  // Android: store MAC in localStorage; Desktop: store printer display name
   const [receiptPrinter, setReceiptPrinter] = useState(
     localStorage.getItem("printer.receipt") || ""
   );
@@ -98,6 +69,36 @@ export default function Settings() {
   const [kitchenCopies, setKitchenCopies] = useState(
     Number(localStorage.getItem("printer.kitchenCopies")) || 1
   );
+  const [btMsg, setBtMsg] = useState("");
+  const [testMsg, setTestMsg] = useState("");
+
+  async function handleListPrinters() {
+    try {
+      setBtMsg("Scanning printers…");
+      if (isAndroidBridge()) {
+        const list = androidListPrintersDetailed();
+        setPrinterList(list.map((p) => `${p.name} (${p.address || "no-mac"})`));
+        setBtMsg(
+          list.length
+            ? `Paired BT printers:\n• ${list
+                .map((p) => `${p.name} — ${p.address}`)
+                .join("\n• ")}`
+            : "No paired Bluetooth printers found."
+        );
+        return;
+      }
+      await connectQZ();
+      const printers = await listPrinters();
+      setPrinterList(printers || []);
+      setBtMsg(
+        printers?.length
+          ? `Installed printers:\n• ${printers.join("\n• ")}`
+          : "No printers found."
+      );
+    } catch (e) {
+      setBtMsg("List failed: " + (e?.message || String(e)));
+    }
+  }
 
   function savePrinters() {
     localStorage.setItem("printer.receipt", receiptPrinter);
@@ -107,33 +108,20 @@ export default function Settings() {
     alert("Printer preferences saved.");
   }
 
-  /* ----------------------- Ticket appearance prefs ------------------ */
+  /* -------------------------- Print Preview ------------------------- */
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [previewVariant, setPreviewVariant] = useState("receipt");
+
   const [rollWidth, setRollWidth] = useState(
     localStorage.getItem("print.roll") || "58"
-  ); // "58" | "80"
+  );
   const [density, setDensity] = useState(
     Number(localStorage.getItem("print.density")) || 1
-  ); // 1..5
+  );
   const [logoDataUrl, setLogoDataUrl] = useState(
     localStorage.getItem("print.logo") || ""
   );
-
-  function savePrintPrefs() {
-    localStorage.setItem("print.roll", rollWidth);
-    localStorage.setItem("print.density", String(density));
-    if (logoDataUrl) localStorage.setItem("print.logo", logoDataUrl);
-    alert("Print appearance saved.");
-  }
-
-  async function onLogoFile(e) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const fr = new FileReader();
-    fr.onload = () => setLogoDataUrl(String(fr.result));
-    fr.readAsDataURL(f);
-  }
-
-  /* ----------------------- Business profile text -------------------- */
   const [shopName, setShopName] = useState(
     localStorage.getItem("biz.name") || "Boonz"
   );
@@ -144,149 +132,11 @@ export default function Settings() {
     localStorage.getItem("biz.footer") || "Terima kasih!"
   );
 
-  function saveBiz() {
-    localStorage.setItem("biz.name", shopName);
-    localStorage.setItem("biz.addr", shopAddr);
-    localStorage.setItem("biz.footer", footerMsg);
-    alert("Business profile saved.");
-  }
+  const hideShopName = localStorage.getItem("print.hideShopName") === "true";
 
-  /* ---------------------------- Promotions -------------------------- */
-  const [promos, setPromos] = useState([]);
-  const [pLoading, setPLoading] = useState(false);
-  const [pError, setPError] = useState("");
-
-  const [pName, setPName] = useState("");
-  const [pType, setPType] = useState("percentage"); // "percentage" | "flat"
-  const [pValue, setPValue] = useState("");
-  const [pDesc, setPDesc] = useState("");
-  const [pActive, setPActive] = useState(true);
-
-  async function fetchPromos() {
-    try {
-      setPLoading(true);
-      setPError("");
-      const { data } = await api.get("/promotions");
-      setPromos(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setPError(
-        err?.response?.data?.message ||
-          err?.message ||
-          "Failed to load promotions."
-      );
-    } finally {
-      setPLoading(false);
-    }
-  }
-  useEffect(() => {
-    if (isAdmin) fetchPromos();
-  }, [isAdmin]);
-
-  async function addPromo() {
-    const valueNum = Number(pValue);
-    if (!pName.trim()) return alert("Please enter promo name.");
-    if (!(valueNum > 0)) return alert("Please enter a value greater than 0.");
-
-    try {
-      const { data } = await api.post("/promotions", {
-        name: pName.trim(),
-        type: pType, // "percentage" | "flat"
-        value: valueNum,
-        description: pDesc.trim(),
-        active: !!pActive,
-      });
-      setPromos((prev) => [data, ...prev]);
-      setPName("");
-      setPValue("");
-      setPDesc("");
-      setPType("percentage");
-      setPActive(true);
-    } catch (err) {
-      alert(
-        err?.response?.data?.message ||
-          err?.message ||
-          "Failed to add promotion."
-      );
-    }
-  }
-
-  async function togglePromo(id, currentActive) {
-    try {
-      const { data } = await api.patch(`/promotions/${id}`, {
-        active: !currentActive,
-      });
-      setPromos((prev) => prev.map((p) => (p._id === id ? data : p)));
-    } catch (err) {
-      alert(
-        err?.response?.data?.message ||
-          err?.message ||
-          "Failed to toggle promotion."
-      );
-    }
-  }
-
-  async function deletePromo(id) {
-    if (!window.confirm("Delete this promotion?")) return;
-    try {
-      await api.delete(`/promotions/${id}`);
-      setPromos((prev) => prev.filter((p) => p._id !== id));
-    } catch (err) {
-      alert(
-        err?.response?.data?.message ||
-          err?.message ||
-          "Failed to delete promotion."
-      );
-    }
-  }
-
-  /* --------------------------- Diagnostics -------------------------- */
-  const [bridgeCaps, setBridgeCaps] = useState(null);
-  const [rawCmd, setRawCmd] = useState("[C]<b>Hello</b>\n");
-
-  function probeBridge() {
-    const ap = window.AndroidPrinter || {};
-    setBridgeCaps({
-      printText: !!(
-        ap.printText ||
-        ap.printLogoAndText ||
-        ap.printImageBase64 ||
-        ap.printLogoBase64
-      ),
-      printLogoAndText: typeof ap.printLogoAndText === "function",
-      printImageBase64:
-        typeof ap.printImageBase64 === "function" ||
-        typeof ap.printLogoBase64 === "function",
-      listPrinters:
-        typeof ap.listPrinters === "function" ||
-        typeof ap.listPrintersDetailed === "function",
-      setDensity: typeof ap.setDensity === "function",
-    });
-  }
-
-  async function sendRawTest() {
-    try {
-      await connectQZ();
-      const printers = await listPrinters();
-      const target = receiptPrinter || printers?.[0];
-      if (!target) throw new Error("No printers");
-      await window.qz.print(window.qz.configs.create(target), [
-        { type: "raw", format: "plain", data: rawCmd },
-      ]);
-      alert("Raw sent!");
-    } catch (e) {
-      alert("Raw send failed: " + (e?.message || String(e)));
-    }
-  }
-
-  const savedShopName = localStorage.getItem("biz.name") || "Boonz";
-  // Optional toggle: hide big shop name on receipt if you prefer only logo
-  const hideShopName =
-    localStorage.getItem("print.hideShopName") === "true" ? true : false;
-
-  /* ------------------------ Preview helpers ------------------------- */
   function makeReceiptSample() {
     return {
-      shopName: hideShopName ? "" : savedShopName,
+      shopName: hideShopName ? "" : shopName,
       address: shopAddr,
       orderNumber: "TEST",
       dateStr: new Date().toLocaleString(),
@@ -302,7 +152,7 @@ export default function Settings() {
       payment: "N/A",
       orderType: "Test",
       customer: { name: "Test" },
-      roll: Number(rollWidth) || 58,
+      roll: Number(rollWidth),
       logo: logoDataUrl || appLogo,
       footer: footerMsg,
     };
@@ -318,236 +168,175 @@ export default function Settings() {
       items: [
         { name: "Americano", quantity: 1 },
         { name: "Burger Classic", quantity: 2 },
-        { name: "French Fries", quantity: 1 },
       ],
-      roll: Number(rollWidth) || 58,
+      roll: Number(rollWidth),
       kot: true,
-      variant: "kot",
     };
   }
 
-  function openReceiptPreview() {
-    setPreviewData(makeReceiptSample());
-    setPreviewVariant("receipt");
+  function openPreview(type) {
+    setPreviewData(type === "kot" ? makeKotSample() : makeReceiptSample());
+    setPreviewVariant(type);
     setShowPreview(true);
-    setTestMsg("");
-  }
-
-  function openKotPreview() {
-    setPreviewData(makeKotSample());
-    setPreviewVariant("kot");
-    setShowPreview(true);
-  }
-
-  async function toDataUrl(url) {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    return await new Promise((resolve, reject) => {
-      const fr = new FileReader();
-      fr.onload = () => resolve(fr.result);
-      fr.onerror = reject;
-      fr.readAsDataURL(blob);
-    });
-  }
-
-  // QZ: print logo image + raw text in one job
-  async function printLogoAndRawViaQZ(printerName, logoUrl, rawText) {
-    const qz = window.qz;
-    if (!qz?.print) throw new Error("QZ not available");
-    const cfg = qz.configs.create(printerName);
-
-    const job = [];
-    const chosenLogo = logoDataUrl || logoUrl;
-    if (chosenLogo) {
-      const dataUrl = chosenLogo.startsWith("data:")
-        ? chosenLogo
-        : await toDataUrl(chosenLogo);
-      job.push({ type: "image", data: dataUrl, options: { scale: 0.6 } });
-    }
-    job.push({ type: "raw", format: "plain", data: rawText });
-
-    return qz.print(cfg, job);
-  }
-
-  /* ------------------------------ Actions --------------------------- */
-  async function handleCheckBridge() {
-    try {
-      const ok = isAndroidBridge();
-      setBridgeMsg(
-        ok ? "Android bridge FOUND ✅" : "Android bridge NOT found ❌"
-      );
-    } catch (e) {
-      setBridgeMsg(`Check failed: ${e?.message || String(e)}`);
-    }
-  }
-
-  async function handleListPrinters() {
-    try {
-      setBtMsg("Working...");
-      if (isAndroidBridge()) {
-        const list = androidListPrintersDetailed();
-        setPrinterList(list.map((p) => `${p.name} (${p.address || "no-mac"})`));
-        setBtMsg(
-          list.length
-            ? `Paired BT printers:\n• ${list
-                .map((p) => `${p.name} — ${p.address}`)
-                .join("\n• ")}`
-            : "No paired Bluetooth printers found."
-        );
-        return;
-      }
-      // Desktop (QZ)
-      await connectQZ();
-      const printers = await listPrinters();
-      setBtMsg(
-        printers?.length
-          ? `Installed printers:\n• ${printers.join("\n• ")}`
-          : "No printers found."
-      );
-      setPrinterList(printers || []);
-    } catch (e) {
-      setBtMsg(`List failed: ${e?.message || String(e)}`);
-    }
   }
 
   async function handleTestPrint() {
     try {
-      setTestMsg("Sending sample receipt...");
-
-      const sampleRaw = buildReceipt({
-        shopName,
-        address: shopAddr,
-        orderNumber: "TEST",
-        dateStr: new Date().toLocaleString(),
-        items: [
-          { name: "Americano", quantity: 1, price: 20000 },
-          { name: "Pistachio Latte", quantity: 1, price: 25000 },
-        ],
-        subtotal: 45000,
-        tax: 4500,
-        service: 2250,
-        discount: 0,
-        total: 51750,
-        payment: "N/A",
-        orderType: "Test",
-        customer: { name: "Test" },
-        footer: footerMsg,
-      });
-
+      setTestMsg("Sending sample receipt…");
+      const sampleRaw = buildReceipt(makeReceiptSample());
       const copies = Math.max(1, Number(receiptCopies) || 1);
 
-      // ---------- ANDROID ----------
       if (isAndroidBridge()) {
-        if (typeof window.AndroidPrinter?.setDensity === "function") {
-          try {
-            window.AndroidPrinter.setDensity(Number(density) || 1);
-          } catch {}
-        }
-
-        if (!androidIsBtOn()) {
-          setTestMsg(
-            "Bluetooth is OFF. Please enable Bluetooth and try again."
-          );
-          return;
-        }
-
-        const paired = androidListPrintersDetailed();
-        if (!paired.length) {
-          setTestMsg(
-            "No paired Bluetooth printers. Pair your printer in Android Settings > Bluetooth."
-          );
-          return;
-        }
-
-        const targetAddress =
-          receiptPrinter || (paired.length ? paired[0].address || "" : "");
-
-        const logoUrl = logoDataUrl || appLogo;
-        const dataUrl = logoUrl ? await toDataUrl(logoUrl) : null;
-
-        for (let i = 0; i < copies; i++) {
-          if (
-            dataUrl &&
-            typeof window.AndroidPrinter?.printLogoAndText === "function"
-          ) {
-            try {
-              window.AndroidPrinter.printLogoAndText(dataUrl, sampleRaw, "");
-              continue;
-            } catch {}
-          }
-
+        if (!androidIsBtOn()) return setTestMsg("Bluetooth is OFF.");
+        const list = androidListPrintersDetailed();
+        if (!list.length) return setTestMsg("No paired Bluetooth printers.");
+        const targetAddress = receiptPrinter || list[0].address || "";
+        for (let i = 0; i < copies; i++)
           await androidPrintWithRetry(sampleRaw, {
             address: targetAddress,
-            nameLike: "",
             copies: 1,
             tries: 3,
             baseDelay: 500,
           });
-        }
-
-        const lastErr = androidGetLastError();
-        setTestMsg(
-          lastErr
-            ? `Android print finished with error: ${lastErr}`
-            : "Android print sent ✅"
-        );
+        const err = androidGetLastError();
+        setTestMsg(err ? "Finished with error: " + err : "Print sent ✅");
         return;
       }
 
-      // ---------- DESKTOP (QZ) ----------
       await connectQZ();
       const printers = await listPrinters();
-      if (!Array.isArray(printers) || printers.length === 0) {
-        setTestMsg("No printers found (QZ).");
-        return;
-      }
-
-      const target =
-        (receiptPrinter && printers.find((p) => p === receiptPrinter)) ||
-        printers.find((p) => /RPP02N/i.test(p)) ||
-        printers[0];
-
-      for (let i = 0; i < copies; i++) {
-        await printLogoAndRawViaQZ(target, appLogo, sampleRaw);
-      }
-      setTestMsg(`QZ print (logo + text) sent to "${target}" ✅`);
+      const target = receiptPrinter || printers[0];
+      await window.qz.print(window.qz.configs.create(target), [
+        { type: "raw", format: "plain", data: sampleRaw },
+      ]);
+      setTestMsg(`QZ print sent to "${target}" ✅`);
     } catch (e) {
-      setTestMsg(`Test print failed: ${e?.message || String(e)}`);
+      setTestMsg("Print failed: " + (e?.message || String(e)));
     }
   }
 
+  /* ----------------------------- Promos ----------------------------- */
+  const [promos, setPromos] = useState([]);
+  const [pLoading, setPLoading] = useState(false);
+  const [pError, setPError] = useState("");
+  const [pName, setPName] = useState("");
+  const [pType, setPType] = useState("percentage");
+  const [pValue, setPValue] = useState("");
+  const [pDesc, setPDesc] = useState("");
+  const [pActive, setPActive] = useState(true);
+
+  async function fetchPromos() {
+    try {
+      setPLoading(true);
+      const { data } = await api.get("/promotions");
+      setPromos(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setPError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load promotions."
+      );
+    } finally {
+      setPLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (isAdmin) fetchPromos();
+  }, [isAdmin]);
+
+  async function addPromo() {
+    const val = Number(pValue);
+    if (!pName.trim() || !(val > 0))
+      return alert("Please fill promo name and value.");
+    try {
+      const { data } = await api.post("/promotions", {
+        name: pName.trim(),
+        type: pType,
+        value: val,
+        description: pDesc.trim(),
+        active: pActive,
+      });
+      setPromos((p) => [data, ...p]);
+      setPName("");
+      setPValue("");
+      setPDesc("");
+      setPType("percentage");
+      setPActive(true);
+    } catch (e) {
+      alert("Add failed: " + (e?.message || "Unknown error."));
+    }
+  }
+
+  async function togglePromo(id, currentActive) {
+    try {
+      const { data } = await api.patch(`/promotions/${id}`, {
+        active: !currentActive,
+      });
+      setPromos((prev) => prev.map((p) => (p._id === id ? data : p)));
+    } catch {
+      alert("Failed to toggle promo.");
+    }
+  }
+
+  async function deletePromo(id) {
+    if (!window.confirm("Delete this promotion?")) return;
+    try {
+      await api.delete(`/promotions/${id}`);
+      setPromos((p) => p.filter((x) => x._id !== id));
+    } catch {
+      alert("Delete failed.");
+    }
+  }
+
+  /* ---------------------------- Tax & Service ----------------------- */
+  const [taxEnabled, setTaxEnabled] = useState(
+    localStorage.getItem("settings.taxEnabled") === "true"
+  );
+  const [taxRate, setTaxRate] = useState(
+    localStorage.getItem("settings.taxRate") || "10"
+  );
+  const [svcEnabled, setSvcEnabled] = useState(
+    localStorage.getItem("settings.serviceEnabled") === "true"
+  );
+  const [svcRate, setSvcRate] = useState(
+    localStorage.getItem("settings.serviceRate") || "5"
+  );
+
+  function saveTaxSettings() {
+    localStorage.setItem("settings.taxEnabled", taxEnabled);
+    localStorage.setItem("settings.taxRate", taxRate);
+    localStorage.setItem("settings.serviceEnabled", svcEnabled);
+    localStorage.setItem("settings.serviceRate", svcRate);
+    alert("Tax and service settings saved!");
+  }
+
+  /* ---------------------------- Logout ------------------------------ */
   function logout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     navigate("/login");
   }
 
-  /* ------------------------------ Render ---------------------------- */
+  /* ---------------------------- RENDER ------------------------------ */
   return (
     <div className="page-container">
-      {/* Back */}
       <button className="back-btn" onClick={() => navigate("/")}>
         <i className="fas fa-arrow-left" /> Back
       </button>
-
       <h1 className="page-title">Settings</h1>
 
       <div className="settings-grid">
-        {/* Card: Profile (change name) */}
+        {/* Profile */}
         <section className="card">
           <h2>Profile</h2>
           <label>Display name</label>
           <input
-            type="text"
             value={profileName}
             onChange={(e) => setProfileName(e.target.value)}
             placeholder="Your name"
           />
-          {profileMsg && (
-            <p className="note" style={{ marginTop: 6 }}>
-              {profileMsg}
-            </p>
-          )}
+          {profileMsg && <p className="note">{profileMsg}</p>}
           <div className="actions">
             <button className="btn" onClick={saveProfile}>
               Save Profile
@@ -555,118 +344,14 @@ export default function Settings() {
           </div>
         </section>
 
-        {/* Card: Android Bridge */}
+        {/* PRINTER CONNECTIONS */}
         <section className="card">
-          <h2>Android Bridge</h2>
-          <p className="muted">
-            Check if the Android WebView bridge (
-            <code>window.AndroidPrinter</code>) is available (only on the
-            Android app).
-          </p>
-          {bridgeMsg && <p className="note">{bridgeMsg}</p>}
-          <div className="actions">
-            <button className="btn outline" onClick={handleCheckBridge}>
-              Check Bridge
-            </button>
-          </div>
-        </section>
+          <h2>Printer Connections</h2>
+          <p className="muted">Manage Android Bluetooth or QZ printers.</p>
 
-        <section className="card">
-          <h2>Bluetooth Printers (Android)</h2>
-          <p className="muted">
-            Pick paired Bluetooth printers for receipts and kitchen tickets.
-            Pair new devices in <b>Android Settings › Bluetooth</b> first.
-          </p>
-
-          <div
-            className="actions"
-            style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
-          >
-            <button className="btn" onClick={() => androidRequestBtEnable()}>
-              Enable Bluetooth
-            </button>
+          <div className="actions" style={{ gap: 8, flexWrap: "wrap" }}>
             <button className="btn" onClick={handleListPrinters}>
-              Refresh Paired List
-            </button>
-          </div>
-
-          {/* Selector rows */}
-          <div className="form-grid-2" style={{ marginTop: 12 }}>
-            <div>
-              <label>Receipt printer (MAC)</label>
-              <select
-                value={receiptPrinter}
-                onChange={(e) => setReceiptPrinter(e.target.value)}
-              >
-                <option value="">(Use first paired)</option>
-                {androidListPrintersDetailed().map((p) => (
-                  <option key={p.address || p.name} value={p.address || ""}>
-                    {p.name} {p.address ? `(${p.address})` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label>Kitchen printer (MAC)</label>
-              <select
-                value={kitchenPrinter}
-                onChange={(e) => setKitchenPrinter(e.target.value)}
-              >
-                <option value="">(Use first paired)</option>
-                {androidListPrintersDetailed().map((p) => (
-                  <option key={p.address || p.name} value={p.address || ""}>
-                    {p.name} {p.address ? `(${p.address})` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div
-            className="actions"
-            style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}
-          >
-            <button className="btn" onClick={savePrinters}>
-              Save
-            </button>
-            <button
-              className="btn"
-              onClick={() => {
-                if (!receiptPrinter)
-                  return setBtMsg("Pick a receipt printer first.");
-                try {
-                  androidConnect(receiptPrinter);
-                  setBtMsg("Connect command sent ✓");
-                } catch (e) {
-                  setBtMsg("Connect failed: " + (e?.message || "Unknown"));
-                }
-              }}
-            >
-              Test Connect
-            </button>
-            <button
-              className="btn primary"
-              onClick={async () => {
-                try {
-                  if (!androidIsBtOn()) {
-                    setBtMsg("Bluetooth is OFF. Turn it on and try again.");
-                    return;
-                  }
-                  const sample = "[C]<b>BT Test</b>\n[L]Hello from POS\n\n";
-                  await androidPrintWithRetry(sample, {
-                    address: receiptPrinter,
-                    copies: 1,
-                    tries: 3,
-                    baseDelay: 500,
-                  });
-                  setBtMsg("Sent BT test to receipt printer ✓");
-                } catch (e) {
-                  setBtMsg("BT test failed: " + (e?.message || "Unknown"));
-                }
-              }}
-            >
-              Send BT Test
+              Refresh Printers
             </button>
           </div>
 
@@ -677,315 +362,297 @@ export default function Settings() {
           )}
         </section>
 
-        {/* Card: Printers */}
+        {/* PRINTER ROUTING + TEST */}
         <section className="card">
-          <h2>Bluetooth / Installed Printers</h2>
-          <p className="muted">
-            List paired Bluetooth printers (Android) or installed printers
-            (desktop via QZ).
-          </p>
-          {btMsg && <pre className="note pre">{btMsg}</pre>}
-          <div className="actions">
-            <button className="btn" onClick={handleListPrinters}>
-              List Printers
-            </button>
-          </div>
-        </section>
+          <h2>Printer Routing & Test</h2>
+          <div className="form-grid-2">
+            <div>
+              <label>Receipt Printer</label>
+              <select
+                value={receiptPrinter}
+                onChange={(e) => setReceiptPrinter(e.target.value)}
+              >
+                <option value="">(Default)</option>
+                {printerList.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+              <label style={{ marginTop: 8 }}>Receipt Copies</label>
+              <input
+                type="number"
+                min={1}
+                value={receiptCopies}
+                onChange={(e) =>
+                  setReceiptCopies(Math.max(1, Number(e.target.value) || 1))
+                }
+              />
+            </div>
 
-        {/* Card: Test Print + Previews */}
-        <section className="card">
-          <h2>Test & Preview</h2>
-          <p className="muted">
-            Preview the sample tickets or send a sample receipt to your printer.
-          </p>
-          {testMsg && <p className="note">{testMsg}</p>}
-          <div
-            className="actions"
-            style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
-          >
-            <button className="btn" onClick={openReceiptPreview}>
+            <div>
+              <label>Kitchen Printer</label>
+              <select
+                value={kitchenPrinter}
+                onChange={(e) => setKitchenPrinter(e.target.value)}
+              >
+                <option value="">(Default)</option>
+                {printerList.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+              <label style={{ marginTop: 8 }}>Kitchen Copies</label>
+              <input
+                type="number"
+                min={1}
+                value={kitchenCopies}
+                onChange={(e) =>
+                  setKitchenCopies(Math.max(1, Number(e.target.value) || 1))
+                }
+              />
+            </div>
+          </div>
+
+          <div className="actions" style={{ marginTop: 12 }}>
+            <button className="btn" onClick={savePrinters}>
+              Save
+            </button>
+            <button
+              className="btn outline"
+              onClick={() => openPreview("receipt")}
+            >
               Preview Receipt
             </button>
-            <button className="btn" onClick={openKotPreview}>
-              Preview Kitchen Ticket
+            <button className="btn outline" onClick={() => openPreview("kot")}>
+              Preview KOT
             </button>
             <button className="btn primary" onClick={handleTestPrint}>
-              Send Test Receipt
+              Send Test Print
             </button>
           </div>
+          {testMsg && <p className="note">{testMsg}</p>}
         </section>
 
-        {/* ADMIN-ONLY: Printer routing */}
+        {/* ADMIN ONLY */}
         {isAdmin && (
-          <section className="card">
-            <h2>Printer Routing</h2>
-            <p className="muted">
-              Choose default printers and copies for each ticket.
-            </p>
-            <div className="form-grid-2">
-              <div>
-                <label>Receipt printer</label>
-                <select
-                  value={receiptPrinter}
-                  onChange={(e) => setReceiptPrinter(e.target.value)}
+          <>
+            <section className="card">
+              <h2>Ticket Appearance</h2>
+              <div className="form-grid-2">
+                <div>
+                  <label>Paper Width</label>
+                  <select
+                    value={rollWidth}
+                    onChange={(e) => setRollWidth(e.target.value)}
+                  >
+                    <option value="58">58 mm</option>
+                    <option value="80">80 mm</option>
+                  </select>
+                  <label style={{ marginTop: 8 }}>Print Density</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={density}
+                    onChange={(e) => setDensity(Number(e.target.value))}
+                  />
+                  <div className="muted">Current: {density}</div>
+                </div>
+                <div>
+                  <label>Logo Image</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      const fr = new FileReader();
+                      fr.onload = () => setLogoDataUrl(fr.result);
+                      fr.readAsDataURL(f);
+                    }}
+                  />
+                  {(logoDataUrl || appLogo) && (
+                    <div className="logo-preview">
+                      <img
+                        src={logoDataUrl || appLogo}
+                        alt="Logo"
+                        style={{ height: 60 }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="actions">
+                <button
+                  className="btn"
+                  onClick={() => {
+                    localStorage.setItem("print.roll", rollWidth);
+                    localStorage.setItem("print.density", String(density));
+                    if (logoDataUrl)
+                      localStorage.setItem("print.logo", logoDataUrl);
+                    alert("Print settings saved.");
+                  }}
                 >
-                  <option value="">(Use first available)</option>
-                  {isAndroidBridge()
-                    ? androidListPrintersDetailed().map((p) => (
-                        <option
-                          key={p.address || p.name}
-                          value={p.address || ""}
-                        >
-                          {p.name} {p.address ? `(${p.address})` : ""}
-                        </option>
-                      ))
-                    : printerList.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                </select>
-
-                <label style={{ display: "block", marginTop: 8 }}>
-                  Receipt copies
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={receiptCopies}
-                  onChange={(e) =>
-                    setReceiptCopies(Math.max(1, Number(e.target.value) || 1))
-                  }
-                />
+                  Save
+                </button>
               </div>
+            </section>
 
-              <div>
-                <label>Kitchen printer</label>
-                <select
-                  value={kitchenPrinter}
-                  onChange={(e) => setKitchenPrinter(e.target.value)}
+            <section className="card">
+              <h2>Receipt Template</h2>
+              <label>Shop Name</label>
+              <input
+                value={shopName}
+                onChange={(e) => setShopName(e.target.value)}
+              />
+              <label style={{ marginTop: 8 }}>Address</label>
+              <textarea
+                rows={2}
+                value={shopAddr}
+                onChange={(e) => setShopAddr(e.target.value)}
+              />
+              <label style={{ marginTop: 8 }}>Footer Message</label>
+              <input
+                value={footerMsg}
+                onChange={(e) => setFooterMsg(e.target.value)}
+              />
+              <div className="actions">
+                <button
+                  className="btn"
+                  onClick={() => {
+                    localStorage.setItem("biz.name", shopName);
+                    localStorage.setItem("biz.addr", shopAddr);
+                    localStorage.setItem("biz.footer", footerMsg);
+                    alert("Business profile saved.");
+                  }}
                 >
-                  <option value="">{`(Use first available / name contains "kitchen")`}</option>
-                  {isAndroidBridge()
-                    ? androidListPrintersDetailed().map((p) => (
-                        <option
-                          key={p.address || p.name}
-                          value={p.address || ""}
-                        >
-                          {p.name} {p.address ? `(${p.address})` : ""}
-                        </option>
-                      ))
-                    : printerList.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                </select>
-
-                <label style={{ display: "block", marginTop: 8 }}>
-                  Kitchen copies
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={kitchenCopies}
-                  onChange={(e) =>
-                    setKitchenCopies(Math.max(1, Number(e.target.value) || 1))
-                  }
-                />
+                  Save
+                </button>
               </div>
-            </div>
-            <div className="actions" style={{ marginTop: 12 }}>
-              <button className="btn" onClick={savePrinters}>
-                Save
-              </button>
-            </div>
-          </section>
-        )}
+            </section>
 
-        {/* ADMIN-ONLY: Ticket appearance */}
-        {isAdmin && (
-          <section className="card">
-            <h2>Ticket Appearance</h2>
-            <div className="form-grid-2">
-              <div>
-                <label>Paper width</label>
-                <select
-                  value={rollWidth}
-                  onChange={(e) => setRollWidth(e.target.value)}
-                >
-                  <option value="58">58 mm</option>
-                  <option value="80">80 mm</option>
-                </select>
-
-                <label style={{ display: "block", marginTop: 8 }}>
-                  Print density (darkness)
-                </label>
-                <input
-                  type="range"
-                  min="1"
-                  max="5"
-                  value={density}
-                  onChange={(e) => setDensity(Number(e.target.value))}
-                />
-                <div className="muted">Current: {density}</div>
+            <section className="card">
+              <h2>Tax & Service Charge</h2>
+              <p className="muted">Configure order charges and rates.</p>
+              <div className="form-grid-2">
+                <div>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={taxEnabled}
+                      onChange={(e) => setTaxEnabled(e.target.checked)}
+                    />{" "}
+                    Enable Tax
+                  </label>
+                  <label style={{ marginTop: 8 }}>Tax Rate (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={taxRate}
+                    onChange={(e) => setTaxRate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={svcEnabled}
+                      onChange={(e) => setSvcEnabled(e.target.checked)}
+                    />{" "}
+                    Enable Service Charge
+                  </label>
+                  <label style={{ marginTop: 8 }}>Service Rate (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={svcRate}
+                    onChange={(e) => setSvcRate(e.target.value)}
+                  />
+                </div>
               </div>
-
-              <div>
-                <label>Logo image</label>
-                <input type="file" accept="image/*" onChange={onLogoFile} />
-                {(logoDataUrl || appLogo) && (
-                  <div className="logo-preview">
-                    <img
-                      src={logoDataUrl || appLogo}
-                      alt="Logo preview"
-                      style={{ height: 60, objectFit: "contain" }}
-                    />
-                  </div>
-                )}
+              <div className="actions">
+                <button className="btn" onClick={saveTaxSettings}>
+                  Save
+                </button>
               </div>
-            </div>
+            </section>
 
-            <div className="actions" style={{ marginTop: 12 }}>
-              <button className="btn" onClick={savePrintPrefs}>
-                Save
-              </button>
-            </div>
-          </section>
-        )}
-
-        {/* ADMIN-ONLY: Receipt template text */}
-        {isAdmin && (
-          <section className="card">
-            <h2>Receipt Template</h2>
-            <label>Shop Name</label>
-            <input
-              value={shopName}
-              onChange={(e) => setShopName(e.target.value)}
-            />
-
-            <label style={{ marginTop: 8 }}>Address</label>
-            <textarea
-              rows={2}
-              value={shopAddr}
-              onChange={(e) => setShopAddr(e.target.value)}
-            />
-
-            <label style={{ marginTop: 8 }}>Footer Message</label>
-            <input
-              value={footerMsg}
-              onChange={(e) => setFooterMsg(e.target.value)}
-            />
-
-            <div className="actions" style={{ marginTop: 12 }}>
-              <button className="btn" onClick={saveBiz}>
-                Save
-              </button>
-            </div>
-          </section>
-        )}
-
-        {/* ADMIN-ONLY: Promotions */}
-        {isAdmin && (
-          <section className="card">
-            <h2>Promotions</h2>
-            <p className="muted">
-              Create and manage discounts staff can pick at checkout.
-            </p>
-
-            <div className="form-grid-2">
-              <div>
-                <label>Promo name</label>
-                <input
-                  type="text"
-                  value={pName}
-                  onChange={(e) => setPName(e.target.value)}
-                  placeholder="e.g. Student Discount"
-                />
-
-                <label style={{ marginTop: 8 }}>Type</label>
-                <select
-                  value={pType}
-                  onChange={(e) => setPType(e.target.value)}
-                >
-                  <option value="percentage">Percentage (%)</option>
-                  <option value="flat">Flat (Rp.)</option>
-                </select>
+            <section className="card">
+              <h2>Promotions</h2>
+              <p className="muted">Create and manage discount promotions.</p>
+              <div className="form-grid-2">
+                <div>
+                  <label>Name</label>
+                  <input
+                    value={pName}
+                    onChange={(e) => setPName(e.target.value)}
+                  />
+                  <label style={{ marginTop: 8 }}>Type</label>
+                  <select
+                    value={pType}
+                    onChange={(e) => setPType(e.target.value)}
+                  >
+                    <option value="percentage">Percentage</option>
+                    <option value="flat">Flat (Rp)</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Value</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={pValue}
+                    onChange={(e) => setPValue(e.target.value)}
+                  />
+                  <label style={{ marginTop: 8 }}>Active?</label>
+                  <select
+                    value={String(pActive)}
+                    onChange={(e) => setPActive(e.target.value === "true")}
+                  >
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </div>
               </div>
-
-              <div>
-                <label>Value</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={pValue}
-                  onChange={(e) => setPValue(e.target.value)}
-                  placeholder={
-                    pType === "percentage" ? "10 for 10%" : "5000 for Rp.5,000"
-                  }
-                />
-
-                <label style={{ marginTop: 8 }}>Active?</label>
-                <select
-                  value={String(pActive)}
-                  onChange={(e) => setPActive(e.target.value === "true")}
-                >
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
+              <label style={{ marginTop: 8 }}>Description</label>
+              <input value={pDesc} onChange={(e) => setPDesc(e.target.value)} />
+              <div className="actions">
+                <button className="btn" onClick={addPromo}>
+                  Add Promotion
+                </button>
               </div>
-            </div>
-
-            <label style={{ marginTop: 8 }}>Description (optional)</label>
-            <input
-              type="text"
-              value={pDesc}
-              onChange={(e) => setPDesc(e.target.value)}
-              placeholder="e.g. Show student ID"
-            />
-
-            <div className="actions" style={{ marginTop: 12 }}>
-              <button className="btn" onClick={addPromo}>
-                Add Promotion
-              </button>
-            </div>
-
-            {/* list */}
-            {pLoading ? (
-              <p className="note">Loading promotions</p>
-            ) : pError ? (
-              <p className="note" style={{ color: "#b91c1c" }}>
-                {pError}
-              </p>
-            ) : promos.length > 0 ? (
-              <div className="note" style={{ marginTop: 10 }}>
-                <strong>Saved promotions:</strong>
-                <ul className="list-reset" style={{ marginTop: 8 }}>
+              {pLoading ? (
+                <p className="note">Loading…</p>
+              ) : pError ? (
+                <p className="note" style={{ color: "#b91c1c" }}>
+                  {pError}
+                </p>
+              ) : promos.length ? (
+                <ul className="list-reset" style={{ marginTop: 10 }}>
                   {promos.map((p) => (
                     <li key={p._id} className="list-item">
                       <div
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
-                          gap: 8,
                           alignItems: "center",
                         }}
                       >
                         <div>
-                          <div>
-                            <b>{p.name}</b>{" "}
-                            <span className={p.active ? "tag" : "tag muted"}>
-                              {p.active ? "Active" : "Inactive"}
-                            </span>
-                          </div>
-                          <div className="muted" style={{ margin: 0 }}>
+                          <b>{p.name}</b>{" "}
+                          <span className={p.active ? "tag" : "tag muted"}>
+                            {p.active ? "Active" : "Inactive"}
+                          </span>
+                          <div className="muted">
                             {p.type === "percentage"
                               ? `${p.value}%`
-                              : formatIDR(Number(p.value || 0), {
-                                  withDecimals: true,
-                                })}
-                            {p.description ? ` — ${p.description}` : ""}
+                              : formatIDR(p.value)}{" "}
+                            {p.description}
                           </div>
                         </div>
                         <div style={{ display: "inline-flex", gap: 6 }}>
@@ -1006,45 +673,12 @@ export default function Settings() {
                     </li>
                   ))}
                 </ul>
-              </div>
-            ) : (
-              <p className="note">No promotions yet.</p>
-            )}
-          </section>
+              ) : (
+                <p className="note">No promotions yet.</p>
+              )}
+            </section>
+          </>
         )}
-
-        {/* Diagnostics */}
-        <section className="card">
-          <h2>Diagnostics</h2>
-          <div
-            className="actions"
-            style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
-          >
-            <button className="btn" onClick={probeBridge}>
-              Probe Android Bridge
-            </button>
-          </div>
-          {bridgeCaps && (
-            <pre className="note pre" style={{ marginTop: 8 }}>
-              {JSON.stringify(bridgeCaps, null, 2)}
-            </pre>
-          )}
-
-          <div style={{ marginTop: 12 }}>
-            <label>Raw ESC/POS test (QZ)</label>
-            <textarea
-              rows={4}
-              value={rawCmd}
-              onChange={(e) => setRawCmd(e.target.value)}
-              style={{ width: "100%" }}
-            />
-            <div className="actions" style={{ marginTop: 8 }}>
-              <button className="btn" onClick={sendRawTest}>
-                Send Raw
-              </button>
-            </div>
-          </div>
-        </section>
 
         {/* Logout */}
         <section className="card">
@@ -1057,7 +691,7 @@ export default function Settings() {
         </section>
       </div>
 
-      {/* Preview modal (works for both receipt & KOT) */}
+      {/* PREVIEW MODAL */}
       {showPreview && (
         <div
           className="modal"
@@ -1080,15 +714,13 @@ export default function Settings() {
                 ✕
               </button>
             </header>
-
             <div className="modal__body">
               <ReceiptPreview
                 data={previewData}
                 variant={previewVariant}
-                roll={previewData?.roll || Number(rollWidth) || 58}
+                roll={previewData?.roll || Number(rollWidth)}
               />
             </div>
-
             <footer className="modal__actions">
               <button
                 className="btn outline"

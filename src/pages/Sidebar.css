@@ -1,5 +1,5 @@
 /* =========================
-   Sidebar.css (refined)
+   Sidebar.css (refined, updated)
    ========================= */
 
 /* ---------- Design tokens ---------- */
@@ -23,7 +23,7 @@
   --cta-glow:0 10px 28px rgba(46,125,50,.35);
 
   /* Focus ring */
-  --ring: 0 0 0 3px rgba(99,102,241,.22); /* indigo */
+  --ring: 0 0 0 3px rgba(99,102,241,.22);
 }
 
 /* Dark mode (auto) */
@@ -46,7 +46,7 @@
 
 /* Reduce motion */
 @media (prefers-reduced-motion: reduce){
-  * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+  *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
 }
 
 /* ---------- Base layout (desktop sidebar) ---------- */
@@ -61,18 +61,17 @@
   display:flex;
   flex-direction:column;
   gap:16px;
-  position:sticky; /* stays put on tall pages */
+  position:sticky;
   top:0;
-  transition:width .18s ease, min-width .18s ease, padding .18s ease, background .2s ease, border-color .2s ease;
-  will-change: width;
+  transition:width .18s ease,min-width .18s ease,padding .18s ease,background .2s ease,border-color .2s ease;
+  will-change:width;
 
-  /* NEW: allow vertical scrolling if content overflows (landscape/short) */
   overflow-y:auto;
   overscroll-behavior:contain;
   padding-bottom:max(20px, env(safe-area-inset-bottom));
 }
 @supports not (height:100dvh){
-  .layout-sidebar{ height:100vh; }
+  .layout-sidebar{height:100vh}
 }
 
 .layout-sidebar.collapsed{
@@ -86,7 +85,7 @@
   display:flex;
   align-items:center;
   justify-content:space-between;
-  min-height:40px;
+  min-height:64px; /* taller header so big logo fits */
 }
 
 .sidebar-logo{
@@ -94,9 +93,11 @@
   align-items:center;
   gap:10px;
   text-decoration:none;
-  -webkit-tap-highlight-color: transparent;
+  -webkit-tap-highlight-color:transparent;
   user-select:none;
 }
+
+/* Base size (small); overridden below for expanded and mobile */
 .sidebar-logo img{
   height:34px;
   width:34px;
@@ -104,8 +105,20 @@
   object-fit:cover;
   display:block;
   box-shadow:var(--shadow-xs);
-  background:#fff; /* better on dark bg */
+  background:#fff;
 }
+
+/* Bigger logo on desktop WHEN NOT collapsed */
+.layout-sidebar:not(.collapsed) .sidebar-logo img{
+  height:56px;
+  width:56px;
+  border-radius:12px;
+  padding:6px; /* subtle white badge look */
+}
+
+/* Hide logo entirely when collapsed */
+.layout-sidebar.collapsed .sidebar-logo{display:none}
+
 .brand-text{
   font-weight:800;
   color:var(--text);
@@ -116,276 +129,166 @@
 
 /* ---------- Icon buttons / primary buttons ---------- */
 .sb-icon-btn{
-  width:36px; height:36px;
-  border-radius:10px;
-  background:var(--bg);
-  border:1px solid var(--border);
-  display:inline-flex;
-  align-items:center; justify-content:center;
-  box-shadow:var(--shadow-xs);
-  cursor:pointer;
-  transition:transform .08s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease;
+  width:36px;height:36px;border-radius:10px;background:var(--bg);border:1px solid var(--border);
+  display:inline-flex;align-items:center;justify-content:center;box-shadow:var(--shadow-xs);
+  cursor:pointer;transition:transform .08s ease,background .18s ease,border-color .18s ease,box-shadow .18s ease;
 }
-.sb-icon-btn:hover{ background:color-mix(in oklab, var(--bg) 92%, #0000); border-color:color-mix(in oklab, var(--border) 70%, var(--text) 30%); }
-.sb-icon-btn:active{ transform:translateY(1px); }
-.sb-icon-btn:focus-visible{ outline:none; box-shadow:var(--ring); }
+.sb-icon-btn:hover{background:color-mix(in oklab,var(--bg) 92%,#0000);border-color:color-mix(in oklab,var(--border) 70%,var(--text) 30%)}
+.sb-icon-btn:active{transform:translateY(1px)}
+.sb-icon-btn:focus-visible{outline:none;box-shadow:var(--ring)}
 
 .sb-btn{
-  border:1px solid var(--border);
-  background:var(--bg);
-  color:var(--text);
-  padding:10px 14px;
-  border-radius:12px;
-  font-size:14px;
-  line-height:1;
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  cursor:pointer;
-  box-shadow:var(--shadow-xs);
-  transition:transform .08s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease, color .2s ease;
+  border:1px solid var(--border);background:var(--bg);color:var(--text);
+  padding:10px 14px;border-radius:12px;font-size:14px;line-height:1;
+  display:inline-flex;align-items:center;gap:8px;cursor:pointer;box-shadow:var(--shadow-xs);
+  transition:transform .08s ease,box-shadow .2s ease,background .2s ease,border-color .2s ease,color .2s ease;
 }
-.sb-btn:hover{ background:color-mix(in oklab, var(--bg) 92%, #0000); border-color:color-mix(in oklab, var(--border) 70%, var(--text) 30%); }
-.sb-btn:active{ transform:translateY(1px); }
-.sb-btn:focus-visible{ outline:none; box-shadow:var(--ring); }
+.sb-btn:hover{background:color-mix(in oklab,var(--bg) 92%,#0000);border-color:color-mix(in oklab,var(--border) 70%,var(--text) 30%)}
+.sb-btn:active{transform:translateY(1px)}
+.sb-btn:focus-visible{outline:none;box-shadow:var(--ring)}
 
 .sb-btn-primary{
-  background:var(--brand);
-  border-color:var(--brand);
-  color:#fff;
-  box-shadow:0 10px 26px color-mix(in oklab, var(--brand) 40%, #0000);
+  background:var(--brand);border-color:var(--brand);color:#fff;
+  box-shadow:0 10px 26px color-mix(in oklab,var(--brand) 40%,#0000);
 }
-.sb-btn-primary:hover{ background:var(--brand-900); border-color:var(--brand-900); }
+.sb-btn-primary:hover{background:var(--brand-900);border-color:var(--brand-900)}
 
-/* stack for desktop actions (Add Product / Add Category) */
-.sidebar-actions-stack{
-  margin-top:auto;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-}
-.add-product-btn,
-.add-category-btn{ width:100%; justify-content:center; }
+/* stack for desktop actions */
+.sidebar-actions-stack{margin-top:auto;display:flex;flex-direction:column;gap:10px}
+.add-product-btn,.add-category-btn{width:100%;justify-content:center}
 
 /* ensure white icons on colored CTAs */
 .sb-btn-primary svg,
 .sb-btn-primary svg path,
 .add-product-btn.sb-btn-primary svg,
 .add-product-btn.sb-btn-primary svg path{
-  color:#fff !important;
-  stroke-width:2.2;
-  filter:drop-shadow(0 1px 0 rgba(0,0,0,.25));
+  color:#fff!important;stroke-width:2.2;filter:drop-shadow(0 1px 0 rgba(0,0,0,.25));
 }
 
 /* ---------- Nav ---------- */
-.sidebar-nav{
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-}
+.sidebar-nav{display:flex;flex-direction:column;gap:12px}
 
 .nav-link{
-  display:flex;
-  align-items:center;
-  gap:12px;
-  text-decoration:none;
-  color:var(--text);
-  padding:10px 12px;
-  border-radius:12px;
-  transition:background .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease;
-  border:1px solid transparent;
+  display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);
+  padding:10px 12px;border-radius:12px;transition:background .2s ease,color .2s ease,border-color .2s ease,box-shadow .2s ease;border:1px solid transparent;
 }
-.nav-link:hover{
-  background:color-mix(in oklab, var(--bg) 94%, #0000);
-  border-color:var(--border);
-}
-.nav-link:focus-visible{
-  outline:none;
-  box-shadow:var(--ring);
-  background:color-mix(in oklab, var(--bg) 92%, #0000);
-}
-.nav-link svg{ color:var(--muted); flex:0 0 18px; }
+.nav-link:hover{background:color-mix(in oklab,var(--bg) 94%,#0000);border-color:var(--border)}
+.nav-link:focus-visible{outline:none;box-shadow:var(--ring);background:color-mix(in oklab,var(--bg) 92%,#0000)}
+.nav-link svg{color:var(--muted);flex:0 0 18px}
 .nav-link.active{
   color:var(--brand);
-  background:color-mix(in oklab, var(--brand) 14%, var(--bg));
-  border-color:color-mix(in oklab, var(--brand) 30%, var(--border));
-  box-shadow:0 8px 22px color-mix(in oklab, var(--brand) 20%, #0000);
+  background:color-mix(in oklab,var(--brand) 14%,var(--bg));
+  border-color:color-mix(in oklab,var(--brand) 30%,var(--border));
+  box-shadow:0 8px 22px color-mix(in oklab,var(--brand) 20%,#0000);
 }
-.nav-link.active svg{ color:var(--brand); }
+.nav-link.active svg{color:var(--brand)}
 
-/* Mobile-only “Add …” pill inherits .nav-link but green */
+/* Mobile-only “Add …” pill */
 .add-pill{
-  background:var(--cta) !important;
-  border-color:var(--cta) !important;
-  color:#fff !important;
-  box-shadow:var(--cta-glow) !important;
-  padding:12px 18px;
-  font-weight:600;
+  background:var(--cta)!important;border-color:var(--cta)!important;color:#fff!important;
+  box-shadow:var(--cta-glow)!important;padding:12px 18px;font-weight:600;
 }
-.add-pill:hover{
-  background:var(--cta-900) !important;
-  border-color:var(--cta-900) !important;
-}
+.add-pill:hover{background:var(--cta-900)!important;border-color:var(--cta-900)!important}
 
 /* ---------- Collapsed tweaks ---------- */
 .layout-sidebar.collapsed .brand-text,
-.layout-sidebar.collapsed .nav-link span{ display:none; }
-.layout-sidebar.collapsed .nav-link{ justify-content:center; padding:10px; }
-.layout-sidebar.collapsed .sidebar-actions-stack .sb-btn span{ display:none; }
-.layout-sidebar.collapsed .sidebar-actions-stack .sb-btn{ justify-content:center; }
+.layout-sidebar.collapsed .nav-link span{display:none}
+.layout-sidebar.collapsed .nav-link{justify-content:center;padding:10px}
+.layout-sidebar.collapsed .sidebar-actions-stack .sb-btn span{display:none}
+.layout-sidebar.collapsed .sidebar-actions-stack .sb-btn{justify-content:center}
 
 /* ---------- Mobile: sidebar as sticky top bar ---------- */
 @media (max-width:900px){
   .layout-sidebar,
   .layout-sidebar.collapsed{
-    width:100%;
-    min-width:0;
-    height:auto;
-    border-right:0;
+    width:100%;min-width:0;height:auto;border-right:0;
     padding:max(12px, env(safe-area-inset-top)) 16px 10px 16px;
-    position:sticky;
-    top:0;
-    z-index:50;
-    background:var(--bg);
-    border-bottom:1px solid var(--border);
-    box-shadow:var(--shadow-sm);
-    gap:12px;
+    position:sticky;top:0;z-index:50;background:var(--bg);
+    border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);gap:12px;
   }
 
-  /* Blur only if supported */
   @supports (backdrop-filter: blur(8px)){
     .layout-sidebar{
-      background: color-mix(in oklab, var(--bg) 86%, transparent);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
+      background:color-mix(in oklab,var(--bg) 86%,transparent);
+      backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
     }
   }
 
-  .sidebar-top{
-    justify-content:center;
-    min-height:56px;
-  }
-  .layout-sidebar.as-topbar .brand-text{ display:none; }
-  .layout-sidebar.as-topbar .sidebar-logo{ margin:0 auto; }
-  .layout-sidebar.as-topbar .sidebar-logo img{ height:56px; width:56px; }
+  .sidebar-top{justify-content:center;min-height:56px}
+  .layout-sidebar.as-topbar .brand-text{display:none}
+  .layout-sidebar.as-topbar .sidebar-logo{margin:0 auto}
 
   /* Pills: horizontal scroller */
   .sidebar-nav{
-    flex-direction:row;
-    gap:10px;
-    overflow-x:auto;
-    -webkit-overflow-scrolling:touch;
-    scrollbar-width:none;
-    scroll-snap-type:x proximity;
-    padding-bottom:4px;
-    flex-wrap:nowrap;
+    flex-direction:row;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    scrollbar-width:none;scroll-snap-type:x proximity;padding-bottom:4px;flex-wrap:nowrap;
   }
-  .sidebar-nav::-webkit-scrollbar{ display:none; }
+  .sidebar-nav::-webkit-scrollbar{display:none}
 
   .nav-link{
-    background:#fff;
-    border:1px solid var(--border);
-    border-radius:999px;
-    padding:10px 14px;
-    box-shadow:var(--shadow-xs);
-    scroll-snap-align:start;
-    white-space:nowrap;
-    flex:0 0 auto;
+    background:#fff;border:1px solid var(--border);border-radius:999px;padding:10px 14px;
+    box-shadow:var(--shadow-xs);scroll-snap-align:start;white-space:nowrap;flex:0 0 auto;
   }
 
-  /* hide icons within standard pills for compactness */
-  .nav-link svg{ display:none; }
-
-  /* ...but show the plus on Add pill */
-  .add-pill svg{ display:block; }
+  /* hide icons within standard pills */
+  .nav-link svg{display:none}
+  .add-pill svg{display:block}
 
   .nav-link.active{
-    background:var(--brand);
-    border-color:var(--brand);
-    color:#fff;
-    box-shadow:0 10px 24px color-mix(in oklab, var(--brand) 35%, #0000);
+    background:var(--brand);border-color:var(--brand);color:#fff;
+    box-shadow:0 10px 24px color-mix(in oklab,var(--brand) 35%,#0000);
   }
 
-  .sidebar-toggle{ display:none; }         /* collapse button hidden on mobile */
-  .sidebar-actions-stack{ display:none; }  /* desktop buttons hidden on mobile */
+  .sidebar-toggle{display:none}
+  .sidebar-actions-stack{display:none}
 }
 
 /* ---------- Fine-tuning: touch & focus ---------- */
-.nav-link, .sb-btn, .sb-icon-btn{
-  -webkit-tap-highlight-color: transparent;
-}
-/* Ensure icons inside primary/green CTA buttons are WHITE (desktop + mobile) */
+.nav-link,.sb-btn,.sb-icon-btn{-webkit-tap-highlight-color:transparent}
+
+/* Ensure icons inside primary/green CTA buttons stay white */
 .sidebar-actions-stack .sb-btn,
-.sidebar-nav .add-pill {
-  color: #7bc239;               /* makes currentColor = white */
-}
-
-/* Icons inherit the white and keep full contrast */
+.sidebar-nav .add-pill{color:#7bc239}
 .sidebar-actions-stack .sb-btn svg,
-.sidebar-nav .add-pill svg {
-  color: inherit !important; /* override any muted icon color */
-  stroke: currentColor;      /* our inline SVGs use stroke; reinforce it */
-  opacity: 1;
-}
-
-/* Keep it consistent on hover/active/focus */
+.sidebar-nav .add-pill svg{color:inherit!important;stroke:currentColor;opacity:1}
 .sidebar-actions-stack .sb-btn:hover svg,
 .sidebar-actions-stack .sb-btn:active svg,
 .sidebar-actions-stack .sb-btn:focus-visible svg,
 .sidebar-nav .add-pill:hover svg,
 .sidebar-nav .add-pill:active svg,
-.sidebar-nav .add-pill:focus-visible svg {
-  color: inherit !important;
-}
-
-/* If you dim icons elsewhere, prevent that from leaking into CTAs */
+.sidebar-nav .add-pill:focus-visible svg{color:inherit!important}
 .layout-sidebar .sb-btn svg,
-.layout-sidebar .add-pill svg {
-  filter: none;
-  mix-blend-mode: normal;
-}
+.layout-sidebar .add-pill svg{filter:none;mix-blend-mode:normal}
 
 /* Make the Add Product button text white */
-.sb-btn-primary.add-product-btn {
-  color: #fff !important;            /* white text */
-  background: var(--brand);          /* keep your brand orange background */
-  border: none;                      /* optional cleaner look */
-  font-weight: 700;
-  transition: filter .15s, transform .06s;
+.sb-btn-primary.add-product-btn{
+  color:#fff!important;background:var(--brand);border:none;font-weight:700;transition:filter .15s,transform .06s;
 }
+.sb-btn-primary.add-product-btn:hover{filter:brightness(.95)}
+.sb-btn-primary.add-product-btn:active{transform:translateY(1px)}
 
-.sb-btn-primary.add-product-btn:hover {
-  filter: brightness(.95);
-}
-
-.sb-btn-primary.add-product-btn:active {
-  transform: translateY(1px);
-}
-
-/* Optional: subtle separator under header on very light themes */
+/* Optional: subtle separator (light) */
 @media (prefers-color-scheme: light){
-  .sidebar-top{ border-bottom: 0; }
+  .sidebar-top{border-bottom:0}
 }
 
-/* ---------- NEW: Landscape (short-height) assurance ---------- */
-/* On short landscape viewports, don't pin actions to the very bottom.
-   Show Add Product and Add Category side-by-side so both remain visible. */
-/* ---------- FIX: Landscape (short-height) keep column & bottom ---------- */
-@media (max-height: 580px) and (min-width: 901px){
+/* ---------- Landscape (short-height) assurance ---------- */
+@media (max-height:580px) and (min-width:901px){
   .sidebar-actions-stack{
-    /* Stay pinned to the bottom in all heights */
-    margin-top: auto !important;
-
-    /* Keep vertical stack (no grid) */
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 8px;
+    margin-top:auto!important;display:flex!important;flex-direction:column!important;gap:8px;
   }
-
-  .add-product-btn,
-  .add-category-btn{
-    width: 100%;
-    justify-content: center;
-  }
+  .add-product-btn,.add-category-btn{width:100%;justify-content:center}
 }
 
+/* ---------- Mobile top bar: show the ORIGINAL logo (no square tile) ---------- */
+@media (max-width:900px){
+  .layout-sidebar.as-topbar .sidebar-logo img{
+    height:100px;     /* adjust to taste */
+    width:auto;       /* keep aspect ratio */
+    padding:0;        /* no inner padding */
+    border-radius:0;  /* no rounded tile */
+    background:transparent;
+    box-shadow:none;
+    object-fit:contain; /* avoid cropping */
+  }
+}

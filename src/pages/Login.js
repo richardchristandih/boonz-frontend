@@ -1,7 +1,9 @@
+// src/pages/Login.jsx
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import api from "../services/api";
 import "./Login.css";
+import logo from "../images/login-logo.png";
 
 function Login() {
   const [email, setEmail] = useState("");
@@ -42,7 +44,9 @@ function Login() {
   return (
     <div className="login-container">
       <div className="login-card">
-        <h2 className="login-title">Boonz</h2>
+        {/* replaced the text heading with your logo */}
+        <img src={logo} alt="Boonz" className="login-logo" />
+
         <p className="login-subtitle">Sign in to your account</p>
 
         {error && <p className="login-error">{error}</p>}

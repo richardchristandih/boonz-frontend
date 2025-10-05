@@ -2,7 +2,8 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { NavLink } from "react-router-dom";
 import "./Sidebar.css";
-import appLogo from "../images/logo.jpg";
+import appLogo from "../images/login-logo.png"; // mobile / top-bar logo
+import appLogoSideBar from "../images/boonz-logo.png"; // desktop / sidebar logo
 
 const MOBILE_BP = 900;
 
@@ -81,7 +82,6 @@ const Cog = () => (
   </svg>
 );
 const Cube = () => (
-  // product icon
   <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
     <path
       d="M12 2l9 5-9 5-9-5 9-5z"
@@ -98,7 +98,6 @@ const Cube = () => (
   </svg>
 );
 const LayoutGrid = () => (
-  // category icon
   <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
     <path
       d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"
@@ -119,7 +118,7 @@ export default function Sidebar({
     typeof window !== "undefined" ? window.innerWidth < MOBILE_BP : false
   );
 
-  // compute admin once (still used if you want to re-enable the page later)
+  // read once
   const isAdmin = useMemo(() => {
     try {
       const raw = localStorage.getItem("user");
@@ -130,7 +129,6 @@ export default function Sidebar({
     }
   }, []);
 
-  // Prevent accidental navigation bubbling from action buttons
   const handleAddProduct = useCallback(
     (e) => {
       e?.preventDefault?.();
@@ -149,13 +147,11 @@ export default function Sidebar({
     [onAddCategory]
   );
 
-  // restore collapsed state
   useEffect(() => {
     const saved = localStorage.getItem("sidebarCollapsed");
     if (saved === "true") setCollapsed(true);
   }, []);
 
-  // respond to viewport changes
   useEffect(() => {
     const mq = window.matchMedia(`(max-width:${MOBILE_BP}px)`);
     const handle = (e) => setIsMobile(e.matches);
@@ -169,12 +165,15 @@ export default function Sidebar({
     }
   }, []);
 
-  // never show collapsed layout on mobile top bar
   useEffect(() => {
     if (isMobile && collapsed) setCollapsed(false);
   }, [isMobile, collapsed]);
 
   const isCollapsed = !isMobile && collapsed;
+
+  // choose logo per layout
+  const logoSrc = isMobile ? appLogo : appLogoSideBar;
+  const logoAlt = isMobile ? "Boonz logo" : "Boonz sidebar logo";
 
   return (
     <aside
@@ -184,13 +183,15 @@ export default function Sidebar({
     >
       {/* Header */}
       <div className="sidebar-top">
-        <NavLink
-          to="/dashboard"
-          className="sidebar-logo"
-          aria-label="Boonz Home"
-        >
-          <img src={appLogo} alt="Boonz logo" loading="lazy" />
-        </NavLink>
+        {!isCollapsed && (
+          <NavLink
+            to="/dashboard"
+            className="sidebar-logo"
+            aria-label="Boonz Home"
+          >
+            <img src={logoSrc} alt={logoAlt} loading="lazy" />
+          </NavLink>
+        )}
 
         {!isMobile && (
           <button
@@ -211,13 +212,16 @@ export default function Sidebar({
 
       {/* Nav */}
       <nav className="sidebar-nav" aria-label="Primary">
-        <NavLink
-          to="/dashboard"
-          className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
-        >
-          <Tachometer />
-          <span>Dashboard</span>
-        </NavLink>
+        {/* Dashboard is now ADMIN ONLY */}
+        {isAdmin && (
+          <NavLink
+            to="/dashboard"
+            className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
+          >
+            <Tachometer />
+            <span>Dashboard</span>
+          </NavLink>
+        )}
 
         <NavLink
           to="/orders"
@@ -226,18 +230,6 @@ export default function Sidebar({
           <Bag />
           <span>Orders</span>
         </NavLink>
-
-        {/* 🚫 Removed the admin Categories page link from the sidebar
-            (we keep the route alive; this just avoids accidental navigation) */}
-        {/* {isAdmin && (
-          <NavLink
-            to="/admin/categories"
-            className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
-          >
-            <LayoutGrid />
-            <span>Categories</span>
-          </NavLink>
-        )} */}
 
         <NavLink
           to="/settings"

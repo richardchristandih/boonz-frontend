@@ -70,6 +70,18 @@ export default function Orders() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
+  // --- Detect role (admin vs user) ---
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("user");
+      const u = raw ? JSON.parse(raw) : null;
+      setIsAdmin(u?.role === "admin");
+    } catch {
+      setIsAdmin(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchOrders();
   }, []);
@@ -227,9 +239,12 @@ export default function Orders() {
           <div className="summary-item">
             <strong>Transactions:</strong> {loading ? "…" : totalTransactions}
           </div>
-          <div className="summary-item">
-            <strong>Revenue:</strong> {loading ? "…" : fmtRp(totalRevenue)}
-          </div>
+          {/* 👇 Hide Revenue for non-admin users */}
+          {isAdmin && (
+            <div className="summary-item">
+              <strong>Revenue:</strong> {loading ? "…" : fmtRp(totalRevenue)}
+            </div>
+          )}
         </div>
       </div>
 
@@ -249,6 +264,8 @@ export default function Orders() {
         ) : (
           filteredOrders.map((order) => {
             const hasDiscount = Number(order.discount) > 0;
+            const status = String(order.status || "pending").toLowerCase();
+
             return (
               <div key={order._id} className="order-card">
                 <div className="order-head">
@@ -256,10 +273,8 @@ export default function Orders() {
                     <span className="order-number">
                       Order #{order.orderNumber}
                     </span>
-                    <span
-                      className={`badge status-${order.status || "pending"}`}
-                    >
-                      {String(order.status || "pending").toUpperCase()}
+                    <span className={`badge status-${status}`}>
+                      {status.toUpperCase()}
                     </span>
                   </div>
                   <div className="order-meta">
@@ -308,23 +323,39 @@ export default function Orders() {
                 </div>
 
                 <div className="order-actions">
-                  {order.status === "pending" && (
+                  {/* PENDING actions */}
+                  {status === "pending" && (
                     <>
-                      <button
-                        className="btn danger"
-                        onClick={() => handleCancelOrder(order._id)}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        className="btn success"
-                        onClick={() => handleMarkDoneOrder(order._id)}
-                      >
-                        Mark as Done
-                      </button>
+                      {/* Admin: Cancel + Mark as Done */}
+                      {isAdmin ? (
+                        <>
+                          <button
+                            className="btn danger"
+                            onClick={() => handleCancelOrder(order._id)}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            className="btn success"
+                            onClick={() => handleMarkDoneOrder(order._id)}
+                          >
+                            Mark as Done
+                          </button>
+                        </>
+                      ) : (
+                        // User: only Mark as Done
+                        <button
+                          className="btn success"
+                          onClick={() => handleMarkDoneOrder(order._id)}
+                        >
+                          Mark as Done
+                        </button>
+                      )}
                     </>
                   )}
-                  {order.status === "done" && (
+
+                  {/* DONE actions */}
+                  {status === "done" && isAdmin && (
                     <button
                       className="btn warn"
                       onClick={() => handleRefundOrder(order._id)}

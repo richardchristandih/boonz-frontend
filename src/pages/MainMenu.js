@@ -7,6 +7,7 @@ import React, {
   useRef,
 } from "react";
 import { useNavigate } from "react-router-dom";
+import { buildKitchenTicket } from "../kitchenReceipt";
 import "./MainMenu.css";
 import richardImage from "./ProfilePic.png";
 import Sidebar from "./Sidebar";
@@ -29,14 +30,17 @@ import { formatIDR } from "../utils/money";
 import AddCategoryModal from "../components/AddCategoryModal";
 
 /* ---------------- Constants ---------------- */
-const TAX_RATE = 0.1;
-const SERVICE_CHARGE_RATE = 0.05;
+const TAX_ENABLED = localStorage.getItem("settings.taxEnabled") === "true";
+const SERVICE_ENABLED =
+  localStorage.getItem("settings.serviceEnabled") === "true";
+const TAX_RATE = Number(localStorage.getItem("settings.taxRate")) / 100 || 0.1;
+const SERVICE_CHARGE_RATE =
+  Number(localStorage.getItem("settings.serviceRate")) / 100 || 0.05;
 const MOBILE_BP = 1024; // px
 const RECEIPT_PRINTER_HINT = /RPP02N/i;
 
 // Category UX preferences
 const DEFAULT_CATEGORY = "Coffee";
-const PRIMARY_ORDER = ["Coffee", "Burger"]; // force these to the front (after "All")
 
 const productImages = require.context(
   "../images",
@@ -68,7 +72,6 @@ function SkeletonGrid({ count = 8 }) {
     </div>
   );
 }
-/** Lightweight pill skeletons for the chip row (no CSS changes required) */
 function ChipsSkeleton({ count = 6 }) {
   const widths = [64, 72, 88, 70, 96, 84, 60, 90];
   return (
@@ -135,35 +138,24 @@ function printReceiptViaSystem(html) {
   w.document.close();
 }
 
-function buildKitchenTicket({
-  orderNumber,
-  dateStr,
-  orderType,
-  items,
-  customer,
-}) {
-  const header =
-    `[C]<b><font size='big'>KITCHEN ORDER</font></b>\n` +
-    `[C]------------------------------\n` +
-    `[L]Order #${orderNumber}\n` +
-    `[L]Type : ${orderType}\n` +
-    `[L]Time : ${dateStr}\n` +
-    (customer?.name ? `[L]Cust : ${customer.name}\n` : ``) +
-    `[C]------------------------------\n`;
+const toStr = (v) => (v == null ? "" : String(v));
 
-  const lines = (items || [])
-    .map((it) => {
-      const qtyLine = `[L]<b>${Number(it.quantity || 0)} x ${
-        it.name || "Item"
-      }</b>\n`;
-      const noteLine = it.note ? `[L]   - ${it.note}\n` : "";
-      return qtyLine + noteLine;
-    })
-    .join("");
-
-  const cutMark = `\n[C]------------------------------\n[C]✂️\n\n\n`;
-
-  return header + lines + cutMark;
+/** Sanitize, collapse, and cap note length for safe printing & storage */
+function normalizeNote(raw, max = 140) {
+  const s = toStr(raw)
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
+/** Escape for the HTML receipt path */
+function escapeHtml(s) {
+  return toStr(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function computePromoDiscount(promo, subtotal) {
@@ -252,7 +244,7 @@ export default function MenuLayout() {
   const [categories, setCategories] = useState([]); // [{_id, name}]
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORY);
-  const [addCatOpen, setAddCatOpen] = useState(false); // stays but won't be opened
+  const [addCatOpen, setAddCatOpen] = useState(false);
 
   const initRef = useRef(true);
 
@@ -275,6 +267,30 @@ export default function MenuLayout() {
   const [orderNumber, setOrderNumber] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  /* ---- Drink customization & toppings ---- */
+  const TOPPING_PRICE_IDR = 4000;
+  const DRINK_CATEGORIES = ["Drink"];
+
+  // Show toppings section only when the **base drink SKU** starts with TPD
+  const isToppingSku = (sku) =>
+    typeof sku === "string" && sku.toUpperCase().startsWith("DRT");
+
+  // We store a SKU-like code per topping mostly for clarity in notes/metadata
+  const TOPPING_OPTIONS = [
+    { sku: "TPD-BB-040", name: "Boba" },
+    { sku: "TPD-GJ-040", name: "Grass Jelly" },
+    { sku: "TPD-LJ-040", name: "Lychee Jelly" },
+  ];
+
+  /* ---- Fries flavors ---- */
+  const FRIES_FLAVORS = ["Truffle Mayo", "Garlic", "Cheese"];
+  const isFries = (p) => {
+    const name = (p?.name || "").toLowerCase();
+    const sku = (p?.sku || "").toUpperCase();
+    return name.includes("fries") || sku.startsWith("FRY");
+  };
+
+  /* ---- Qty change ---- */
   const handleDecreaseQty = useCallback((id) => {
     setCart((prev) =>
       prev.reduce((acc, it) => {
@@ -284,8 +300,7 @@ export default function MenuLayout() {
         }
         const q = Number(it.quantity || 0);
         if (q <= 1) {
-          // remove the item when user clicks "–" at qty 1
-          return acc; // skip push => removed
+          return acc; // remove
         }
         acc.push({ ...it, quantity: q - 1 });
         return acc;
@@ -293,26 +308,58 @@ export default function MenuLayout() {
     );
   }, []);
 
+  /* ---- Fries modal state ---- */
+  const [friesCustomize, setFriesCustomize] = useState({
+    open: false,
+    product: null,
+    flavor: "Truffle Mayo",
+  });
+  const openFriesCustomize = useCallback((product) => {
+    setFriesCustomize({ open: true, product, flavor: "Truffle Mayo" });
+  }, []);
+  const cancelFriesCustomize = useCallback(() => {
+    setFriesCustomize((s) => ({ ...s, open: false, product: null }));
+  }, []);
+  const applyFriesCustomize = useCallback(() => {
+    const { product, flavor } = friesCustomize;
+    if (!product) return;
+
+    const note = `Flavor: ${flavor}`;
+    const productId = product._id || product.id || product.sku;
+    setCart((prev) => [
+      ...prev,
+      {
+        ...product,
+        price: Number(product.price ?? 0),
+        quantity: 1,
+        id: `${productId}-${Date.now()}`, // keep lines separate per flavor
+        note,
+        options: { flavor },
+      },
+    ]);
+
+    setFriesCustomize({ open: false, product: null, flavor: "Truffle Mayo" });
+  }, [friesCustomize, setCart]);
+
+  /* ---- Categories ---- */
   const reloadCategories = useCallback(async () => {
     try {
       setCategoriesLoading(true);
       const cats = await listCategories();
       setCategories(Array.isArray(cats) ? cats : []);
     } catch (e) {
-      // listCategories already handles/logs; keep this lean
       setCategories([]);
     } finally {
       setCategoriesLoading(false);
     }
   }, []);
 
-  // note modal
+  /* ---- Note modal (edit per-line custom note) ---- */
   const [noteModal, setNoteModal] = useState({
     open: false,
     id: null,
     text: "",
   });
-
   const openNoteModal = useCallback((item) => {
     setNoteModal({
       open: true,
@@ -324,17 +371,83 @@ export default function MenuLayout() {
     setNoteModal({ open: false, id: null, text: "" });
   }, []);
   const saveNoteModal = useCallback(() => {
+    const normalized = normalizeNote(noteModal.text);
     setCart((prev) =>
-      prev.map((i) =>
-        i.id === noteModal.id
-          ? { ...i, note: (noteModal.text || "").trim() }
-          : i
-      )
+      prev.map((i) => (i.id === noteModal.id ? { ...i, note: normalized } : i))
     );
     closeNoteModal();
   }, [noteModal, closeNoteModal, setCart]);
 
-  // desktop “Email Receipt” box
+  /* ---- Drink customize modal state ---- */
+  const [customize, setCustomize] = useState({
+    open: false,
+    product: null,
+    sugar: "Full",
+    ice: "Normal",
+    toppings: [], // array of topping SKUs
+  });
+  const openCustomize = useCallback((product) => {
+    setCustomize({
+      open: true,
+      product,
+      sugar: "Full",
+      ice: "Normal",
+      toppings: [],
+    });
+  }, []);
+  const cancelCustomize = useCallback(() => {
+    setCustomize((s) => ({ ...s, open: false, product: null }));
+  }, []);
+
+  const applyCustomize = useCallback(() => {
+    const { product, sugar, ice, toppings } = customize;
+    if (!product) return;
+
+    const basePrice = Number(product.price ?? 0);
+    const toppingCount = Array.isArray(toppings) ? toppings.length : 0;
+    const extra = toppingCount * TOPPING_PRICE_IDR;
+    const finalUnitPrice = basePrice + extra;
+
+    const chosenToppings =
+      toppingCount > 0
+        ? ` | Toppings: ${toppings
+            .map(
+              (sku) => TOPPING_OPTIONS.find((x) => x.sku === sku)?.name || sku
+            )
+            .join(", ")}`
+        : "";
+
+    const note = `Sugar: ${sugar} | Ice: ${ice}${chosenToppings}`;
+    const baseId = product._id || product.id || product.sku || product.name;
+    const uniqueId = `${baseId}-${Date.now()}`;
+
+    setCart((prev) => [
+      ...prev,
+      {
+        ...product,
+        price: finalUnitPrice, // include topping add-on(s)
+        quantity: 1,
+        id: uniqueId,
+        note,
+        options: {
+          sugar,
+          ice,
+          toppings: Array.from(toppings || []),
+          toppingUnitAddOn: TOPPING_PRICE_IDR,
+        },
+      },
+    ]);
+
+    setCustomize({
+      open: false,
+      product: null,
+      sugar: "Normal",
+      ice: "Normal",
+      toppings: [],
+    });
+  }, [customize, setCart]);
+
+  /* ---- Email receipt (desktop box) ---- */
   const [email, setEmail] = useState(user?.email || "");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailNotice, setEmailNotice] = useState("");
@@ -372,26 +485,24 @@ export default function MenuLayout() {
   const PAUSE_AFTER_KOT_MS =
     Number(localStorage.getItem("print.pauseAfterKotMs")) || 3000;
 
-  // mobile cart bottom sheet
+  /* ---- Bottom sheet (mobile) ---- */
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   useEffect(() => {
     if (!mobileCartOpen) return;
-    // reset any stale transforms when the sheet opens
     rowRefs.current.forEach?.((el) => {
       if (el) el.style.transform = "translateX(0)";
     });
   }, [mobileCartOpen]);
 
-  // search
+  /* ---- Search ---- */
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearchBar, setShowSearchBar] = useState(false);
 
-  // promos
+  /* ---- Promotions / discount ---- */
   const [promos, setPromos] = useState([]);
   const [promosLoading, setPromosLoading] = useState(false);
   const [promosError, setPromosError] = useState("");
 
-  // discounts
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [discountMode, setDiscountMode] = useState("promo");
   const [selectedPromoId, setSelectedPromoId] = useState("");
@@ -399,7 +510,7 @@ export default function MenuLayout() {
   const [discountType, setDiscountType] = useState("flat");
   const [discountNote, setDiscountNote] = useState("");
 
-  // avatar dropdown
+  /* ---- Avatar dropdown ---- */
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef(null);
   useEffect(() => {
@@ -420,11 +531,49 @@ export default function MenuLayout() {
     navigate("/login");
   }, [navigate]);
 
+  /* ---- Hard reset (local settings only) ---- */
+  const handleHardReset = useCallback(async () => {
+    const confirmed = window.confirm(
+      "This will clear local settings (printers, logo, email cooldowns, UI prefs) and reload.\n\nYour login will stay signed in.\n\nContinue?"
+    );
+    if (!confirmed) return;
+
+    const keep = new Set(["token", "refreshToken", "user"]);
+    try {
+      const toRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!keep.has(key)) toRemove.push(key);
+      }
+      toRemove.forEach((k) => localStorage.removeItem(k));
+      try {
+        sessionStorage.clear();
+      } catch {}
+      try {
+        if ("caches" in window) {
+          const names = await caches.keys();
+          await Promise.all(names.map((n) => caches.delete(n)));
+        }
+      } catch {}
+      try {
+        const idbDbs = ["keyval-store"];
+        idbDbs.forEach((name) => {
+          try {
+            indexedDB.deleteDatabase(name);
+          } catch {}
+        });
+      } catch {}
+    } finally {
+      window.location.reload();
+    }
+  }, []);
+
+  /* ---- Auth guard ---- */
   useEffect(() => {
     if (!user) navigate("/login");
   }, [user, navigate]);
 
-  /* 1) Load products once */
+  /* ---- Load products once ---- */
   useEffect(() => {
     (async () => {
       try {
@@ -445,12 +594,12 @@ export default function MenuLayout() {
     })();
   }, []);
 
-  /* 2) Load categories from backend on mount */
+  /* ---- Load categories on mount ---- */
   useEffect(() => {
     reloadCategories();
   }, [reloadCategories]);
 
-  /* 3) Final safety fallback if absolutely nothing known after both load */
+  /* ---- Fallback selected category ---- */
   useEffect(() => {
     if (!selectedCategory && products.length && categories.length === 0) {
       const derived = deriveCategoryNames(products);
@@ -530,8 +679,11 @@ export default function MenuLayout() {
       ),
     [cart]
   );
-  const tx = useMemo(() => sub * TAX_RATE, [sub]);
-  const svc = useMemo(() => sub * SERVICE_CHARGE_RATE, [sub]);
+  const tx = useMemo(() => (TAX_ENABLED ? sub * TAX_RATE : 0), [sub]);
+  const svc = useMemo(
+    () => (SERVICE_ENABLED ? sub * SERVICE_CHARGE_RATE : 0),
+    [sub]
+  );
 
   const customDiscount = useMemo(() => {
     const parsed = parseFloat(discountValue) || 0;
@@ -566,27 +718,49 @@ export default function MenuLayout() {
   }, [discountMode, selectedPromo, discountType, discountValue]);
 
   /* ---------- Cart ops ---------- */
-  const handleAddToCart = useCallback((product) => {
-    if (!product) return;
-    const productId = product._id || product.id || product.sku;
-    setCart((prev) => {
-      const existing = prev.find((i) => i.id === productId);
-      if (existing)
-        return prev.map((i) =>
-          i.id === productId ? { ...i, quantity: i.quantity + 1 } : i
-        );
-      return [
-        ...prev,
-        {
-          ...product,
-          price: Number(product.price ?? 0),
-          quantity: 1,
-          id: productId,
-          note: "",
-        },
-      ];
-    });
-  }, []);
+  const handleAddToCart = useCallback(
+    (product) => {
+      if (!product) return;
+
+      const category = (product.category || "").trim();
+
+      // 1) Drinks -> customization modal
+      if (
+        DRINK_CATEGORIES.some((c) => c.toLowerCase() === category.toLowerCase())
+      ) {
+        openCustomize(product);
+        return;
+      }
+
+      // 2) Fries -> flavor modal
+      if (isFries(product)) {
+        openFriesCustomize(product);
+        return;
+      }
+
+      // 3) Default path (no customization)
+      const productId = product._id || product.id || product.sku;
+      setCart((prev) => {
+        const existing = prev.find((i) => i.id === productId);
+        if (existing)
+          return prev.map((i) =>
+            i.id === productId ? { ...i, quantity: i.quantity + 1 } : i
+          );
+        return [
+          ...prev,
+          {
+            ...product,
+            price: Number(product.price ?? 0),
+            quantity: 1,
+            id: productId,
+            note: "",
+          },
+        ];
+      });
+    },
+    [openCustomize, openFriesCustomize]
+  );
+
   const handleIncreaseQty = useCallback(
     (id) =>
       setCart((prev) =>
@@ -600,7 +774,7 @@ export default function MenuLayout() {
     []
   );
 
-  /* ---------- Swipe-to-delete (mobile & desktop via Pointer Events) ---------- */
+  /* ---------- Swipe-to-delete ---------- */
   const rowRefs = useRef(new Map());
   const pointerStartX = useRef(0);
   const pointerDeltaX = useRef({});
@@ -679,8 +853,6 @@ export default function MenuLayout() {
       slideOutAndRemove(el, id, removeCb);
     } else if (wasDragging) {
       snapBack(el);
-    } else {
-      // treat as normal click/tap — do nothing to avoid interfering with buttons
     }
   }, []);
 
@@ -693,7 +865,6 @@ export default function MenuLayout() {
     onPointerMove: (e) => handlePointerMove(e, id),
     onPointerUp: () => handlePointerUpOrCancel(id, handleRemoveItem),
     onPointerCancel: () => handlePointerUpOrCancel(id, handleRemoveItem),
-    // Keep vertical scroll smooth on touch
     style: { touchAction: "pan-y" },
   });
 
@@ -707,22 +878,15 @@ export default function MenuLayout() {
   }, [cart.length]);
 
   const finishOrder = (newOrderNumber) => {
-    // close modals/sheets
     setShowPaymentModal(false);
     setMobileCartOpen(false);
-
-    // clear cart & discount state
     setCart([]);
     setSelectedPromoId("");
     setDiscountMode("promo");
     setDiscountValue("0");
     setDiscountNote("");
     setDiscountType("flat");
-
-    // clear payment selection
     setSelectedPaymentMethod("");
-
-    // let the user know
     window.alert(
       `Order placed successfully! Your order number is ${newOrderNumber}`
     );
@@ -767,7 +931,7 @@ export default function MenuLayout() {
         name: item.name,
         quantity: item.quantity,
         price: Number(item.price ?? 0),
-        note: item.note || undefined,
+        note: normalizeNote(item.note) || undefined,
       })),
       subtotal: sub,
       tax: tx,
@@ -812,10 +976,13 @@ export default function MenuLayout() {
           customer: { name: printedCustomerName || user?.name },
         });
 
-        const itemsForReceipt = orderData.products.map((it) => ({
-          ...it,
-          name: it.note ? `${it.name} [${it.note}]` : it.name,
-        }));
+        const itemsForReceipt = orderData.products.map((it) => {
+          const n = normalizeNote(it.note);
+          return {
+            ...it,
+            name: n ? `${it.name} [${n}]` : it.name,
+          };
+        });
 
         let receiptText = buildReceipt({
           address: "Jl. Mekar Utama No. 61, Bandung",
@@ -825,6 +992,8 @@ export default function MenuLayout() {
           subtotal: orderData.subtotal,
           tax: orderData.tax,
           service: orderData.serviceCharge,
+          showTax: TAX_ENABLED,
+          showService: SERVICE_ENABLED,
           discount: orderData.discount,
           total: orderData.totalAmount,
           payment: orderData.paymentMethod,
@@ -859,7 +1028,7 @@ export default function MenuLayout() {
               nameLike: kitchenTarget,
               copies: 1,
               tries: 3,
-              baseDelay: 500,
+              baseDelay: 3000,
             });
           }
           await sleep(PAUSE_AFTER_KOT_MS);
@@ -894,6 +1063,8 @@ export default function MenuLayout() {
             subtotal: orderData.subtotal,
             tax: orderData.tax,
             service: orderData.serviceCharge,
+            showTax: TAX_ENABLED,
+            showService: SERVICE_ENABLED,
             discount: orderData.discount,
             total: orderData.totalAmount,
             payment: orderData.paymentMethod,
@@ -972,6 +1143,8 @@ export default function MenuLayout() {
     subtotal,
     tax,
     service,
+    showTax,
+    showService,
     discount,
     total,
     payment,
@@ -981,17 +1154,22 @@ export default function MenuLayout() {
     logo,
   }) {
     const rows = (items || [])
-      .map(
-        (it) => `
+      .map((it) => {
+        const note = normalizeNote(it.note);
+        return `
     <tr>
-      <td>${it.quantity || 0}x ${it.name || ""}</td>
+      <td>${Number(it.quantity) || 0}x ${escapeHtml(it.name || "")}</td>
       <td style="text-align:right">${formatIDR(Number(it.price || 0), {
         withDecimals: true,
       })}</td>
     </tr>
-    ${it.note ? `<tr><td colspan="2"><em>Note: ${it.note}</em></td></tr>` : ""}
-  `
-      )
+    ${
+      note
+        ? `<tr><td colspan="2"><em>Note: ${escapeHtml(note)}</em></td></tr>`
+        : ""
+    }
+  `;
+      })
       .join("");
 
     return `
@@ -1016,12 +1194,12 @@ export default function MenuLayout() {
         ? `<div class="c"><img src="${logo}" style="height:60px;object-fit:contain" /></div>`
         : ``
     }
-    <div class="c">${address || ""}</div>
+    <div class="c">${escapeHtml(address || "")}</div>
     <div class="line"></div>
-    <div>Order #${orderNumber || "N/A"}</div>
-    <div>Type : ${orderType || ""}</div>
-    <div>Time : ${dateStr || ""}</div>
-    ${customer?.name ? `<div>Cust : ${customer.name}</div>` : ""}
+    <div>Order #${escapeHtml(orderNumber || "N/A")}</div>
+    <div>Type : ${escapeHtml(orderType || "")}</div>
+    <div>Time : ${escapeHtml(dateStr || "")}</div>
+    ${customer?.name ? `<div>Cust : ${escapeHtml(customer.name)}</div>` : ""}
     <div class="line"></div>
     <table>${rows}</table>
     <div class="line"></div>
@@ -1029,17 +1207,30 @@ export default function MenuLayout() {
       <tr><td>Subtotal</td><td style="text-align:right">${formatIDR(subtotal, {
         withDecimals: true,
       })}</td></tr>
-      <tr><td>Tax</td><td style="text-align:right">${formatIDR(tax, {
-        withDecimals: true,
-      })}</td></tr>
-      <tr><td>Service</td><td style="text-align:right">${formatIDR(service, {
-        withDecimals: true,
-      })}</td></tr>
-
+           ${
+             showTax && Number(tax) > 0
+               ? `<tr><td>Tax</td><td style="text-align:right">${formatIDR(
+                   tax,
+                   {
+                     withDecimals: true,
+                   }
+                 )}</td></tr>`
+               : ""
+           }
+      ${
+        showService && Number(service) > 0
+          ? `<tr><td>Service</td><td style="text-align:right">${formatIDR(
+              service,
+              {
+                withDecimals: true,
+              }
+            )}</td></tr>`
+          : ""
+      }
       ${
         Number(discount || 0) > 0
           ? `<tr><td>Discount ${
-              discountNote ? `(${discountNote})` : ""
+              discountNote ? `(${escapeHtml(discountNote)})` : ""
             }</td><td style="text-align:right">-${formatIDR(discount, {
               withDecimals: true,
             })}</td></tr>`
@@ -1049,9 +1240,9 @@ export default function MenuLayout() {
         total,
         { withDecimals: true }
       )}</td></tr>
-      <tr><td>Payment</td><td style="text-align:right">${
+      <tr><td>Payment</td><td style="text-align:right">${escapeHtml(
         payment || ""
-      }</td></tr>
+      )}</td></tr>
     </table>
     <div class="line"></div>
     <div class="c">Thank you!</div>
@@ -1067,18 +1258,63 @@ export default function MenuLayout() {
   const handleCloseDiscountModal = () => setShowDiscountModal(false);
   const handleApplyDiscount = () => setShowDiscountModal(false);
 
+  /* ==========================
+     SOFT REFRESH
+     ========================== */
+  const refreshData = useCallback(async () => {
+    try {
+      setLoadingProducts(true);
+      const [prodRes] = await Promise.all([
+        api.get("/products").catch(() => ({ data: [] })),
+        reloadCategories(),
+        fetchPromos(),
+      ]);
+
+      const list = Array.isArray(prodRes.data)
+        ? prodRes.data
+        : prodRes.data && Array.isArray(prodRes.data.items)
+        ? prodRes.data.items
+        : [];
+
+      setProducts(list);
+    } catch (err) {
+      console.error("Soft refresh failed:", err);
+    } finally {
+      window.location.reload();
+      setLoadingProducts(false);
+    }
+  }, [reloadCategories, fetchPromos]);
+
+  // Shift+R refresh
+  useEffect(() => {
+    const onKey = (e) => {
+      if (
+        e.shiftKey &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        e.key.toLowerCase() === "r"
+      ) {
+        e.preventDefault();
+        refreshData();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [refreshData]);
+
+  const isRefreshing = loadingProducts || categoriesLoading || promosLoading;
+
   return (
     <div className="layout-container">
       <Sidebar
         onAddProduct={() => navigate("/product-page")}
-        // ⬇️ change: go to Categories page instead of opening the modal
         onAddCategory={() => navigate("/admin/categories")}
       />
 
       <main className="layout-main">
         {/* Sticky top bar */}
         <div className="layout-topbar">
-          {/* category chips (only after BOTH lists finish) */}
+          {/* category chips */}
           {chipReady ? (
             <div className="chip-row" role="tablist" aria-label="Categories">
               {chipNames.map((name) => (
@@ -1101,6 +1337,20 @@ export default function MenuLayout() {
 
           {/* right controls */}
           <div className="topbar-actions">
+            <button
+              className="icon-btn"
+              aria-label="Refresh data"
+              title="Refresh (Shift+R)"
+              onClick={refreshData}
+              disabled={isRefreshing}
+            >
+              <i
+                className={`fas ${
+                  isRefreshing ? "fa-circle-notch fa-spin" : "fa-sync"
+                }`}
+              />
+            </button>
+
             {!showSearchBar ? (
               <button
                 className="icon-btn"
@@ -1158,13 +1408,14 @@ export default function MenuLayout() {
                     </div>
                   </div>
                   <button
-                    className="user-menu__item"
+                    className="user-menu__item danger"
                     onClick={() => {
                       setUserMenuOpen(false);
-                      navigate("/settings");
+                      handleHardReset();
                     }}
+                    title="Clear local settings & reload"
                   >
-                    <i className="fas fa-cog" /> Settings
+                    <i className="fas fa-bolt"></i> Hard reset
                   </button>
                   <button
                     className="user-menu__item danger"
@@ -1318,6 +1569,7 @@ export default function MenuLayout() {
                         alignItems: "flex-end",
                         marginLeft: 8,
                       }}
+                      {...getSwipeHandlers(item.id)}
                     >
                       <p>
                         {formatIDR(Number(item.price ?? 0), {
@@ -1360,14 +1612,20 @@ export default function MenuLayout() {
                   <span>Subtotal</span>
                   <span>{formatIDR(sub, { withDecimals: true })}</span>
                 </div>
-                <div className="summary-row">
-                  <span>Tax (10%)</span>
-                  <span>{formatIDR(tx, { withDecimals: true })}</span>
-                </div>
-                <div className="summary-row">
-                  <span>Service Charge (5%)</span>
-                  <span>{formatIDR(svc, { withDecimals: true })}</span>
-                </div>
+                {TAX_ENABLED && (
+                  <div className="summary-row">
+                    <span>Tax ({(TAX_RATE * 100).toFixed(0)}%)</span>
+                    <span>{formatIDR(tx, { withDecimals: true })}</span>
+                  </div>
+                )}
+                {SERVICE_ENABLED && (
+                  <div className="summary-row">
+                    <span>
+                      Service Charge ({(SERVICE_CHARGE_RATE * 100).toFixed(0)}%)
+                    </span>
+                    <span>{formatIDR(svc, { withDecimals: true })}</span>
+                  </div>
+                )}
                 <div className="summary-row">
                   <span>{discountLabel}</span>
                   <span>-{formatIDR(discount, { withDecimals: true })}</span>
@@ -1421,7 +1679,11 @@ export default function MenuLayout() {
         </div>
         <div className="cart-items">
           {cart.map((item) => (
-            <div key={item.id} className="cart-item">
+            <div
+              key={item.id}
+              className="cart-item"
+              {...getSwipeHandlers(item.id)}
+            >
               <div className="cart-item-left">
                 <strong>{item.name}</strong>
                 <br />
@@ -1496,14 +1758,20 @@ export default function MenuLayout() {
             <span>Subtotal</span>
             <span>{formatIDR(sub)}</span>
           </div>
-          <div className="summary-row">
-            <span>Tax (10%)</span>
-            <span>{formatIDR(tx)}</span>
-          </div>
-          <div className="summary-row">
-            <span>Service Charge (5%)</span>
-            <span>{formatIDR(svc)}</span>
-          </div>
+          {TAX_ENABLED && (
+            <div className="summary-row">
+              <span>Tax ({(TAX_RATE * 100).toFixed(0)}%)</span>
+              <span>{formatIDR(tx, { withDecimals: true })}</span>
+            </div>
+          )}
+          {SERVICE_ENABLED && (
+            <div className="summary-row">
+              <span>
+                Service Charge ({(SERVICE_CHARGE_RATE * 100).toFixed(0)}%)
+              </span>
+              <span>{formatIDR(svc, { withDecimals: true })}</span>
+            </div>
+          )}
           <div className="summary-row">
             <span>{discountLabel}</span>
             <span>-{formatIDR(discount)}</span>
@@ -1687,6 +1955,7 @@ export default function MenuLayout() {
         </div>
       )}
 
+      {/* Note Modal */}
       {noteModal.open && (
         <div
           className="paymodal"
@@ -1902,7 +2171,197 @@ export default function MenuLayout() {
         </div>
       )}
 
-      {/* Add Category Modal (kept, but never opened from here) */}
+      {/* Customize Drink Modal */}
+      {customize.open && (
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="drink-customize-title"
+          onClick={cancelCustomize}
+        >
+          <div
+            className="paymodal__dialog paymodal__dialog--customize"
+            role="document"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="paymodal__head">
+              <h3 id="drink-customize-title">
+                Customize {customize.product?.name || "Drink"}
+              </h3>
+              <button
+                className="paymodal__close"
+                aria-label="Close"
+                onClick={cancelCustomize}
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="paymodal__body">
+              {/* Sugar */}
+              <div style={{ marginBottom: 12 }}>
+                <div className="register-label" style={{ marginBottom: 6 }}>
+                  Sugar
+                </div>
+                <div className="radio-row">
+                  {["Full", "Half", "No"].map((v) => (
+                    <label key={v}>
+                      <input
+                        type="radio"
+                        name="sugar"
+                        value={v}
+                        checked={customize.sugar === v}
+                        onChange={() =>
+                          setCustomize((s) => ({ ...s, sugar: v }))
+                        }
+                      />{" "}
+                      {v}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Ice */}
+              <div style={{ marginBottom: 12 }}>
+                <div className="register-label" style={{ marginBottom: 6 }}>
+                  Ice
+                </div>
+                <div className="radio-row">
+                  {["Normal", "Less", "No"].map((v) => (
+                    <label key={v}>
+                      <input
+                        type="radio"
+                        name="ice"
+                        value={v}
+                        checked={customize.ice === v}
+                        onChange={() => setCustomize((s) => ({ ...s, ice: v }))}
+                      />{" "}
+                      {v}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Toppings: only when base SKU starts with "TPD" */}
+              {isToppingSku(customize.product?.sku) && (
+                <div style={{ marginTop: 10 }}>
+                  <div className="register-label" style={{ marginBottom: 6 }}>
+                    Toppings (Rp {TOPPING_PRICE_IDR.toLocaleString("id-ID")}{" "}
+                    each)
+                  </div>
+
+                  <div
+                    className="radio-row"
+                    style={{ flexWrap: "wrap", gap: 12 }}
+                  >
+                    {TOPPING_OPTIONS.map((t) => {
+                      const checked = customize.toppings.includes(t.sku);
+                      return (
+                        <label
+                          key={t.sku}
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            alignItems: "center",
+                            minWidth: 160,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) =>
+                              setCustomize((s) => {
+                                const next = new Set(s.toppings);
+                                if (e.target.checked) next.add(t.sku);
+                                else next.delete(t.sku);
+                                return { ...s, toppings: Array.from(next) };
+                              })
+                            }
+                          />
+                          {t.name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <footer className="paymodal__actions">
+              <button className="btn btn-primary" onClick={applyCustomize}>
+                Add to cart
+              </button>
+              <button className="btn btn-ghost" onClick={cancelCustomize}>
+                Cancel
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {/* Fries Flavor Modal */}
+      {friesCustomize.open && (
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="fries-customize-title"
+          onClick={cancelFriesCustomize}
+        >
+          <div
+            className="paymodal__dialog"
+            role="document"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="paymodal__head">
+              <h3 id="fries-customize-title">
+                Choose Flavor — {friesCustomize.product?.name || "Fries"}
+              </h3>
+              <button
+                className="paymodal__close"
+                aria-label="Close"
+                onClick={cancelFriesCustomize}
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="paymodal__body">
+              <div className="register-label" style={{ marginBottom: 6 }}>
+                Flavor
+              </div>
+              <div className="radio-row">
+                {FRIES_FLAVORS.map((v) => (
+                  <label key={v}>
+                    <input
+                      type="radio"
+                      name="fries-flavor"
+                      value={v}
+                      checked={friesCustomize.flavor === v}
+                      onChange={() =>
+                        setFriesCustomize((s) => ({ ...s, flavor: v }))
+                      }
+                    />{" "}
+                    {v}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <footer className="paymodal__actions">
+              <button className="btn btn-primary" onClick={applyFriesCustomize}>
+                Add to cart
+              </button>
+              <button className="btn btn-ghost" onClick={cancelFriesCustomize}>
+                Cancel
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {/* Add Category Modal */}
       <AddCategoryModal
         open={addCatOpen}
         onClose={() => setAddCatOpen(false)}

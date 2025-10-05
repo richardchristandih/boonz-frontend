@@ -1,8 +1,7 @@
-// src/components/ProductList.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import api from "../services/api";
 import ProductEditorModal from "./ProductEditorModal";
-import SafeImage from "../components/SafeImage"; // robust image (same as main menu)
+import SafeImage from "../components/SafeImage";
 import { normalizeImageUrl } from "../utils/driveUrl";
 import "./ProductList.css";
 
@@ -15,13 +14,11 @@ function fmtRp(v) {
   })}`;
 }
 
-// Prefer imageUrl -> legacy image; normalize Drive links
 function getThumbSrc(p) {
   const raw = p?.imageUrl || p?.image || "";
   return raw ? normalizeImageUrl(raw) : "";
 }
 
-// Lightweight skeleton row while loading
 function SkeletonRow() {
   return (
     <li className="product-list-item is-skeleton">
@@ -40,22 +37,21 @@ function SkeletonRow() {
   );
 }
 
-/**
- * ProductList
- * @param {boolean} showTitle - if true, renders its own <h2>; default false
- * @param {boolean} scroll    - if true, caps height & makes it scrollable
- */
 export default function ProductList({ showTitle = false, scroll = false }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [removingId, setRemoving] = useState(null);
 
-  // editor
+  // Filters
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("all");
+
+  // Editor state
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorProduct, setEditorProduct] = useState(null);
 
-  // is admin?
+  // User
   const user = (() => {
     try {
       const raw = localStorage.getItem("user");
@@ -92,10 +88,12 @@ export default function ProductList({ showTitle = false, scroll = false }) {
     setEditorProduct(product);
     setEditorOpen(true);
   }
+
   function closeEditor() {
     setEditorOpen(false);
     setEditorProduct(null);
   }
+
   function applySaved(updated) {
     const id = updated?._id || updated?.id || updated?.sku;
     if (!id) return closeEditor();
@@ -126,6 +124,27 @@ export default function ProductList({ showTitle = false, scroll = false }) {
     }
   }
 
+  // Extract unique categories
+  const categories = useMemo(() => {
+    const all = products
+      .map((p) => (p?.category ? String(p.category).trim() : ""))
+      .filter(Boolean);
+    return ["all", ...Array.from(new Set(all))];
+  }, [products]);
+
+  // Filtered list
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return products.filter((p) => {
+      const name = p?.name?.toLowerCase() || "";
+      const cat = String(p?.category || "").toLowerCase();
+      const matchSearch = !q || name.includes(q) || cat.includes(q);
+      const matchCategory =
+        category === "all" || cat === category.toLowerCase();
+      return matchSearch && matchCategory;
+    });
+  }, [products, search, category]);
+
   const containerClass = `product-list-container${
     showTitle ? "" : " no-title"
   }${scroll ? " list-scroll" : ""}`;
@@ -133,6 +152,30 @@ export default function ProductList({ showTitle = false, scroll = false }) {
   return (
     <div className={containerClass} role="region" aria-label="Product list">
       {showTitle && <h2 className="product-list-title">Product List</h2>}
+
+      {/* Filter controls */}
+      {!loading && !error && products.length > 0 && (
+        <div className="product-filters">
+          <input
+            type="text"
+            className="product-search"
+            placeholder="Search products..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            className="product-category"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c === "all" ? "All Categories" : c}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Loading skeleton */}
       {loading && (
@@ -147,13 +190,13 @@ export default function ProductList({ showTitle = false, scroll = false }) {
         <p className="product-list-status error">{error}</p>
       )}
 
-      {!loading && !error && products.length === 0 && (
+      {!loading && !error && filtered.length === 0 && (
         <p className="product-list-empty">No products found.</p>
       )}
 
-      {!loading && !error && products.length > 0 && (
+      {!loading && !error && filtered.length > 0 && (
         <ul className="product-list">
-          {products.map((p, idx) => {
+          {filtered.map((p, idx) => {
             const realId = p?._id || p?.id || p?.sku;
             const key = realId || `row-${idx}`;
             const name = p?.name ?? "(Untitled)";

@@ -11,16 +11,8 @@ export default function ProductPage() {
   return (
     <div className="product-page">
       <header className="product-page__header">
-        <button
-          className="back-btn"
-          onClick={() => navigate("/")}
-          type="button"
-          aria-label="Back to home"
-        >
-          <span className="back-btn__icon" aria-hidden="true">
-            ←
-          </span>
-          <span>Back</span>
+        <button className="back-btn" onClick={() => navigate("/")}>
+          <i className="fas fa-arrow-left" /> Back
         </button>
 
         <div className="product-page__titles">
