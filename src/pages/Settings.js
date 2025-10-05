@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Settings.css";
+import { fetchOrderCharges, saveOrderCharges } from "../services/orderCharges";
 
 import {
   isAndroidBridge,
@@ -290,25 +291,53 @@ export default function Settings() {
   }
 
   /* ---------------------------- Tax & Service ----------------------- */
-  const [taxEnabled, setTaxEnabled] = useState(
-    localStorage.getItem("settings.taxEnabled") === "true"
-  );
-  const [taxRate, setTaxRate] = useState(
-    localStorage.getItem("settings.taxRate") || "10"
-  );
-  const [svcEnabled, setSvcEnabled] = useState(
-    localStorage.getItem("settings.serviceEnabled") === "true"
-  );
-  const [svcRate, setSvcRate] = useState(
-    localStorage.getItem("settings.serviceRate") || "5"
-  );
+  const [taxEnabled, setTaxEnabled] = useState(false);
+  const [taxRate, setTaxRate] = useState("10"); // UI shows percent
+  const [svcEnabled, setSvcEnabled] = useState(false);
+  const [svcRate, setSvcRate] = useState("5");
+  const [chargesMsg, setChargesMsg] = useState("");
 
-  function saveTaxSettings() {
-    localStorage.setItem("settings.taxEnabled", taxEnabled);
-    localStorage.setItem("settings.taxRate", taxRate);
-    localStorage.setItem("settings.serviceEnabled", svcEnabled);
-    localStorage.setItem("settings.serviceRate", svcRate);
-    alert("Tax and service settings saved!");
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await fetchOrderCharges();
+        setTaxEnabled(!!s.taxEnabled);
+        setSvcEnabled(!!s.serviceEnabled);
+        // convert decimal to percentage text for inputs
+        setTaxRate(
+          String(
+            (Number(s.taxRate) <= 1
+              ? Number(s.taxRate) * 100
+              : Number(s.taxRate)) || 0
+          )
+        );
+        setSvcRate(
+          String(
+            (Number(s.serviceRate) <= 1
+              ? Number(s.serviceRate) * 100
+              : Number(s.serviceRate)) || 0
+          )
+        );
+      } catch (e) {
+        console.warn("Failed to load order charges:", e);
+      }
+    })();
+  }, []);
+
+  async function saveTaxSettings() {
+    try {
+      setChargesMsg("Saving…");
+      await saveOrderCharges({
+        taxEnabled,
+        taxRate: Number(taxRate) / 100, // accept “10” as 10%
+        serviceEnabled: svcEnabled,
+        serviceRate: Number(svcRate) / 100,
+      });
+      setChargesMsg("Saved ✓");
+      setTimeout(() => setChargesMsg(""), 1200);
+    } catch (e) {
+      setChargesMsg(e?.response?.data?.message || e?.message || "Save failed.");
+    }
   }
 
   /* ---------------------------- Logout ------------------------------ */
@@ -509,6 +538,7 @@ export default function Settings() {
               />
               <label style={{ marginTop: 8 }}>Address</label>
               <textarea
+                className="textarea--enhanced"
                 rows={2}
                 value={shopAddr}
                 onChange={(e) => setShopAddr(e.target.value)}
@@ -579,6 +609,7 @@ export default function Settings() {
                   Save
                 </button>
               </div>
+              {chargesMsg && <p className="note">{chargesMsg}</p>}
             </section>
 
             <section className="card">

@@ -1,7 +1,18 @@
 :root{
-  --brand:#F2994A;
-  --brand-2:#e7ac0c;
-  --price:#16a34a;
-  --cta:#51ac33;
-  --cta-contrast:#ffffff;
+  --brand:        #FB7E00;
+  --brand-2:      #FFCC3F;
+  --surface:      #D1DFD2;
+  --price:        #9FC089;
+  --cta:          #79B4B0;
+  --cta-contrast: #fff;
+
+  --text:   #0f172a;
+  --muted:  #6b7280;
+  --border: #e5e7eb;
+  --bg-soft: var(--surface);
+  --ring:   0 0 0 3px rgba(251,126,0,.25);
+
+  /* derived shades used by Register.css, etc. */
+  --brand-600: color-mix(in oklab, var(--brand) 86%, black);
+  --brand-700: color-mix(in oklab, var(--brand) 78%, black);
 }

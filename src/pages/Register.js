@@ -47,32 +47,27 @@ function SpinnerSVG({ size = 16, color = "#fff" }) {
 }
 
 export default function Register() {
-  // form fields
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("user");
-
-  // admin pin
   const [adminPin, setAdminPin] = useState("");
   const [sendingPin, setSendingPin] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState(0);
-
-  // ui state
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-
   const [nowTs, setNowTs] = useState(Date.now());
+
+  const navigate = useNavigate();
+
   useEffect(() => {
     const id = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
   const cooldownLeft = Math.max(0, Math.ceil((cooldownUntil - nowTs) / 1000));
 
-  const navigate = useNavigate();
-
-  // Clear pin if user switches out of admin role
   useEffect(() => {
     if (role !== "admin") setAdminPin("");
   }, [role]);
@@ -97,7 +92,6 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;
-
     setError("");
     setNotice("");
 
@@ -107,9 +101,8 @@ export default function Register() {
 
     if (role === "admin") {
       const digitsOnly = adminPin.replace(/\D/g, "");
-      if (digitsOnly.length !== PIN_LENGTH) {
+      if (digitsOnly.length !== PIN_LENGTH)
         return setError(`Admin PIN must be ${PIN_LENGTH} digits.`);
-      }
     }
 
     setSubmitting(true);
@@ -121,7 +114,6 @@ export default function Register() {
         role,
       };
       if (role === "admin") payload.adminPin = adminPin.replace(/\D/g, "");
-
       await api.post("/auth/register", payload);
       navigate("/login");
     } catch (err) {
@@ -138,6 +130,14 @@ export default function Register() {
   return (
     <div className="register-container">
       <div className="register-card">
+        {/* Back button inside card top-left */}
+        <button
+          className="back-btn back-btn--inside"
+          onClick={() => navigate("/")}
+        >
+          <i className="fas fa-arrow-left" />
+        </button>
+
         <h2 className="register-title">Register</h2>
         <p className="register-subtitle">
           Create your account. Admins require a one-time PIN.
@@ -158,7 +158,6 @@ export default function Register() {
         )}
 
         <form onSubmit={handleSubmit} className="register-form">
-          {/* Name */}
           <div className="field">
             <label htmlFor="name" className="register-label">
               Name:
@@ -174,7 +173,6 @@ export default function Register() {
             />
           </div>
 
-          {/* Email */}
           <div className="field">
             <label htmlFor="email" className="register-label">
               Email:
@@ -190,7 +188,6 @@ export default function Register() {
             />
           </div>
 
-          {/* Password */}
           <div className="field">
             <label htmlFor="password" className="register-label">
               Password:
@@ -206,7 +203,6 @@ export default function Register() {
             />
           </div>
 
-          {/* Role */}
           <div className="field">
             <label htmlFor="role" className="register-label">
               Role:
@@ -223,7 +219,6 @@ export default function Register() {
             </select>
           </div>
 
-          {/* Admin-only */}
           {role === "admin" && (
             <div className="field" style={{ marginTop: 6 }}>
               <div className="pin-row">
@@ -275,7 +270,6 @@ export default function Register() {
             </div>
           )}
 
-          {/* Submit */}
           <button
             type="submit"
             className={`reg-btn reg-btn-primary register-button${

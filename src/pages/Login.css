@@ -7,7 +7,7 @@
   justify-content: center;
   min-height: 100vh;       /* fallback */
   min-height: 100svh;      /* mobile-safe viewport */
-  background: #fafafa;     /* Light background, can be changed */
+  background: var(--bg-soft);
   margin: 0;
   padding: 16px;
   box-sizing: border-box;
@@ -15,7 +15,7 @@
 
 /* The card that holds the login form */
 .login-card {
-  background: #fff;
+  background: #fff;        /* keep solid surface for readability */
   width: 100%;
   max-width: 360px;
   border-radius: 12px;
@@ -27,14 +27,14 @@
 /* Title & subtitle at the top */
 .login-title {
   font-size: 24px;
-  color: #333;
+  color: var(--text);
   margin-bottom: 6px;
   line-height: 1.2;
 }
 
 .login-subtitle {
   font-size: 14px;
-  color: #777;
+  color: var(--muted);
   margin-bottom: 20px;
 }
 
@@ -60,14 +60,14 @@
 /* Labels for each input */
 .login-label {
   font-size: 14px;
-  color: #555;
+  color: var(--muted);
   margin-bottom: 4px;
 }
 
 /* Inputs for email & password */
 .login-input {
   padding: 10px 12px;
-  border: 1px solid #d6d6d6;
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 14px;
   width: 100%;
@@ -78,8 +78,8 @@
 
 .login-input:focus {
   outline: none;
-  border-color: #F2994A;
-  box-shadow: 0 0 0 4px rgba(242, 153, 74, 0.18);
+  border-color: var(--brand);
+  box-shadow: var(--ring);
 }
 
 .login-input:disabled {
@@ -90,8 +90,8 @@
 
 /* The login button */
 .login-button {
-  background-color: #F2994A; /* brand color for Boonz */
-  color: #fff;
+  background-color: var(--brand);
+  color: var(--cta-contrast);
   border: none;
   padding: 12px 14px;
   border-radius: 10px;
@@ -107,7 +107,8 @@
 }
 
 .login-button:hover {
-  background-color: #e68a3f;
+  /* slightly darker brand on hover without needing another token */
+  background-color: color-mix(in oklab, var(--brand) 85%, black);
 }
 
 .login-button:active {
@@ -127,8 +128,8 @@
   width: 16px;
   height: 16px;
   border: 2px solid transparent;
-  border-top-color: #fff;
-  border-right-color: #fff;
+  border-top-color: var(--cta-contrast);
+  border-right-color: var(--cta-contrast);
   border-radius: 50%;
   animation: btn-spin .8s linear infinite;
   display: inline-block;
@@ -142,11 +143,11 @@
 .login-footer {
   margin-top: 16px;
   font-size: 13px;
-  color: #777;
+  color: var(--muted);
 }
 
 .login-footer a {
-  color: #F2994A;
+  color: var(--brand);
   text-decoration: none;
   font-weight: 600;
 }
@@ -161,7 +162,6 @@
   margin:0 auto 8px;
   object-fit:contain;
 }
-
 
 /* Reduce motion for users who prefer it */
 @media (prefers-reduced-motion: reduce) {

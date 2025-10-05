@@ -4,56 +4,59 @@
    ------------------------------ */
 
 /* ===== Base / tokens ===== */
+/* Derive local settings tokens from your global app tokens.
+   Nothing here overwrites your global colors; we just *map* them. */
 :root {
   color-scheme: light dark;
 
-  /* Surfaces */
-  --bg:           #ffffff;
-  --bg-soft:      #f7f8fa;
-  --panel:        #ffffff;
-  --panel-2:      #f4f6fb;
+  /* Surfaces (from your globals) */
+  --bg:            var(--bg, #ffffff);
+  --bg-soft:       var(--bg-soft, #f7f8fa);
+  --panel:         var(--card, #ffffff);
+  /* Soft secondary panel derived from bg-soft */
+  --panel-2:       color-mix(in oklab, var(--bg-soft, #f7f8fa) 70%, #ffffff);
 
   /* Text */
-  --ink:          #0f172a;   /* slate-900 */
-  --text:         #1f2937;   /* gray-800 */
-  --muted:        #6b7280;   /* gray-500 */
+  --ink:           var(--text, #1f2937);
+  --text:          var(--text, #1f2937);
+  --muted:         var(--muted, #6b7280);
 
-/* New Brand */
---brand:        #0d74f3;   /* Bright Blue */
---brand-600:    #0077d9;   /* Strong Blue */
---brand-50:     #e3f2ff;   /* Soft Light Blue */
-
+  /* Brand (use your global brand scale) */
+  --brand:         var(--brand);
+  --brand-600:     var(--brand-600, var(--brand));
+  /* Light tint bubble for tags, focus auras, etc. */
+  --brand-50:      color-mix(in oklab, var(--brand) 16%, transparent);
 
   /* Semantic */
-  --accent:       #16a34a;   /* green-600 */
-  --warn:         #f59e0b;   /* amber-500 */
-  --danger:       #ef4444;   /* red-500 */
+  --accent:        var(--price, #16a34a);
+  --warn:          #f59e0b;
+  --danger:        #ef4444;
 
   /* Lines / depth */
-  --border:       #e5e7eb;
-  --border-strong:#d1d5db;
+  --border:        var(--border, #e5e7eb);
+  --border-strong: color-mix(in oklab, var(--border, #e5e7eb) 75%, #0000);
 
   /* Radii */
-  --radius-2xs:   8px;
-  --radius-sm:    10px;
-  --radius:       14px;
-  --radius-lg:    18px;
-  --radius-xl:    22px;
+  --radius-2xs:    8px;
+  --radius-sm:     10px;
+  --radius:        14px;
+  --radius-lg:     18px;
+  --radius-xl:     22px;
 
   /* Shadows */
-  --shadow-xs:    0 1px 2px rgba(15,23,42,.06);
-  --shadow-sm:    0 4px 16px rgba(0,0,0,.07);
-  --shadow:       0 10px 32px rgba(0,0,0,.10);
-  --shadow-lg:    0 22px 70px rgba(0,0,0,.14);
+  --shadow-xs:     0 1px 2px rgba(15,23,42,.06);
+  --shadow-sm:     0 4px 16px rgba(0,0,0,.07);
+  --shadow:        0 10px 32px rgba(0,0,0,.10);
+  --shadow-lg:     0 22px 70px rgba(0,0,0,.14);
 
-  /* Focus / ring */
-  --focus:        0 0 0 3px rgba(59,130,246,.25);
-  --ring:         0 0 0 1px var(--brand), 0 0 0 6px rgba(59,130,246,.18);
+  /* Focus / ring (prefer your global --ring if present) */
+  --focus:         var(--ring, 0 0 0 3px rgba(59,130,246,.25));
+  --ring:          var(--ring, 0 0 0 1px var(--brand), 0 0 0 6px rgba(59,130,246,.18));
 
   /* Motion */
-  --ease:         cubic-bezier(.22,.8,.24,1);
-  --speed-1:      .18s;
-  --speed-2:      .28s;
+  --ease:          cubic-bezier(.22,.8,.24,1);
+  --speed-1:       .18s;
+  --speed-2:       .28s;
 
   /* Type */
   --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter,
@@ -69,21 +72,17 @@
   --space-6: 28px;
 }
 
-/* Dark mode */
+/* Dark mode: keep brand from globals; just nudge surfaces/ink for contrast */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg:           #0b0f1a;
-    --bg-soft:      #0f1526;
-    --panel:        #0f172a;
-    --panel-2:      #0b1222;
+    --bg:           color-mix(in oklab, #0b0f1a 92%, var(--bg, #000));
+    --bg-soft:      color-mix(in oklab, #0f1526 86%, var(--bg, #000));
+    --panel:        color-mix(in oklab, #0f172a 92%, var(--bg, #000));
+    --panel-2:      color-mix(in oklab, #0b1222 92%, var(--bg, #000));
 
     --ink:          #e5e7eb;
     --text:         #cbd5e1;
     --muted:        #93a3b8;
-
-    --brand:        #8b84ff;
-    --brand-600:    #7a73ff;
-    --brand-50:     rgba(139,132,255,.12);
 
     --border:       #1f2a3e;
     --border-strong:#2a3450;
@@ -93,8 +92,9 @@
     --shadow:       0 12px 36px rgba(0,0,0,.45);
     --shadow-lg:    0 22px 70px rgba(0,0,0,.55);
 
-    --focus:        0 0 0 3px rgba(139,132,255,.35);
-    --ring:         0 0 0 1px var(--brand), 0 0 0 8px rgba(139,132,255,.22);
+    /* Build a ring from your brand */
+    --focus:        0 0 0 3px color-mix(in oklab, var(--brand) 40%, transparent);
+    --ring:         0 0 0 1px var(--brand), 0 0 0 8px color-mix(in oklab, var(--brand) 28%, transparent);
   }
 }
 
@@ -221,13 +221,18 @@ html, body {
   border-radius: 1px;
 }
 
-/* ===== Controls ===== */
+/* ===== Controls (upgraded) ===== */
 .card label {
   display: block;
   font-size: 13px;
   font-weight: 700;
   color: color-mix(in oklab, var(--ink) 86%, transparent);
   margin-bottom: 6px;
+}
+.card label + input,
+.card label + select,
+.card label + textarea {
+  margin-bottom: 12px; /* tighter rhythm */
 }
 
 .card input[type="text"],
@@ -240,8 +245,8 @@ html, body {
   background: var(--panel);
   color: var(--ink);
   border-radius: var(--radius-sm);
-  padding: 11px 12px;
-  font-size: 14px;
+  padding: 12px 14px;            /* bigger hit target */
+  font-size: 15px;               /* clearer copy */
   outline: none;
   box-shadow: inset 0 -1px 0 rgba(15,23,42,.03);
   transition: border-color var(--speed-1) var(--ease), box-shadow var(--speed-1) var(--ease), background var(--speed-1) var(--ease), transform var(--speed-1) var(--ease);
@@ -265,10 +270,12 @@ html, body {
   text-overflow: ellipsis;
 }
 
-.form-hint {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 6px;
+/* “Hero” inputs for Display name / Shop name / Promotion name */
+.input-hero {
+  font-size: 16px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border-width: 2px;
 }
 
 /* Validation nicety */
@@ -281,11 +288,11 @@ html, body {
 /* Two-up flexible rows */
 .form-grid-2 {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
 }
 .form-grid-2 > * {
-  flex: 1 1 260px;
+  flex: 1 1 280px;
   min-width: 0;
 }
 
@@ -294,6 +301,57 @@ html, body {
 .form-grid-2 > div > label + select,
 .form-grid-2 > div > label + textarea {
   margin-bottom: var(--space-2);
+}
+
+/* ===== Toggle-style Checkboxes (Enable Tax / Service) ===== */
+.card input[type="checkbox"] {
+  appearance: none;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in oklab, var(--muted) 14%, transparent);
+  position: relative;
+  vertical-align: middle;
+  outline: none;
+  cursor: pointer;
+  transition: background var(--speed-1) var(--ease), border-color var(--speed-1) var(--ease);
+  margin-right: 8px;
+}
+.card input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--speed-1) var(--ease);
+}
+.card input[type="checkbox"]:checked {
+  background: color-mix(in oklab, var(--brand) 85%, transparent);
+  border-color: var(--brand);
+}
+.card input[type="checkbox"]:checked::after {
+  transform: translateX(18px);
+}
+.card input[type="checkbox"]:focus-visible {
+  box-shadow: var(--ring);
+}
+
+/* Align label text nicely with the toggle */
+.card label > input[type="checkbox"] {
+  margin-right: 10px;
+}
+.card label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Numeric % inputs look consistent */
+.card input[type="number"] {
+  text-align: left;
 }
 
 /* ===== Buttons ===== */
@@ -347,17 +405,22 @@ html, body {
   border-color: var(--danger);
 }
 
-/* Actions pinned to bottom */
+/* Actions pinned to bottom + right aligned */
 .card .actions {
   margin-top: auto;
-  padding-top: 12px;
-  display: inline-flex;
+  padding-top: 14px;
+  display: flex;
   gap: 10px;
-  align-self: flex-start;
   flex-wrap: wrap;
+  align-self: stretch;       /* allow right align across the row */
+  justify-content: flex-end; /* right align by default */
 }
+.card .actions .btn { min-height: 38px; }
 
-/* Notes + code-like blocks */
+/* Buttons inside list rows (Promotions) keep compact gaps */
+.list-item .btn { min-height: 34px; }
+
+/* ===== Notes + code-like blocks ===== */
 .note {
   margin-top: 12px;
   color: var(--text);
@@ -506,6 +569,48 @@ html, body {
   color: var(--ink);
 }
 
+/* === Hotfix: keep labels block, only make the toggle label inline === */
+
+/* 1) Restore default block layout for every label */
+.card label {
+    display: block;                  /* was inline-flex from earlier tweak */
+    margin-bottom: 6px;
+}
+
+/* 2) Only the checkbox/toggle label should be inline with the switch */
+.card label:has(> input[type="checkbox"]) {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;             /* add spacing below the toggle row */
+}
+
+/* 3) Ensure following controls always start on a new line */
+.card label + input,
+.card label + select,
+.card label + textarea {
+    display: block;
+    width: 100%;
+}
+
+/* 4) Tighten the Tax & Service card spacing specifically */
+.card h2 + .muted { margin-bottom: 18px; }
+.card .form-grid-2 > div { display: flex; flex-direction: column; }
+
+/* 5) Keep numeric fields consistent and not “centered” */
+.card input[type="number"] { text-align: left; }
+
+/* 6) Promotions: make the two columns breathe and keep labels aligned */
+section.card:has(h2:contains("Promotions")) .form-grid-2 { gap: 16px; }
+section.card:has(h2:contains("Promotions")) .form-grid-2 > div > label { margin-top: 0; }
+
+/* 7) Buttons: avoid drifting; keep them pinned but not cramped */
+.card .actions {
+    justify-content: flex-end;
+    padding-top: 16px;
+}
+
+
 /* Skeleton loader utility (optional) */
 .skeleton {
   position: relative;
@@ -543,6 +648,10 @@ html, body {
   .modal__dialog { width: 96vw; }
   .form-grid-2 { flex-wrap: wrap; }
   .card { padding: 16px; }
+
+  /* Buttons stretch on small screens for easier taps */
+  .card .actions { justify-content: stretch; }
+  .card .actions .btn { flex: 1 1 auto; }
 }
 
 /* ===== Accessibility helpers ===== */
@@ -552,3 +661,240 @@ html, body {
   overflow: hidden; clip: rect(1px, 1px, 1px, 1px);
   white-space: nowrap; border: 0; padding: 0; margin: -1px;
 }
+
+/* === Strong override: pretty boxes (wins cascade) ================== */
+/* Place this AT THE VERY END of Settings.css */
+
+.page-container .settings-grid section.card input[type="text"],
+.page-container .settings-grid section.card input[type="number"],
+.page-container .settings-grid section.card textarea,
+.page-container .settings-grid section.card select {
+    background: linear-gradient(180deg, color-mix(in oklab, #fff 92%, transparent), transparent);
+    border: 2px solid color-mix(in oklab, var(--border) 82%, transparent);
+    border-radius: 14px;
+    padding: 13px 14px;
+    font-size: 15px;
+    line-height: 1.35;
+    color: var(--ink);
+    box-shadow:
+        0 1px 0 rgba(15, 23, 42, .02),
+        0 1px 10px rgba(0,0,0,.02),
+        inset 0 -1px 0 rgba(0,0,0,.03);
+    transition:
+        border-color var(--speed-1) var(--ease),
+        box-shadow var(--speed-1) var(--ease),
+        background var(--speed-1) var(--ease);
+}
+
+.page-container .settings-grid section.card textarea {
+    min-height: 110px;
+    padding: 14px 16px;
+    border-radius: 16px;
+}
+
+.page-container .settings-grid section.card input[type="text"]:hover,
+.page-container .settings-grid section.card input[type="number"]:hover,
+.page-container .settings-grid section.card textarea:hover,
+.page-container .settings-grid section.card select:hover {
+    border-color: color-mix(in oklab, var(--brand) 24%, var(--border));
+}
+
+.page-container .settings-grid section.card input[type="text"]:focus,
+.page-container .settings-grid section.card input[type="number"]:focus,
+.page-container .settings-grid section.card textarea:focus,
+.page-container .settings-grid section.card select:focus {
+    border-color: color-mix(in oklab, var(--brand) 55%, var(--border));
+    box-shadow:
+        0 6px 16px rgba(0,0,0,.06),
+        0 0 0 4px color-mix(in oklab, var(--brand) 18%, transparent),
+        inset 0 -1px 0 rgba(0,0,0,.04);
+    background: #fff;
+}
+
+/* === Advanced Textarea Polish ====================================== */
+/* Keep this LAST so it overrides prior textarea styles cleanly */
+.page-container .settings-grid section.card textarea {
+  --ta-radius: 16px;
+  --ta-border: color-mix(in oklab, var(--border) 82%, transparent);
+  --ta-border-focus: color-mix(in oklab, var(--brand) 55%, var(--border));
+  --ta-bg: linear-gradient(180deg, color-mix(in oklab, #fff 96%, transparent), transparent);
+  --ta-shadow: 0 1px 0 rgba(15,23,42,.02),
+               0 1px 10px rgba(0,0,0,.02),
+               inset 0 -1px 0 rgba(0,0,0,.03);
+
+  appearance: none;
+  width: 100%;
+  min-height: 120px;
+  max-height: 44vh;                 /* avoid runaway tall fields */
+  resize: vertical;                  /* keep user control but constrained */
+  overflow: auto;                    /* smooth scroll for long text */
+  padding: 14px 16px 18px;           /* extra bottom for the resize grip */
+  line-height: 1.55;
+  font-size: 15px;
+  border-radius: var(--ta-radius);
+  border: 2px solid var(--ta-border);
+  background: var(--ta-bg);
+  color: var(--ink);
+  box-shadow: var(--ta-shadow);
+  transition:
+    border-color var(--speed-1) var(--ease),
+    box-shadow var(--speed-1) var(--ease),
+    background var(--speed-1) var(--ease),
+    transform var(--speed-1) var(--ease);
+  caret-color: var(--brand);
+  backdrop-filter: saturate(115%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .page-container .settings-grid section.card textarea {
+    --ta-bg: linear-gradient(180deg, color-mix(in oklab, #0c1222 84%, transparent), transparent);
+    background: var(--ta-bg);
+    box-shadow:
+      0 1px 0 rgba(0,0,0,.25),
+      0 6px 18px rgba(0,0,0,.28),
+      inset 0 -1px 0 rgba(255,255,255,.03);
+  }
+}
+
+/* Hover + focus */
+.page-container .settings-grid section.card textarea:hover {
+  border-color: color-mix(in oklab, var(--brand) 28%, var(--ta-border));
+  background: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  .page-container .settings-grid section.card textarea:hover {
+    background: color-mix(in oklab, #0e162a 80%, transparent);
+  }
+}
+
+.page-container .settings-grid section.card textarea:focus {
+  outline: none;
+  border-color: var(--ta-border-focus);
+  background: #fff;
+  box-shadow:
+    0 8px 22px rgba(0,0,0,.06),
+    0 0 0 4px color-mix(in oklab, var(--brand) 18%, transparent),
+    inset 0 -1px 0 rgba(0,0,0,.04);
+  transform: translateZ(0);
+}
+@media (prefers-color-scheme: dark) {
+  .page-container .settings-grid section.card textarea:focus {
+    background: #0f172a; /* keep readable contrast for “paper” */
+    box-shadow:
+      0 10px 28px rgba(0,0,0,.45),
+      0 0 0 6px color-mix(in oklab, var(--brand) 22%, transparent),
+      inset 0 -1px 0 rgba(255,255,255,.04);
+  }
+}
+
+/* Placeholder */
+.page-container .settings-grid section.card textarea::placeholder {
+  color: color-mix(in oklab, var(--muted) 84%, transparent);
+  opacity: .9;
+}
+
+/* Disabled / read-only */
+.page-container .settings-grid section.card textarea:disabled,
+.page-container .settings-grid section.card textarea[readonly] {
+  opacity: .75;
+  cursor: not-allowed;
+  background: color-mix(in oklab, var(--bg-soft) 65%, transparent);
+}
+
+/* Valid/invalid (opt-in classes) */
+.page-container .settings-grid section.card textarea.is-invalid {
+  border-color: color-mix(in oklab, var(--danger) 70%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 45%, transparent);
+}
+.page-container .settings-grid section.card textarea.is-valid {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent);
+}
+
+/* Subtle resize cue (WebKit) */
+.page-container .settings-grid section.card textarea {
+  background-image:
+    radial-gradient(currentColor 1px, transparent 1.5px);
+  background-size: 8px 8px;
+  background-repeat: no-repeat;
+  background-position: calc(100% - 10px) calc(100% - 10px);
+  -webkit-resizer: auto;
+}
+
+/* Smooth inner scrolling */
+.page-container .settings-grid section.card textarea {
+  scroll-behavior: smooth;
+}
+.page-container .settings-grid section.card textarea::-webkit-scrollbar {
+  width: 10px;
+}
+.page-container .settings-grid section.card textarea::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted) 35%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.page-container .settings-grid section.card textarea::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--brand) 38%, var(--muted));
+}
+
+/* Mobile comfort */
+@media (max-width: 640px) {
+  .page-container .settings-grid section.card textarea {
+    min-height: 140px;
+    font-size: 16px; /* avoids iOS zoom */
+    padding: 16px 16px 20px;
+  }
+}
+
+/* Optional variants (apply via className) */
+/* Monospace lined notes: <textarea class="textarea--mono"> */
+.page-container .settings-grid section.card textarea.textarea--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.01em;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, #fff 96%, transparent), transparent),
+    repeating-linear-gradient(
+      to bottom,
+      color-mix(in oklab, #000 4%, transparent) 0,
+      color-mix(in oklab, #000 4%, transparent) 1px,
+      transparent 1px,
+      transparent 32px
+    );
+  background-blend-mode: normal, multiply;
+  line-height: 1.6;
+}
+
+/* Extra-soft variant: <textarea class="textarea--soft"> */
+.page-container .settings-grid section.card textarea.textarea--soft {
+  background: linear-gradient(180deg, color-mix(in oklab, #fff 98%, transparent), transparent);
+  box-shadow:
+    0 10px 28px rgba(0,0,0,.05),
+    inset 0 1px 0 rgba(255,255,255,.8),
+    inset 0 -1px 0 rgba(0,0,0,.04);
+  border-color: color-mix(in oklab, var(--brand) 18%, var(--border));
+}
+
+/* Small square logo preview */
+.card .logo-preview {
+  width: 80px;               /* size of the box */
+  height: 80px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Ensure the image fits nicely inside the square */
+.card .logo-preview img {
+  width: 100% !important;    /* override any inline height */
+  height: 100% !important;
+  object-fit: contain;       /* keep aspect ratio */
+  border-radius: 8px;
+}
+
+

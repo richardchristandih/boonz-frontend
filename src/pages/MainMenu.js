@@ -26,16 +26,11 @@ import {
   androidPrintLogoAndText,
 } from "../utils/androidBridge";
 import { sendOrderEmail, EMAIL_COOLDOWN_SEC } from "../services/orderEmail";
+import { fetchOrderCharges } from "../services/orderCharges";
 import { formatIDR } from "../utils/money";
 import AddCategoryModal from "../components/AddCategoryModal";
 
 /* ---------------- Constants ---------------- */
-const TAX_ENABLED = localStorage.getItem("settings.taxEnabled") === "true";
-const SERVICE_ENABLED =
-  localStorage.getItem("settings.serviceEnabled") === "true";
-const TAX_RATE = Number(localStorage.getItem("settings.taxRate")) / 100 || 0.1;
-const SERVICE_CHARGE_RATE =
-  Number(localStorage.getItem("settings.serviceRate")) / 100 || 0.05;
 const MOBILE_BP = 1024; // px
 const RECEIPT_PRINTER_HINT = /RPP02N/i;
 
@@ -239,6 +234,27 @@ function buildOrderedChips(apiCats, prodCats) {
 export default function MenuLayout() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+
+  const [taxEnabled, setTaxEnabled] = useState(false);
+  const [serviceEnabled, setServiceEnabled] = useState(false);
+  const [taxRate, setTaxRate] = useState(0); // decimals, e.g. 0.10
+  const [serviceRate, setServiceRate] = useState(0); // decimals, e.g. 0.05
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await fetchOrderCharges();
+        setTaxEnabled(!!s.taxEnabled);
+        setServiceEnabled(!!s.serviceEnabled);
+        // already normalized to decimals by the service
+        setTaxRate(Number(s.taxRate) || 0);
+        setServiceRate(Number(s.serviceRate) || 0);
+      } catch (e) {
+        console.warn("Failed to load order charges:", e);
+        // keep defaults
+      }
+    })();
+  }, []);
 
   // categories from API (preferred)
   const [categories, setCategories] = useState([]); // [{_id, name}]
@@ -487,12 +503,6 @@ export default function MenuLayout() {
 
   /* ---- Bottom sheet (mobile) ---- */
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
-  useEffect(() => {
-    if (!mobileCartOpen) return;
-    rowRefs.current.forEach?.((el) => {
-      if (el) el.style.transform = "translateX(0)";
-    });
-  }, [mobileCartOpen]);
 
   /* ---- Search ---- */
   const [searchTerm, setSearchTerm] = useState("");
@@ -679,10 +689,13 @@ export default function MenuLayout() {
       ),
     [cart]
   );
-  const tx = useMemo(() => (TAX_ENABLED ? sub * TAX_RATE : 0), [sub]);
+  const tx = useMemo(
+    () => (taxEnabled ? sub * taxRate : 0),
+    [sub, taxEnabled, taxRate]
+  );
   const svc = useMemo(
-    () => (SERVICE_ENABLED ? sub * SERVICE_CHARGE_RATE : 0),
-    [sub]
+    () => (serviceEnabled ? sub * serviceRate : 0),
+    [sub, serviceEnabled, serviceRate]
   );
 
   const customDiscount = useMemo(() => {
@@ -773,100 +786,6 @@ export default function MenuLayout() {
     (id) => setCart((prev) => prev.filter((i) => i.id !== id)),
     []
   );
-
-  /* ---------- Swipe-to-delete ---------- */
-  const rowRefs = useRef(new Map());
-  const pointerStartX = useRef(0);
-  const pointerDeltaX = useRef({});
-  const activePointerById = useRef({});
-  const isDraggingById = useRef({});
-  const SWIPE_THRESHOLD = 60; // px
-  const MAX_LEFT = -120;
-
-  const handlePointerDown = useCallback((e, id) => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    const el = rowRefs.current.get(id);
-    if (!el) return;
-
-    activePointerById.current[id] = e.pointerId;
-    isDraggingById.current[id] = false;
-    pointerStartX.current = e.clientX ?? 0;
-    pointerDeltaX.current[id] = 0;
-    try {
-      el.setPointerCapture?.(e.pointerId);
-    } catch {}
-    el.classList.add("swiping");
-  }, []);
-
-  const handlePointerMove = useCallback((e, id) => {
-    const el = rowRefs.current.get(id);
-    if (!el) return;
-    const expectedPid = activePointerById.current[id];
-    if (expectedPid == null || e.pointerId !== expectedPid) return;
-
-    const x = e.clientX ?? 0;
-    const delta = Math.min(0, x - pointerStartX.current);
-    pointerDeltaX.current[id] = delta;
-    if (!isDraggingById.current[id] && Math.abs(delta) > 3) {
-      isDraggingById.current[id] = true;
-    }
-    const clamped = Math.max(delta, MAX_LEFT);
-    el.style.transform = `translateX(${clamped}px)`;
-  }, []);
-
-  const snapBack = (el) => {
-    el.style.transition = "transform .18s ease";
-    el.style.transform = "translateX(0)";
-    const clean = () => {
-      el.style.transition = "";
-      el.removeEventListener("transitionend", clean);
-    };
-    el.addEventListener("transitionend", clean);
-  };
-
-  const slideOutAndRemove = (el, id, removeCb) => {
-    el.style.transition = "transform .18s ease";
-    el.style.transform = "translateX(-100%)";
-    const after = () => {
-      el.style.transition = "";
-      el.removeEventListener("transitionend", after);
-      removeCb(id);
-    };
-    el.addEventListener("transitionend", after);
-  };
-
-  const handlePointerUpOrCancel = useCallback((id, removeCb) => {
-    const el = rowRefs.current.get(id);
-    if (!el) return;
-
-    const delta = pointerDeltaX.current[id] || 0;
-    const wasDragging = !!isDraggingById.current[id];
-
-    delete activePointerById.current[id];
-    delete isDraggingById.current[id];
-    el.classList.remove("swiping");
-    try {
-      el.releasePointerCapture?.();
-    } catch {}
-
-    if (wasDragging && Math.abs(delta) > SWIPE_THRESHOLD) {
-      slideOutAndRemove(el, id, removeCb);
-    } else if (wasDragging) {
-      snapBack(el);
-    }
-  }, []);
-
-  const getSwipeHandlers = (id) => ({
-    ref: (el) => {
-      if (el) rowRefs.current.set(id, el);
-      else rowRefs.current.delete(id);
-    },
-    onPointerDown: (e) => handlePointerDown(e, id),
-    onPointerMove: (e) => handlePointerMove(e, id),
-    onPointerUp: () => handlePointerUpOrCancel(id, handleRemoveItem),
-    onPointerCancel: () => handlePointerUpOrCancel(id, handleRemoveItem),
-    style: { touchAction: "pan-y" },
-  });
 
   /* ---------- Checkout ---------- */
   const handleCheckout = useCallback(() => {
@@ -992,8 +911,8 @@ export default function MenuLayout() {
           subtotal: orderData.subtotal,
           tax: orderData.tax,
           service: orderData.serviceCharge,
-          showTax: TAX_ENABLED,
-          showService: SERVICE_ENABLED,
+          showTax: taxEnabled,
+          showService: serviceEnabled,
           discount: orderData.discount,
           total: orderData.totalAmount,
           payment: orderData.paymentMethod,
@@ -1063,8 +982,8 @@ export default function MenuLayout() {
             subtotal: orderData.subtotal,
             tax: orderData.tax,
             service: orderData.serviceCharge,
-            showTax: TAX_ENABLED,
-            showService: SERVICE_ENABLED,
+            showTax: taxEnabled,
+            showService: serviceEnabled,
             discount: orderData.discount,
             total: orderData.totalAmount,
             payment: orderData.paymentMethod,
@@ -1280,7 +1199,6 @@ export default function MenuLayout() {
     } catch (err) {
       console.error("Soft refresh failed:", err);
     } finally {
-      window.location.reload();
       setLoadingProducts(false);
     }
   }, [reloadCategories, fetchPromos]);
@@ -1569,7 +1487,6 @@ export default function MenuLayout() {
                         alignItems: "flex-end",
                         marginLeft: 8,
                       }}
-                      {...getSwipeHandlers(item.id)}
                     >
                       <p>
                         {formatIDR(Number(item.price ?? 0), {
@@ -1586,6 +1503,7 @@ export default function MenuLayout() {
                           type="button"
                           className="stepper-btn"
                           onClick={() => handleDecreaseQty(item.id)}
+                          onPointerDown={(e) => e.stopPropagation()}
                           aria-label="Decrease quantity"
                         >
                           –
@@ -1597,6 +1515,7 @@ export default function MenuLayout() {
                           type="button"
                           className="stepper-btn"
                           onClick={() => handleIncreaseQty(item.id)}
+                          onPointerDown={(e) => e.stopPropagation()}
                           aria-label="Increase quantity"
                         >
                           +
@@ -1612,16 +1531,16 @@ export default function MenuLayout() {
                   <span>Subtotal</span>
                   <span>{formatIDR(sub, { withDecimals: true })}</span>
                 </div>
-                {TAX_ENABLED && (
+                {taxEnabled && (
                   <div className="summary-row">
-                    <span>Tax ({(TAX_RATE * 100).toFixed(0)}%)</span>
+                    <span>Tax ({(taxRate * 100).toFixed(0)}%)</span>
                     <span>{formatIDR(tx, { withDecimals: true })}</span>
                   </div>
                 )}
-                {SERVICE_ENABLED && (
+                {serviceEnabled && (
                   <div className="summary-row">
                     <span>
-                      Service Charge ({(SERVICE_CHARGE_RATE * 100).toFixed(0)}%)
+                      Service Charge ({(serviceRate * 100).toFixed(0)}%)
                     </span>
                     <span>{formatIDR(svc, { withDecimals: true })}</span>
                   </div>
@@ -1679,11 +1598,7 @@ export default function MenuLayout() {
         </div>
         <div className="cart-items">
           {cart.map((item) => (
-            <div
-              key={item.id}
-              className="cart-item"
-              {...getSwipeHandlers(item.id)}
-            >
+            <div key={item.id} className="cart-item">
               <div className="cart-item-left">
                 <strong>{item.name}</strong>
                 <br />
@@ -1742,6 +1657,7 @@ export default function MenuLayout() {
                     type="button"
                     className="stepper-btn"
                     onClick={() => handleIncreaseQty(item.id)}
+                    onPointerDown={(e) => e.stopPropagation()}
                     aria-label="Increase quantity"
                   >
                     +
@@ -1758,17 +1674,15 @@ export default function MenuLayout() {
             <span>Subtotal</span>
             <span>{formatIDR(sub)}</span>
           </div>
-          {TAX_ENABLED && (
+          {taxEnabled && (
             <div className="summary-row">
-              <span>Tax ({(TAX_RATE * 100).toFixed(0)}%)</span>
+              <span>Tax ({(taxRate * 100).toFixed(0)}%)</span>
               <span>{formatIDR(tx, { withDecimals: true })}</span>
             </div>
           )}
-          {SERVICE_ENABLED && (
+          {serviceEnabled && (
             <div className="summary-row">
-              <span>
-                Service Charge ({(SERVICE_CHARGE_RATE * 100).toFixed(0)}%)
-              </span>
+              <span>Service Charge ({(serviceRate * 100).toFixed(0)}%)</span>
               <span>{formatIDR(svc, { withDecimals: true })}</span>
             </div>
           )}

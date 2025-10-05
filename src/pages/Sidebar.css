@@ -2,28 +2,35 @@
    Sidebar.css (refined, updated)
    ========================= */
 
-/* ---------- Design tokens ---------- */
+/* ---------- Design tokens (brand palette) ---------- */
 :root{
-  --brand:#f2994a;
-  --brand-900:#ca7c36;
+  /* Brand palette from image */
+  --brand:#FB7E00;         /* orange */
+  --brand-900:#D86F00;     /* darker orange for hover */
+  --brand-2:#FFCC3F;       /* secondary accent (chips/active) */
 
+  /* UI surfaces */
   --bg:#ffffff;
-  --bg-soft:#fafafa;
+  --surface:#D1DFD2;       /* soft neutral from palette */
+  --bg-soft:var(--surface);
+
+  /* Text & borders */
   --text:#1f2937;
   --muted:#6b7280;
   --border:#ececec;
 
+  /* Shadows */
   --shadow-xs:0 2px 8px rgba(0,0,0,.04);
   --shadow-sm:0 4px 14px rgba(0,0,0,.06);
   --shadow:0 8px 24px rgba(0,0,0,.08);
 
-  /* CTA (mobile Add pill) */
-  --cta:#2e7d3a;
-  --cta-900:#99de58;
-  --cta-glow:0 10px 28px rgba(46,125,50,.35);
+  /* CTA (mobile Add pill) – teal from palette */
+  --cta:#79B4B0;
+  --cta-900:#5F9D99;       /* a touch darker for hover */
+  --cta-glow:0 10px 28px rgba(121,180,176,.35);
 
-  /* Focus ring */
-  --ring: 0 0 0 3px rgba(99,102,241,.22);
+  /* Focus ring uses brand */
+  --ring: 0 0 0 3px rgba(251,126,0,.22);
 }
 
 /* Dark mode (auto) */
@@ -34,13 +41,15 @@
     --text:#e7edf6;
     --muted:#9aa4b2;
     --border:#1e2630;
+
     --shadow-xs:0 2px 8px rgba(0,0,0,.35);
     --shadow-sm:0 4px 14px rgba(0,0,0,.4);
     --shadow:0 8px 28px rgba(0,0,0,.5);
 
-    --cta:#23a055;
-    --cta-900:#15803d;
-    --cta-glow:0 10px 26px rgba(35,160,85,.45);
+    /* keep brand accents the same, tweak CTA depth */
+    --cta:#79B4B0;
+    --cta-900:#5A8E8B;
+    --cta-glow:0 10px 26px rgba(121,180,176,.45);
   }
 }
 
@@ -246,9 +255,9 @@
 /* ---------- Fine-tuning: touch & focus ---------- */
 .nav-link,.sb-btn,.sb-icon-btn{-webkit-tap-highlight-color:transparent}
 
-/* Ensure icons inside primary/green CTA buttons stay white */
+/* Ensure icons/text inside primary/add CTAs are white (no old green) */
 .sidebar-actions-stack .sb-btn,
-.sidebar-nav .add-pill{color:#7bc239}
+.sidebar-nav .add-pill{color:#000000}
 .sidebar-actions-stack .sb-btn svg,
 .sidebar-nav .add-pill svg{color:inherit!important;stroke:currentColor;opacity:1}
 .sidebar-actions-stack .sb-btn:hover svg,
