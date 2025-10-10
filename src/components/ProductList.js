@@ -94,15 +94,27 @@ export default function ProductList({ showTitle = false, scroll = false }) {
     setEditorProduct(null);
   }
 
+  // ← refresh after save
   function applySaved(updated) {
     const id = updated?._id || updated?.id || updated?.sku;
-    if (!id) return closeEditor();
+    if (!id) {
+      closeEditor();
+      return;
+    }
+
+    // 1) Optimistic local merge (instant UI feedback)
     setProducts((prev) =>
       prev.map((p) =>
         (p?._id || p?.id || p?.sku) === id ? { ...p, ...updated } : p
       )
     );
+
+    // 2) Close the modal
     closeEditor();
+
+    // 3) Pull fresh list from server (ensures derived fields/images/prices are right)
+    //    No need to await; the list will update when finished.
+    load();
   }
 
   async function handleRemove(productId) {
@@ -256,7 +268,7 @@ export default function ProductList({ showTitle = false, scroll = false }) {
         open={editorOpen}
         product={editorProduct}
         onClose={closeEditor}
-        onSaved={applySaved}
+        onSaved={applySaved} // ← ensures list refresh after save
       />
     </div>
   );

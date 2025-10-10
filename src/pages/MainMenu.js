@@ -931,9 +931,11 @@ export default function MenuLayout() {
           const paired = androidListPrintersDetailed();
           const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
           const receiptTarget =
-            localStorage.getItem("printer.receipt") || fallbackAddr;
+            extractBtAddress(localStorage.getItem("printer.receipt")) ||
+            fallbackAddr;
           const kitchenTarget =
-            localStorage.getItem("printer.kitchen") || fallbackAddr;
+            extractBtAddress(localStorage.getItem("printer.kitchen")) ||
+            fallbackAddr;
 
           if (!androidIsBtOn()) {
             window.alert(
@@ -1602,7 +1604,6 @@ export default function MenuLayout() {
               <div className="cart-item-left">
                 <strong>{item.name}</strong>
                 <br />
-                <small>{(Number(item.quantity) || 0) * 200} ml</small>
                 <div style={{ marginTop: 6 }}>
                   <button
                     className="link-btn"

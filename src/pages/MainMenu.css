@@ -11,6 +11,8 @@
   --price:        #9FC089;   /* price/success green */
   --cta:          #79B4B0;   /* CTA teal */
   --cta-contrast: #FFFFFF;
+  --sb-logo-skel-bg: #f1f5f9;         
+  --sb-logo-skel-shine: rgba(255,255,255,.65);
 
   /* Neutrals / semantics */
   --text:   #0f172a;
@@ -18,6 +20,17 @@
   --border: #e5e7eb;
   --bg-soft: var(--surface);
   --ring: 0 0 0 3px rgba(251,126,0,.25); /* focus ring using --brand */
+
+  /* Sidebar logo size token (mobile default) */
+  --sb-logo-h: 46px; /* adjust 46–56px to taste, must match Sidebar.css */
+  --sb-logo-rad: 10px;
+}
+
+/* Increase logo size on desktop to enable smooth resize animation */
+@media (min-width:901px){
+  :root{
+    --sb-logo-h: 56px; /* desktop size */
+  }
 }
 
 /* ===== Base layout ===== */
@@ -510,6 +523,9 @@ body{
     width:100%; border-right:0; border-bottom:1px solid var(--border);
     position:sticky; top:0; z-index:50; background:rgba(250,250,250,.92);
     backdrop-filter:blur(8px); padding:12px 16px;
+
+    /* prevent width/padding animation on breakpoint flip */
+    transition:none !important;
   }
 
   .layout-cart{ display:none; }
@@ -594,10 +610,7 @@ body{
   border-bottom:1px solid #eef0f3;
 }
 .paymodal__dialog.paymodal__dialog--customize .paymodal__head h3{
-  font-size:20px;
-  font-weight:800;
-  letter-spacing:.2px;
-  color:#0f172a;
+  font-size:20px; font-weight:800; letter-spacing:.2px; color:#0f172a;
 }
 
 /* Close button hover */
@@ -616,8 +629,7 @@ body{
   padding:18px 20px 8px;
 }
 .paymodal__dialog.paymodal__dialog--customize .register-label{
-  font-weight:800;
-  color:#0f172a;
+  font-weight:800; color:#0f172a;
 }
 
 /* Options layout */
@@ -640,13 +652,10 @@ body{
   vertical-align:-3px;
   background:#fff;
 }
-.paymodal__dialog.paymodal__dialog--customize input[type="radio"]{
-  border-radius:50%;
-}
+.paymodal__dialog.paymodal__dialog--customize input[type="radio"]{ border-radius:50%; }
 .paymodal__dialog.paymodal__dialog--customize input[type="radio"]::before{
   content:""; inline-size:8px; block-size:8px; border-radius:50%;
-  transform:scale(0); transition:transform .14s ease-out;
-  background:var(--brand);
+  transform:scale(0); transition:transform .14s ease-out; background:var(--brand);
 }
 .paymodal__dialog.paymodal__dialog--customize input[type="checkbox"]::before{
   content:"✓"; font-weight:900; font-size:12px; line-height:1;
@@ -655,67 +664,45 @@ body{
 .paymodal__dialog.paymodal__dialog--customize input[type="radio"]:checked{
   border-color:var(--brand); background:#fff4e8;
 }
-.paymodal__dialog.paymodal__dialog--customize input[type="radio"]:checked::before{
-  transform:scale(1);
-}
+.paymodal__dialog.paymodal__dialog--customize input[type="radio"]:checked::before{ transform:scale(1); }
 .paymodal__dialog.paymodal__dialog--customize input[type="checkbox"]:checked{
   border-color:var(--price); background:var(--price);
   box-shadow:0 0 0 3px rgba(159,192,137,.28);
 }
-.paymodal__dialog.paymodal__dialog--customize input[type="checkbox"]:checked::before{
-  transform:scale(1);
-}
+.paymodal__dialog.paymodal__dialog--customize input[type="checkbox"]:checked::before{ transform:scale(1); }
 .paymodal__dialog.paymodal__dialog--customize input[type="radio"]:focus-visible,
 .paymodal__dialog.paymodal__dialog--customize input[type="checkbox"]:focus-visible{
-  outline:none;
-  box-shadow:0 0 0 3px rgba(251,126,0,.25);
-  border-color:var(--brand);
+  outline:none; box-shadow:0 0 0 3px rgba(251,126,0,.25); border-color:var(--brand);
 }
 
 /* Label alignment */
 .paymodal__dialog.paymodal__dialog--customize .radio-row label{
-  display:flex; align-items:center; gap:10px;
-  padding:6px 8px; border-radius:10px;
+  display:flex; align-items:center; gap:10px; padding:6px 8px; border-radius:10px;
 }
 
 /* Section spacing */
-.paymodal__dialog.paymodal__dialog--customize .pay-section + .pay-section{
-  margin-top:12px;
-}
+.paymodal__dialog.paymodal__dialog--customize .pay-section + .pay-section{ margin-top:12px; }
 
 /* Footer */
 .paymodal__dialog.paymodal__dialog--customize .paymodal__actions{
-  position:sticky; bottom:0;
-  display:flex; gap:10px; justify-content:flex-end;
-  padding:14px 16px 16px;
-  background:linear-gradient(180deg,rgba(255,255,255,.4),#fff);
+  position:sticky; bottom:0; display:flex; gap:10px; justify-content:flex-end;
+  padding:14px 16px 16px; background:linear-gradient(180deg,rgba(255,255,255,.4),#fff);
   border-top:1px solid #eef0f3;
 }
 
 /* Primary CTA a bit larger & rounded */
 .paymodal__dialog.paymodal__dialog--customize .btn{
-  height:44px; border-radius:12px;
-  padding:0 20px; font-weight:800;
+  height:44px; border-radius:12px; padding:0 20px; font-weight:800;
 }
 .paymodal__dialog.paymodal__dialog--customize .btn-primary{
-  background:var(--brand);
-  border-color:var(--brand);
-  color:#fff;
-  box-shadow:0 8px 18px rgba(251,126,0,.25);
+  background:var(--brand); border-color:var(--brand); color:#fff; box-shadow:0 8px 18px rgba(251,126,0,.25);
 }
-.paymodal__dialog.paymodal__dialog--customize .btn-primary:hover{
-  filter:brightness(.98);
-}
+.paymodal__dialog.paymodal__dialog--customize .btn-primary:hover{ filter:brightness(.98); }
 
 /* Small screens */
 @media (max-width:520px){
-  .paymodal__dialog.paymodal__dialog--customize{
-    width:95vw;
-    border-radius:14px;
-  }
-  .paymodal__dialog.paymodal__dialog--customize .paymodal__head h3{
-    font-size:18px;
-  }
+  .paymodal__dialog.paymodal__dialog--customize{ width:95vw; border-radius:14px; }
+  .paymodal__dialog.paymodal__dialog--customize .paymodal__head h3{ font-size:18px; }
 }
 
 /* Smaller link on phones */
@@ -752,4 +739,41 @@ body{
 /* ===== Reduced motion ===== */
 @media (prefers-reduced-motion:reduce){
   *{ animation:none!important; transition:none!important; }
+}
+
+/* ===========================================
+   Sidebar logo — smooth resize (mobile → desktop)
+   =========================================== */
+.sidebar-logo img{
+  height:var(--sb-logo-h);
+  width:auto;                 /* keep aspect ratio */
+  object-fit:contain;
+  border-radius:var(--sb-logo-rad);
+  background:#fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.04);
+
+  /* enable smooth transition on size & cosmetics */
+  transition:
+    height .25s ease,
+    border-radius .25s ease,
+    box-shadow .25s ease,
+    background .25s ease;
+}
+
+/* keep same aspect in expanded desktop */
+.layout-sidebar:not(.collapsed) .sidebar-logo img{
+  height:var(--sb-logo-h);
+  width:auto;
+  padding:0;
+}
+
+/* mobile/topbar: smaller look, transitions stay ON */
+@media (max-width:900px){
+  .layout-sidebar .sidebar-logo img{
+    height:var(--sb-logo-h);
+    width:auto;
+    border-radius:6px;
+    background:transparent;
+    box-shadow:none;
+  }
 }

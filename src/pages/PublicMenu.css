@@ -1,0 +1,178 @@
+/* =========================
+   src/pages/PublicMenu.css
+   ========================= */
+
+/* ===== Design Tokens ===== */
+:root{
+  /* Brand palette (from image) */
+  --brand:        #FB7E00;   /* primary orange */
+  --brand-2:      #FFCC3F;   /* secondary yellow */
+  --surface:      #D1DFD2;   /* soft background */
+  --price:        #9FC089;   /* price/success green */
+  --cta:          #79B4B0;   /* CTA teal */
+  --cta-contrast: #FFFFFF;
+
+  /* Neutrals / semantics */
+  --text:   #0f172a;
+  --muted:  #6b7280;
+  --border: #e5e7eb;
+  --bg-soft: var(--surface);
+  --ring: 0 0 0 3px rgba(251,126,0,.25); /* focus ring using --brand */
+}
+
+/* ===== Base layout ===== */
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  background:#fff;
+  color:var(--text);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+}
+
+.layout-container{
+  display:flex;
+  height:100dvh;
+  overflow:hidden; /* main area manages its own scroll */
+}
+@supports not (height:100dvh){ .layout-container{ height:100vh; } }
+
+.layout-main{ flex:1; display:flex; flex-direction:column; min-width:0; }
+
+/* ===== Public brand header (logo on top) ===== */
+.public-header{
+  position:sticky; top:0; z-index:35;
+  display:flex; align-items:center; justify-content:center; gap:12px;
+  padding:12px 16px;
+  background:#fff;
+  border-bottom:1px solid var(--border);
+}
+.public-logo{
+  height:56px; width:auto; object-fit:contain; border-radius:8px;
+}
+.public-title{ display:flex; flex-direction:column; line-height:1.1; }
+.public-title strong{ font-size:20px; }
+.public-title small{ font-size:12px; color:#666; }
+
+/* ===== Top bar (chips + search) ===== */
+.layout-topbar{
+  position:sticky; top:0; z-index:30; /* sits under header */
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:10px 16px; background:#fff; border-bottom:1px solid var(--border);
+  scroll-margin-top:68px; /* nicer focus/skip to content */
+}
+
+/* Category chips */
+.chip-row{
+  display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scrollbar-width:none; max-width:100%; scroll-snap-type:x proximity;
+}
+.chip-row::-webkit-scrollbar{ display:none; }
+
+.chip{
+  white-space:nowrap;
+  border:1px solid var(--border); background:#fff; color:var(--text);
+  border-radius:999px; padding:8px 14px; font-size:14px; cursor:pointer;
+  scroll-snap-align:start; transition:background .15s,border-color .15s,color .15s;
+}
+.chip:hover{ background:#fafafa; }
+.chip.active{
+  background:var(--brand-2); color:#fff; border-color:var(--brand-2);
+}
+
+/* Topbar actions */
+.topbar-actions{ display:flex; align-items:center; gap:10px; }
+.icon-btn{
+  background:#fff; border:1px solid var(--border); width:36px; height:36px; border-radius:8px;
+  display:grid; place-items:center; cursor:pointer; transition:background .15s,transform .06s;
+}
+.icon-btn:hover{ background:#f6f7f8; }
+.icon-btn:active{ transform:translateY(1px); }
+
+/* Search */
+.search-wrap{
+  display:flex; align-items:center; gap:8px; background:#fff; border:1px solid var(--border);
+  border-radius:999px; padding:6px 10px;
+}
+.search-icon{ opacity:.6; }
+.search-input{
+  border:none; outline:none; min-width:160px; font-size:14px; background:transparent;
+}
+
+/* ===== Products ===== */
+.products-area{
+  flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y;
+  min-height:0; padding:16px;
+}
+.visually-hidden{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0;
+}
+
+.product-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:20px;
+}
+.product-card{
+  background:#fff; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,.06);
+  padding:14px; display:flex; flex-direction:column; min-height:260px;
+  transition:box-shadow .2s ease, transform .06s ease;
+}
+.product-card:hover{ box-shadow:0 8px 18px rgba(0,0,0,.12); }
+.product-image{
+  width:120px; height:120px; object-fit:cover; border-radius:10px; align-self:center; margin:0 auto 10px;
+}
+.product-name{
+  font-size:14px; font-weight:700; letter-spacing:.2px;
+  margin:6px 0 2px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.product-desc{
+  font-size:12px; color:var(--muted); margin:6px 0; line-height:1.45;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:calc(1.45em * 2);
+}
+.product-price{
+  font-weight:800; margin:6px 0 0; color:var(--price);
+}
+
+/* ===== Skeleton / Shimmer ===== */
+.skeleton .shimmer{ position:relative; overflow:hidden; background:#eee; }
+.skeleton .shimmer::before{
+  content:""; position:absolute; inset:0; transform:translateX(-100%);
+  background:linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.7) 50%, rgba(255,255,255,0) 100%);
+  animation:shimmerMove 1.4s infinite;
+}
+@keyframes shimmerMove{ 100% { transform:translateX(100%); } }
+.product-card.skeleton{
+  background:#fff; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,.06); padding:14px; display:flex; flex-direction:column; min-height:260px; gap:10px;
+}
+.skeleton-img{ width:120px; height:120px; border-radius:10px; align-self:center; }
+.skeleton-line{ height:12px; border-radius:6px; }
+
+/* ===== Empty State ===== */
+.empty-state{ display:grid; place-items:center; text-align:center; gap:10px; padding:40px 10px; color:#4b5563; }
+.empty-art{ font-size:40px; line-height:1; }
+.empty-state h3{ margin:6px 0 0; color:#111827; }
+
+/* ===== Responsive ===== */
+@media (max-width:900px){
+  .layout-topbar{ padding:8px 12px; }
+  .search-input{ min-width:120px; }
+
+  .layout-container{ height:auto; min-height:100dvh; overflow-x:hidden; overflow-y:visible; flex-direction:column; }
+
+  .product-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  .product-card{ padding:12px; }
+  .product-image{ width:96px; height:96px; }
+  .public-logo{ height:48px; }
+}
+
+/* Tighten skeleton on small screens */
+@media (max-width:900px){
+  .skeleton-img{ width:96px; height:96px; }
+}
+
+/* ===== Reduced motion ===== */
+@media (prefers-reduced-motion:reduce){
+  *{ animation:none!important; transition:none!important; }
+}

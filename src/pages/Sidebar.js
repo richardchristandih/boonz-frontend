@@ -118,6 +118,9 @@ export default function Sidebar({
     typeof window !== "undefined" ? window.innerWidth < MOBILE_BP : false
   );
 
+  // shimmer control for the logo
+  const [logoLoaded, setLogoLoaded] = useState(false);
+
   // read once
   const isAdmin = useMemo(() => {
     try {
@@ -175,6 +178,11 @@ export default function Sidebar({
   const logoSrc = isMobile ? appLogo : appLogoSideBar;
   const logoAlt = isMobile ? "Boonz logo" : "Boonz sidebar logo";
 
+  // reset skeleton when the image source changes (mobile <-> desktop)
+  useEffect(() => {
+    setLogoLoaded(false);
+  }, [logoSrc]);
+
   return (
     <aside
       className={`layout-sidebar ${isCollapsed ? "collapsed" : ""} ${
@@ -186,10 +194,23 @@ export default function Sidebar({
         {!isCollapsed && (
           <NavLink
             to="/dashboard"
-            className="sidebar-logo"
+            className={`sidebar-logo ${logoLoaded ? "is-loaded" : ""}`}
             aria-label="Boonz Home"
           >
-            <img src={logoSrc} alt={logoAlt} loading="lazy" />
+            {/* skeleton shimmer layer (hidden when .is-loaded is present) */}
+            <span className="sidebar-logo__skeleton" aria-hidden="true" />
+
+            <img
+              key={logoSrc /* forces image re-load when switching */}
+              src={logoSrc}
+              alt={logoAlt}
+              width={56}
+              height={56}
+              decoding="async"
+              loading="lazy"
+              onLoad={() => setLogoLoaded(true)}
+              onError={() => setLogoLoaded(true) /* fail safe: hide skeleton */}
+            />
           </NavLink>
         )}
 
@@ -212,7 +233,7 @@ export default function Sidebar({
 
       {/* Nav */}
       <nav className="sidebar-nav" aria-label="Primary">
-        {/* Dashboard is now ADMIN ONLY */}
+        {/* Dashboard is ADMIN ONLY */}
         {isAdmin && (
           <NavLink
             to="/dashboard"

@@ -1,3 +1,4 @@
+// src/pages/Settings.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Settings.css";
@@ -17,6 +18,123 @@ import ReceiptPreview from "../components/ReceiptPreview";
 import appLogo from "../images/logo.jpg";
 import api from "../services/api";
 import { formatIDR } from "../utils/money";
+
+/* -------------------------------------------------------
+   SplitButtonMenu — compact actions menu with primary CTA
+   ------------------------------------------------------- */
+function SplitButtonMenu({
+  onTestPrint,
+  onRefresh,
+  onSave,
+  onPrevReceipt,
+  onPrevKOT,
+}) {
+  const [open, setOpen] = React.useState(false);
+  const menuRef = React.useRef(null);
+
+  // close on outside click / ESC
+  React.useEffect(() => {
+    function onDocClick(e) {
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target)) setOpen(false);
+    }
+    function onKey(e) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  return (
+    <div className="printer-actions" ref={menuRef}>
+      {/* Primary CTA */}
+      <button className="btn primary btn--lg" onClick={onTestPrint}>
+        Send Test Print
+      </button>
+
+      {/* Split toggle (collapses other actions into a menu on small screens) */}
+      <button
+        className="btn split-toggle btn--lg"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="More printer actions"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="split-toggle__label">More</span>
+        <span className="split-toggle__chev" aria-hidden>
+          ▾
+        </span>
+      </button>
+
+      {/* Popover menu */}
+      {open && (
+        <div className="split-menu" role="menu">
+          <button
+            role="menuitem"
+            className="split-menu__item"
+            onClick={() => {
+              setOpen(false);
+              onRefresh();
+            }}
+          >
+            Refresh Printers
+          </button>
+          <button
+            role="menuitem"
+            className="split-menu__item"
+            onClick={() => {
+              setOpen(false);
+              onSave();
+            }}
+          >
+            Save Preferences
+          </button>
+          <div className="split-menu__sep" role="separator" />
+          <button
+            role="menuitem"
+            className="split-menu__item"
+            onClick={() => {
+              setOpen(false);
+              onPrevReceipt();
+            }}
+          >
+            Preview Receipt
+          </button>
+          <button
+            role="menuitem"
+            className="split-menu__item"
+            onClick={() => {
+              setOpen(false);
+              onPrevKOT();
+            }}
+          >
+            Preview KOT
+          </button>
+        </div>
+      )}
+
+      {/* Wide layout helper – shows the four “secondary” buttons inline on large screens */}
+      <div className="printer-actions__inline">
+        <button className="btn btn--lg" onClick={onRefresh}>
+          Refresh Printers
+        </button>
+        <button className="btn btn--lg" onClick={onSave}>
+          Save Preferences
+        </button>
+        <button className="btn outline btn--lg" onClick={onPrevReceipt}>
+          Preview Receipt
+        </button>
+        <button className="btn outline btn--lg" onClick={onPrevKOT}>
+          Preview KOT
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -57,6 +175,7 @@ export default function Settings() {
   }
 
   /* ------------------------ Printer Settings ------------------------ */
+  // unified printer option list: [{label, value}]
   const [printerList, setPrinterList] = useState([]);
   const [receiptPrinter, setReceiptPrinter] = useState(
     localStorage.getItem("printer.receipt") || ""
@@ -73,16 +192,27 @@ export default function Settings() {
   const [btMsg, setBtMsg] = useState("");
   const [testMsg, setTestMsg] = useState("");
 
+  function toOptions(list) {
+    if (isAndroidBridge()) {
+      return (list || []).map((p) => ({
+        label: `${p?.name ?? "Unknown"} (${p?.address || "no-mac"})`,
+        value: p?.address || p?.name || "",
+      }));
+    }
+    return (list || []).map((name) => ({ label: name, value: name }));
+  }
+
   async function handleListPrinters() {
     try {
       setBtMsg("Scanning printers…");
       if (isAndroidBridge()) {
-        const list = androidListPrintersDetailed();
-        setPrinterList(list.map((p) => `${p.name} (${p.address || "no-mac"})`));
+        const raw = androidListPrintersDetailed() || [];
+        const list = Array.isArray(raw) ? raw : [];
+        setPrinterList(toOptions(list));
         setBtMsg(
           list.length
             ? `Paired BT printers:\n• ${list
-                .map((p) => `${p.name} — ${p.address}`)
+                .map((p) => `${p?.name ?? "Unknown"} — ${p?.address ?? "-"}`)
                 .join("\n• ")}`
             : "No paired Bluetooth printers found."
         );
@@ -90,10 +220,11 @@ export default function Settings() {
       }
       await connectQZ();
       const printers = await listPrinters();
-      setPrinterList(printers || []);
+      const arr = Array.isArray(printers) ? printers : [];
+      setPrinterList(toOptions(arr));
       setBtMsg(
-        printers?.length
-          ? `Installed printers:\n• ${printers.join("\n• ")}`
+        arr.length
+          ? `Installed printers:\n• ${arr.join("\n• ")}`
           : "No printers found."
       );
     } catch (e) {
@@ -181,6 +312,12 @@ export default function Settings() {
     setShowPreview(true);
   }
 
+  function extractBtAddress(val) {
+    const s = String(val || "");
+    const m = s.match(/\(([^)]+)\)\s*$/);
+    return (m && m[1]) || s;
+  }
+
   async function handleTestPrint() {
     try {
       setTestMsg("Sending sample receipt…");
@@ -189,9 +326,12 @@ export default function Settings() {
 
       if (isAndroidBridge()) {
         if (!androidIsBtOn()) return setTestMsg("Bluetooth is OFF.");
-        const list = androidListPrintersDetailed();
+        const raw = androidListPrintersDetailed() || [];
+        const list = Array.isArray(raw) ? raw : [];
         if (!list.length) return setTestMsg("No paired Bluetooth printers.");
-        const targetAddress = receiptPrinter || list[0].address || "";
+
+        const targetAddress =
+          extractBtAddress(receiptPrinter) || list[0].address || "";
         for (let i = 0; i < copies; i++)
           await androidPrintWithRetry(sampleRaw, {
             address: targetAddress,
@@ -206,7 +346,9 @@ export default function Settings() {
 
       await connectQZ();
       const printers = await listPrinters();
-      const target = receiptPrinter || printers[0];
+      const arr = Array.isArray(printers) ? printers : [];
+      const target = receiptPrinter || arr[0];
+      if (!target) throw new Error("No printers found (QZ).");
       await window.qz.print(window.qz.configs.create(target), [
         { type: "raw", format: "plain", data: sampleRaw },
       ]);
@@ -347,6 +489,11 @@ export default function Settings() {
     navigate("/login");
   }
 
+  /* Auto-load printers once */
+  useEffect(() => {
+    handleListPrinters();
+  }, []);
+
   /* ---------------------------- RENDER ------------------------------ */
   return (
     <div className="page-container">
@@ -356,45 +503,47 @@ export default function Settings() {
       <h1 className="page-title">Settings</h1>
 
       <div className="settings-grid">
-        {/* Profile */}
+        {/* PROFILE + ACCOUNT (combined) */}
         <section className="card">
-          <h2>Profile</h2>
+          <h2>Profile &amp; Account</h2>
           <label>Display name</label>
           <input
+            className="input-hero"
             value={profileName}
             onChange={(e) => setProfileName(e.target.value)}
             placeholder="Your name"
           />
           {profileMsg && <p className="note">{profileMsg}</p>}
-          <div className="actions">
+          <div className="actions" style={{ gap: 8, flexWrap: "wrap" }}>
             <button className="btn" onClick={saveProfile}>
               Save Profile
             </button>
+            <button className="btn danger" onClick={logout}>
+              Log out
+            </button>
           </div>
         </section>
 
-        {/* PRINTER CONNECTIONS */}
+        {/* PRINTERS — Refresh + Routing + Test */}
         <section className="card">
-          <h2>Printer Connections</h2>
+          <h2>Printers — Refresh, Routing &amp; Test</h2>
           <p className="muted">Manage Android Bluetooth or QZ printers.</p>
 
-          <div className="actions" style={{ gap: 8, flexWrap: "wrap" }}>
-            <button className="btn" onClick={handleListPrinters}>
-              Refresh Printers
-            </button>
-          </div>
+          <SplitButtonMenu
+            onTestPrint={handleTestPrint}
+            onRefresh={handleListPrinters}
+            onSave={savePrinters}
+            onPrevReceipt={() => openPreview("receipt")}
+            onPrevKOT={() => openPreview("kot")}
+          />
 
           {btMsg && (
-            <pre className="note pre" style={{ marginTop: 8 }}>
+            <pre className="note pre" style={{ marginTop: 10 }}>
               {btMsg}
             </pre>
           )}
-        </section>
 
-        {/* PRINTER ROUTING + TEST */}
-        <section className="card">
-          <h2>Printer Routing & Test</h2>
-          <div className="form-grid-2">
+          <div className="form-grid-2" style={{ marginTop: 14 }}>
             <div>
               <label>Receipt Printer</label>
               <select
@@ -403,8 +552,8 @@ export default function Settings() {
               >
                 <option value="">(Default)</option>
                 {printerList.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
+                  <option key={p.value} value={p.value}>
+                    {p.label}
                   </option>
                 ))}
               </select>
@@ -427,8 +576,8 @@ export default function Settings() {
               >
                 <option value="">(Default)</option>
                 {printerList.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
+                  <option key={p.value} value={p.value}>
+                    {p.label}
                   </option>
                 ))}
               </select>
@@ -444,24 +593,11 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="actions" style={{ marginTop: 12 }}>
-            <button className="btn" onClick={savePrinters}>
-              Save
-            </button>
-            <button
-              className="btn outline"
-              onClick={() => openPreview("receipt")}
-            >
-              Preview Receipt
-            </button>
-            <button className="btn outline" onClick={() => openPreview("kot")}>
-              Preview KOT
-            </button>
-            <button className="btn primary" onClick={handleTestPrint}>
-              Send Test Print
-            </button>
-          </div>
-          {testMsg && <p className="note">{testMsg}</p>}
+          {testMsg && (
+            <p className="note" style={{ marginTop: 10 }}>
+              {testMsg}
+            </p>
+          )}
         </section>
 
         {/* ADMIN ONLY */}
@@ -504,11 +640,7 @@ export default function Settings() {
                   />
                   {(logoDataUrl || appLogo) && (
                     <div className="logo-preview">
-                      <img
-                        src={logoDataUrl || appLogo}
-                        alt="Logo"
-                        style={{ height: 60 }}
-                      />
+                      <img src={logoDataUrl || appLogo} alt="Logo" />
                     </div>
                   )}
                 </div>
@@ -533,6 +665,7 @@ export default function Settings() {
               <h2>Receipt Template</h2>
               <label>Shop Name</label>
               <input
+                className="input-hero"
                 value={shopName}
                 onChange={(e) => setShopName(e.target.value)}
               />
@@ -545,6 +678,8 @@ export default function Settings() {
               />
               <label style={{ marginTop: 8 }}>Footer Message</label>
               <input
+                className="input-hero"
+                type="text"
                 value={footerMsg}
                 onChange={(e) => setFooterMsg(e.target.value)}
               />
@@ -564,7 +699,7 @@ export default function Settings() {
             </section>
 
             <section className="card">
-              <h2>Tax & Service Charge</h2>
+              <h2>Tax &amp; Service Charge</h2>
               <p className="muted">Configure order charges and rates.</p>
               <div className="form-grid-2">
                 <div>
@@ -617,29 +752,38 @@ export default function Settings() {
               <p className="muted">Create and manage discount promotions.</p>
               <div className="form-grid-2">
                 <div>
-                  <label>Name</label>
-                  <input
-                    value={pName}
-                    onChange={(e) => setPName(e.target.value)}
-                  />
-                  <label style={{ marginTop: 8 }}>Type</label>
-                  <select
-                    value={pType}
-                    onChange={(e) => setPType(e.target.value)}
-                  >
-                    <option value="percentage">Percentage</option>
-                    <option value="flat">Flat (Rp)</option>
-                  </select>
-                </div>
-                <div>
-                  <label>Value</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={pValue}
-                    onChange={(e) => setPValue(e.target.value)}
-                  />
+                  <div>
+                    <label>Name</label>
+                    <input
+                      className="input-hero"
+                      type="text"
+                      value={pName}
+                      onChange={(e) => setPName(e.target.value)}
+                    />
+
+                    <label style={{ marginTop: 8 }}>Type</label>
+                    <select
+                      className="input-hero"
+                      value={pType}
+                      onChange={(e) => setPType(e.target.value)}
+                    >
+                      <option value="percentage">Percentage</option>
+                      <option value="flat">Flat (Rp)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label>Value</label>
+                    <input
+                      className="input-hero"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pValue}
+                      onChange={(e) => setPValue(e.target.value)}
+                    />
+                  </div>
+
                   <label style={{ marginTop: 8 }}>Active?</label>
                   <select
                     value={String(pActive)}
@@ -650,8 +794,15 @@ export default function Settings() {
                   </select>
                 </div>
               </div>
+
               <label style={{ marginTop: 8 }}>Description</label>
-              <input value={pDesc} onChange={(e) => setPDesc(e.target.value)} />
+              <input
+                className="input-hero"
+                type="text"
+                value={pDesc}
+                onChange={(e) => setPDesc(e.target.value)}
+              />
+
               <div className="actions">
                 <button className="btn" onClick={addPromo}>
                   Add Promotion
@@ -710,16 +861,6 @@ export default function Settings() {
             </section>
           </>
         )}
-
-        {/* Logout */}
-        <section className="card">
-          <h2>Account</h2>
-          <div className="actions">
-            <button className="btn outline" onClick={logout}>
-              Log out
-            </button>
-          </div>
-        </section>
       </div>
 
       {/* PREVIEW MODAL */}

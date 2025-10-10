@@ -7,6 +7,7 @@ import {
   Navigate,
 } from "react-router-dom";
 
+import PublicMenu from "./pages/PublicMenu";
 import MainMenu from "./pages/MainMenu";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -37,6 +38,7 @@ function App() {
         <Route path="/product-page" element={<ProductPage />} />
         <Route path="/printer-test" element={<PrinterTest />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/menu" element={<PublicMenu />} />
 
         {/* Auth routes */}
         <Route path="/login" element={<Login />} />
