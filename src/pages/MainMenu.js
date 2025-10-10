@@ -29,6 +29,8 @@ import { sendOrderEmail, EMAIL_COOLDOWN_SEC } from "../services/orderEmail";
 import { fetchOrderCharges } from "../services/orderCharges";
 import { formatIDR } from "../utils/money";
 import AddCategoryModal from "../components/AddCategoryModal";
+import { useToast } from "../components/ToastProvider";
+import { useConfirm } from "../components/ConfirmDialog";
 
 /* ---------------- Constants ---------------- */
 const MOBILE_BP = 1024; // px
@@ -153,6 +155,12 @@ function escapeHtml(s) {
     .replace(/'/g, "&#39;");
 }
 
+function extractBtAddress(val) {
+  const s = String(val || "");
+  const m = s.match(/\(([^)]+)\)\s*$/);
+  return (m && m[1]) || s;
+}
+
 function computePromoDiscount(promo, subtotal) {
   if (!promo || !promo.active) return 0;
   if (promo.minSubtotal && subtotal < Number(promo.minSubtotal)) return 0;
@@ -234,6 +242,8 @@ function buildOrderedChips(apiCats, prodCats) {
 export default function MenuLayout() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { show } = useToast();
+  const confirm = useConfirm();
 
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [serviceEnabled, setServiceEnabled] = useState(false);
@@ -543,9 +553,13 @@ export default function MenuLayout() {
 
   /* ---- Hard reset (local settings only) ---- */
   const handleHardReset = useCallback(async () => {
-    const confirmed = window.confirm(
-      "This will clear local settings (printers, logo, email cooldowns, UI prefs) and reload.\n\nYour login will stay signed in.\n\nContinue?"
-    );
+    const confirmed = await confirm({
+      title: "Clear local settings?",
+      message:
+        "This will clear local settings (printers, logo, email cooldowns, UI prefs). Your login will stay signed in. Continue?",
+      confirmText: "Yes, clear all",
+      cancelText: "Cancel",
+    });
     if (!confirmed) return;
 
     const keep = new Set(["token", "refreshToken", "user"]);
@@ -790,7 +804,7 @@ export default function MenuLayout() {
   /* ---------- Checkout ---------- */
   const handleCheckout = useCallback(() => {
     if (cart.length === 0) {
-      window.alert("Your cart is empty!");
+      show("Your cart is empty!", { type: "info" });
       return;
     }
     setShowPaymentModal(true);
@@ -806,19 +820,20 @@ export default function MenuLayout() {
     setDiscountNote("");
     setDiscountType("flat");
     setSelectedPaymentMethod("");
-    window.alert(
-      `Order placed successfully! Your order number is ${newOrderNumber}`
-    );
+    show(`Order #${newOrderNumber} placed successfully!`, {
+      type: "success",
+      ttl: 5000,
+    });
   };
 
   const confirmPayment = useCallback(async () => {
     if (!user) {
-      window.alert("Your session expired. Please log in again.");
+      show("Your session expired. Please log in again.", { type: "error" });
       navigate("/login");
       return;
     }
     if (!selectedPaymentMethod) {
-      window.alert("Please select a payment method!");
+      show("Please select a payment method!", { type: "error" });
       return;
     }
     if (isSubmitting) return;
@@ -938,9 +953,10 @@ export default function MenuLayout() {
             fallbackAddr;
 
           if (!androidIsBtOn()) {
-            window.alert(
-              "Bluetooth is OFF. Please enable Bluetooth and try again."
-            );
+            show("⚠️ Bluetooth is OFF. Please enable it and try again.", {
+              type: "error",
+              ttl: 5000,
+            });
             throw new Error("Bluetooth disabled");
           }
           for (let i = 0; i < kitchenCopies; i++) {
@@ -1008,9 +1024,10 @@ export default function MenuLayout() {
         }
       } catch (printErr) {
         console.error("Printing failed:", printErr);
-        window.alert(
+        show(
           "Order saved, but printing failed: " +
-            (printErr?.message || "Unknown error")
+            (printErr?.message || "Unknown error"),
+          { type: "error" }
         );
       }
 
@@ -1023,12 +1040,12 @@ export default function MenuLayout() {
       setShowPaymentModal(false);
       setSelectedPaymentMethod("");
 
-      window.alert(
-        `Order placed successfully! Your order number is ${newOrderNumber}`
-      );
+      show(`Order #${newOrderNumber} placed successfully!`, {
+        type: "success",
+      });
     } catch (error) {
       console.error("Error placing order:", error);
-      window.alert("There was an error placing your order.");
+      show("There was an error placing your order.", { type: "error" });
     } finally {
       setIsSubmitting(false);
     }

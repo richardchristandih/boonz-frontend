@@ -4,6 +4,8 @@ import ProductEditorModal from "./ProductEditorModal";
 import SafeImage from "../components/SafeImage";
 import { normalizeImageUrl } from "../utils/driveUrl";
 import "./ProductList.css";
+import { useToast } from "../components/ToastProvider";
+import { useConfirm } from "../components/ConfirmDialog";
 
 function fmtRp(v) {
   const n = Number(v);
@@ -50,6 +52,9 @@ export default function ProductList({ showTitle = false, scroll = false }) {
   // Editor state
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorProduct, setEditorProduct] = useState(null);
+
+  const { show } = useToast();
+  const confirm = useConfirm();
 
   // User
   const user = (() => {
@@ -130,7 +135,7 @@ export default function ProductList({ showTitle = false, scroll = false }) {
       );
     } catch (err) {
       console.error("Delete failed:", err);
-      window.alert("Failed to remove product.");
+      show("Failed to remove product.", { type: "error" });
     } finally {
       setRemoving(null);
     }

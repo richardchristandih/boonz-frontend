@@ -1,0 +1,72 @@
+:root {
+  --toast-radius: 12px;
+  --toast-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  --toast-font: system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+
+  --toast-bg: #111;
+  --toast-fg: #fff;
+
+  --toast-success: #5cc68c; /* green */
+  --toast-error: #dd5f5f;   /* red */
+  --toast-info: #111;       /* dark */
+}
+
+/* container */
+.toast-wrap {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 9999;
+  pointer-events: none; /* toasts handle their own clicks */
+}
+
+/* card */
+.toast {
+  pointer-events: auto;
+  max-width: 340px;
+  padding: 12px 14px;
+  border-radius: var(--toast-radius);
+  box-shadow: var(--toast-shadow);
+  background: var(--toast-bg);
+  color: var(--toast-fg);
+  font: 14px/1.35 var(--toast-font);
+  cursor: pointer;
+  opacity: 0.98;
+  transform: translateY(6px);
+  animation: toast-in 180ms ease-out forwards;
+  will-change: transform, opacity;
+}
+
+/* variants */
+.toast--success { background: var(--toast-success); }
+.toast--error   { background: var(--toast-error); }
+.toast--info    { background: var(--toast-info); }
+
+/* entry/exit */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 0.98; transform: translateY(0) scale(1); }
+}
+
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(6px); }
+}
+
+/* optional helper when removing (if you add a class before unmount) */
+.toast.is-leaving {
+  animation: toast-out 160ms ease-in forwards;
+}
+
+/* mobile: shift slightly inward so it doesn’t hug edges */
+@media (max-width: 480px) {
+  .toast-wrap { right: 12px; left: 12px; bottom: 12px; }
+  .toast { max-width: 100%; }
+}
+
+/* accessibility: reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}

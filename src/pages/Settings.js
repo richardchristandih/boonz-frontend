@@ -10,6 +10,7 @@ import {
   androidPrintWithRetry,
   androidIsBtOn,
   androidGetLastError,
+  androidPrintLogoAndText,
 } from "../utils/androidBridge";
 
 import { buildReceipt } from "../receipt";
@@ -19,9 +20,22 @@ import appLogo from "../images/logo.jpg";
 import api from "../services/api";
 import { formatIDR } from "../utils/money";
 
+async function toDataUrl(url) {
+  if (typeof url === "string" && url.startsWith("data:")) return url;
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return await new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+}
+
 /* -------------------------------------------------------
    SplitButtonMenu — compact actions menu with primary CTA
    ------------------------------------------------------- */
+
 function SplitButtonMenu({
   onTestPrint,
   onRefresh,
@@ -320,9 +334,15 @@ export default function Settings() {
 
   async function handleTestPrint() {
     try {
-      setTestMsg("Sending sample receipt…");
-      const sampleRaw = buildReceipt(makeReceiptSample());
-      const copies = Math.max(1, Number(receiptCopies) || 1);
+      setTestMsg("Sending sample receipt and kitchen ticket…");
+      const sampleReceipt = buildReceipt(makeReceiptSample());
+      const sampleKot = buildReceipt(makeKotSample());
+      const receiptCopiesNum = Math.max(1, Number(receiptCopies) || 1);
+      const kitchenCopiesNum = Math.max(1, Number(kitchenCopies) || 1);
+
+      // Get logos
+      const logoSrc = logoDataUrl || appLogo;
+      const logoData = await toDataUrl(logoSrc);
 
       if (isAndroidBridge()) {
         if (!androidIsBtOn()) return setTestMsg("Bluetooth is OFF.");
@@ -330,29 +350,73 @@ export default function Settings() {
         const list = Array.isArray(raw) ? raw : [];
         if (!list.length) return setTestMsg("No paired Bluetooth printers.");
 
-        const targetAddress =
+        // --- Print to RECEIPT printer ---
+        const receiptAddr =
           extractBtAddress(receiptPrinter) || list[0].address || "";
-        for (let i = 0; i < copies; i++)
-          await androidPrintWithRetry(sampleRaw, {
-            address: targetAddress,
-            copies: 1,
-            tries: 3,
-            baseDelay: 500,
+        for (let i = 0; i < receiptCopiesNum; i++) {
+          const ok = androidPrintLogoAndText(logoData, sampleReceipt, {
+            address: receiptAddr,
+            nameLike: receiptAddr,
           });
+          if (!ok) {
+            await androidPrintWithRetry(sampleReceipt, {
+              address: receiptAddr,
+              copies: 1,
+              tries: 3,
+              baseDelay: 500,
+            });
+          }
+        }
+
+        // --- Print to KITCHEN printer (if defined) ---
+        if (kitchenPrinter) {
+          const kitchenAddr =
+            extractBtAddress(kitchenPrinter) ||
+            list.find((p) => p.address !== receiptAddr)?.address ||
+            "";
+          for (let i = 0; i < kitchenCopiesNum; i++) {
+            await androidPrintWithRetry(sampleKot, {
+              address: kitchenAddr,
+              copies: 1,
+              tries: 3,
+              baseDelay: 500,
+            });
+          }
+        }
+
         const err = androidGetLastError();
-        setTestMsg(err ? "Finished with error: " + err : "Print sent ✅");
+        setTestMsg(err ? "Finished with error: " + err : "Both prints sent ✅");
         return;
       }
 
+      // --- QZ path ---
       await connectQZ();
       const printers = await listPrinters();
       const arr = Array.isArray(printers) ? printers : [];
-      const target = receiptPrinter || arr[0];
-      if (!target) throw new Error("No printers found (QZ).");
-      await window.qz.print(window.qz.configs.create(target), [
-        { type: "raw", format: "plain", data: sampleRaw },
-      ]);
-      setTestMsg(`QZ print sent to "${target}" ✅`);
+      const receiptTarget = receiptPrinter || arr[0];
+      const kitchenTarget = kitchenPrinter || arr[0];
+
+      if (!receiptTarget && !kitchenTarget)
+        throw new Error("No printers found (QZ).");
+
+      // Print receipt
+      if (receiptTarget)
+        await window.qz.print(
+          window.qz.configs.create(receiptTarget, { rasterize: true }),
+          [
+            { type: "image", data: logoData },
+            { type: "raw", format: "plain", data: sampleReceipt },
+          ]
+        );
+
+      // Print kitchen ticket
+      if (kitchenTarget)
+        await window.qz.print(
+          window.qz.configs.create(kitchenTarget, { rasterize: true }),
+          [{ type: "raw", format: "plain", data: sampleKot }]
+        );
+
+      setTestMsg("Both receipt and kitchen test prints sent ✅");
     } catch (e) {
       setTestMsg("Print failed: " + (e?.message || String(e)));
     }

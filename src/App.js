@@ -20,52 +20,61 @@ import Settings from "./pages/Settings";
 // NEW: admin-only Categories page
 import CategoriesPage from "./pages/Categories";
 
+// ✅ add providers
+import { ToastProvider } from "./components/ToastProvider";
+import { ConfirmProvider } from "./components/ConfirmDialog";
+
 /** Tiny guard to protect admin routes */
 function RequireAdmin({ children }) {
   const user = JSON.parse(localStorage.getItem("user") || "null");
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== "admin") return <Navigate to="/" replace />;
+  if (user.role !== "admin" && user.isAdmin !== true)
+    return <Navigate to="/" replace />;
   return children;
 }
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        {/* Public/App routes */}
-        <Route path="/" element={<MainMenu />} />
-        <Route path="/orders" element={<Orders />} />
-        <Route path="/product-page" element={<ProductPage />} />
-        <Route path="/printer-test" element={<PrinterTest />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/menu" element={<PublicMenu />} />
+    <ToastProvider>
+      <ConfirmProvider>
+        <Router>
+          <Routes>
+            {/* Public/App routes */}
+            <Route path="/" element={<MainMenu />} />
+            <Route path="/orders" element={<Orders />} />
+            <Route path="/product-page" element={<ProductPage />} />
+            <Route path="/printer-test" element={<PrinterTest />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/menu" element={<PublicMenu />} />
 
-        {/* Auth routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+            {/* Auth routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
 
-        {/* Admin-only routes */}
-        <Route
-          path="/dashboard"
-          element={
-            <RequireAdmin>
-              <Dashboard />
-            </RequireAdmin>
-          }
-        />
-        <Route
-          path="/admin/categories"
-          element={
-            <RequireAdmin>
-              <CategoriesPage />
-            </RequireAdmin>
-          }
-        />
+            {/* Admin-only routes */}
+            <Route
+              path="/dashboard"
+              element={
+                <RequireAdmin>
+                  <Dashboard />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="/admin/categories"
+              element={
+                <RequireAdmin>
+                  <CategoriesPage />
+                </RequireAdmin>
+              }
+            />
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Router>
+      </ConfirmProvider>
+    </ToastProvider>
   );
 }
 
