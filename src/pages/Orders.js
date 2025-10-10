@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import "./Orders.css";
+import { useToast } from "../components/ToastProvider";
+import { useConfirm } from "../components/ConfirmDialog";
 
 /* ========= Helpers ========= */
 const timeRangeMapping = {
@@ -63,6 +65,9 @@ function SkeletonOrdersList({ count = 6 }) {
 /* ========= Component ========= */
 export default function Orders() {
   const navigate = useNavigate();
+  const { show } = useToast();
+  const confirm = useConfirm();
+
   const [orders, setOrders] = useState([]);
   const [timeRangeLabel, setTimeRangeLabel] = useState("today"); // DEFAULT: today
   const [loading, setLoading] = useState(true);
@@ -76,7 +81,7 @@ export default function Orders() {
     try {
       const raw = localStorage.getItem("user");
       const u = raw ? JSON.parse(raw) : null;
-      setIsAdmin(u?.role === "admin");
+      setIsAdmin(u?.role === "admin" || u?.isAdmin === true);
     } catch {
       setIsAdmin(false);
     }
@@ -94,7 +99,9 @@ export default function Orders() {
       setOrders(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error("Error fetching orders:", error);
-      setFetchErr("Failed to load orders. Please try again.");
+      const msg = "Failed to load orders. Please try again.";
+      setFetchErr(msg);
+      show(msg, { type: "error" });
       setOrders([]);
     } finally {
       setLoading(false);
@@ -144,35 +151,65 @@ export default function Orders() {
   );
 
   const handleCancelOrder = async (orderId) => {
-    if (!window.confirm("Are you sure you want to cancel this order?")) return;
+    const ok =
+      (await confirm({
+        title: "Cancel order?",
+        message:
+          "This will set the order status to Cancelled. You can’t undo this.",
+        confirmText: "Cancel order",
+        cancelText: "Keep",
+        danger: true,
+      })) ?? false;
+    if (!ok) return;
+
     try {
       await api.patch(`/orders/${orderId}`, { status: "cancelled" });
-      alert("Order cancelled successfully!");
+      show("Order cancelled.", { type: "success" });
       fetchOrders();
     } catch (error) {
-      alert("There was an error cancelling your order.");
+      show("There was an error cancelling the order.", { type: "error" });
     }
   };
 
   const handleMarkDoneOrder = async (orderId) => {
-    if (!window.confirm("Mark this order as done?")) return;
+    const ok =
+      (await confirm({
+        title: "Mark as done?",
+        message: "This will mark the order as completed.",
+        confirmText: "Mark done",
+        cancelText: "Back",
+      })) ?? false;
+    if (!ok) return;
+
     try {
       await api.patch(`/orders/${orderId}`, { status: "done" });
-      alert("Order marked as done!");
+      show("Order marked as done.", { type: "success" });
       fetchOrders();
     } catch (error) {
-      alert("There was an error marking your order as done.");
+      show("There was an error marking the order as done.", {
+        type: "error",
+      });
     }
   };
 
   const handleRefundOrder = async (orderId) => {
-    if (!window.confirm("Are you sure you want to refund this order?")) return;
+    const ok =
+      (await confirm({
+        title: "Issue refund?",
+        message:
+          "This will set the order status to Refunded. Continue with refund?",
+        confirmText: "Refund",
+        cancelText: "Cancel",
+        danger: true,
+      })) ?? false;
+    if (!ok) return;
+
     try {
       await api.patch(`/orders/${orderId}`, { status: "refunded" });
-      alert("Refund processed successfully!");
+      show("Refund processed.", { type: "success" });
       fetchOrders();
     } catch (error) {
-      alert("There was an error processing the refund.");
+      show("There was an error processing the refund.", { type: "error" });
     }
   };
 

@@ -91,7 +91,6 @@ export function androidPrintFormatted(
 }
 
 // --- Simple retry wrapper around androidPrintFormatted ---
-// --- Simple retry wrapper around androidPrintFormatted ---
 export async function androidPrintWithRetry(text, opts = {}) {
   const {
     address = "",
@@ -99,7 +98,7 @@ export async function androidPrintWithRetry(text, opts = {}) {
     copies = 1,
     tries = 3,
     baseDelay = 400,
-    postDelay = 800, // 🆕 delay between copies to let printer finish
+    postDelay = 800, // delay between copies to let printer finish
   } = opts;
 
   let lastErr = "";
@@ -135,20 +134,26 @@ export function androidGetLastError() {
 }
 
 /**
- * Try to print LOGO + TEXT in one go if the native bridge supports it.
- * Falls back to printing the logo first and then the text.
+ * Try to print LOGO + TEXT.
+ *
+ * Strategy:
+ * 1) If native exposes single-call combos, use them but **assume only logo is guaranteed**.
+ * 2) Otherwise, try two-step: image first, then text via androidPrintFormatted.
+ * 3) If no image method exists, return {logo:false, text:false}.
  *
  * @param {string} logoDataUrl - data: URL (recommended) or http(s) URL
- * @param {string} text - ESC/POS formatted text
+ * @param {string} text - ESC/POS formatted text (add a couple of \n at end for paper feed)
  * @param {{address?: string, nameLike?: string}} target
- * @returns {boolean} true if we managed to send a "logo+text" sequence (either single-call or two calls), false if we couldn't send any logo at all.
+ * @returns {{logo: boolean, text: boolean}}
  *
  * Notes:
- * - If your native bridge exposes `printLogoAndTextByAddress(dataUrl, text, address)` it will be used.
- * - Otherwise it will try `printLogoAndText(dataUrl, text, nameLike)`.
- * - Otherwise it will try `printLogoBase64(dataUrl, target)`/`printImageBase64(dataUrl, target)` and then send text via `androidPrintFormatted`.
+ * - If your native bridge exposes `printLogoAndTextByAddress(dataUrl, text, address)` it will be used
+ *   but we still return {logo:true, text:false} conservatively (caller should send text if needed).
+ * - Likewise for `printLogoAndText(dataUrl, text, nameLike)`.
+ * - For two-step paths using `printLogoBase64` / `printImageBase64`, we explicitly send the text and
+ *   return {logo:true, text:true} if both calls succeed.
  */
-export function androidPrintLogoAndText(
+export async function androidPrintLogoAndText(
   logoDataUrl,
   text,
   { address = "", nameLike = "" } = {}
@@ -157,19 +162,21 @@ export function androidPrintLogoAndText(
   const logo = String(logoDataUrl || "");
   const payload = String(text || "");
 
-  if (!logo) return false;
+  if (!logo) return { logo: false, text: false };
 
   try {
-    // 1) Ideal: single-call by ADDRESS (if your native supports it)
+    // 1) Ideal: single-call by ADDRESS (if native supports it)
     if (address && typeof b.printLogoAndTextByAddress === "function") {
       b.printLogoAndTextByAddress(logo, payload, String(address));
-      return true;
+      // Some bridges ignore the text param; we can't know. Be conservative:
+      return { logo: true, text: false };
     }
 
     // 2) Single-call by NAME LIKE
     if (typeof b.printLogoAndText === "function") {
       b.printLogoAndText(logo, payload, String(nameLike || ""));
-      return true;
+      // Same uncertainty—assume only logo is guaranteed.
+      return { logo: true, text: false };
     }
 
     // 3) Two-step: print image, then text
@@ -188,22 +195,22 @@ export function androidPrintLogoAndText(
         }
       } catch {
         // If image send fails, treat as no-logo path
-        return false;
+        return { logo: false, text: false };
       }
 
       // Follow with the text via best-effort target
       try {
         androidPrintFormatted(payload, { address, nameLike });
-        return true;
+        return { logo: true, text: true };
       } catch {
-        // Image was sent, but text failed → report false so caller can decide
-        return false;
+        // Image was sent, but text failed → let caller decide how to recover
+        return { logo: true, text: false };
       }
     }
   } catch {
-    // fall through to false
+    // fall through
   }
 
   // No logo-capable method available
-  return false;
+  return { logo: false, text: false };
 }

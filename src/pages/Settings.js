@@ -19,6 +19,8 @@ import ReceiptPreview from "../components/ReceiptPreview";
 import appLogo from "../images/logo.jpg";
 import api from "../services/api";
 import { formatIDR } from "../utils/money";
+import { useToast } from "../components/ToastProvider";
+import { useConfirm } from "../components/ConfirmDialog";
 
 async function toDataUrl(url) {
   if (typeof url === "string" && url.startsWith("data:")) return url;
@@ -31,6 +33,8 @@ async function toDataUrl(url) {
     fr.readAsDataURL(blob);
   });
 }
+
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* -------------------------------------------------------
    SplitButtonMenu — compact actions menu with primary CTA
@@ -152,6 +156,8 @@ function SplitButtonMenu({
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { show } = useToast();
+  const confirm = useConfirm();
 
   /* -------------------------- User / auth --------------------------- */
   const userObj = (() => {
@@ -179,12 +185,14 @@ export default function Settings() {
       setUser(next);
       setProfileMsg("Profile updated ✓");
       setTimeout(() => setProfileMsg(""), 1500);
+      show("Profile updated.", { type: "success" });
     } catch (err) {
-      setProfileMsg(
+      const msg =
         err?.response?.data?.message ||
-          err?.message ||
-          "Failed to save profile."
-      );
+        err?.message ||
+        "Failed to save profile.";
+      setProfileMsg(msg);
+      show(msg, { type: "error" });
     }
   }
 
@@ -243,6 +251,7 @@ export default function Settings() {
       );
     } catch (e) {
       setBtMsg("List failed: " + (e?.message || String(e)));
+      show("Failed to list printers.", { type: "error" });
     }
   }
 
@@ -251,7 +260,7 @@ export default function Settings() {
     localStorage.setItem("printer.kitchen", kitchenPrinter);
     localStorage.setItem("printer.receiptCopies", String(receiptCopies || 1));
     localStorage.setItem("printer.kitchenCopies", String(kitchenCopies || 1));
-    alert("Printer preferences saved.");
+    show("Printer preferences saved.", { type: "success", ttl: 2500 });
   }
 
   /* -------------------------- Print Preview ------------------------- */
@@ -345,26 +354,39 @@ export default function Settings() {
       const logoData = await toDataUrl(logoSrc);
 
       if (isAndroidBridge()) {
-        if (!androidIsBtOn()) return setTestMsg("Bluetooth is OFF.");
+        if (!androidIsBtOn()) {
+          setTestMsg("Bluetooth is OFF.");
+          show("Bluetooth is OFF.", { type: "error" });
+          return;
+        }
         const raw = androidListPrintersDetailed() || [];
         const list = Array.isArray(raw) ? raw : [];
-        if (!list.length) return setTestMsg("No paired Bluetooth printers.");
+        if (!list.length) {
+          setTestMsg("No paired Bluetooth printers.");
+          show("No paired Bluetooth printers.", { type: "error" });
+          return;
+        }
 
         // --- Print to RECEIPT printer ---
         const receiptAddr =
           extractBtAddress(receiptPrinter) || list[0].address || "";
         for (let i = 0; i < receiptCopiesNum; i++) {
-          const ok = androidPrintLogoAndText(logoData, sampleReceipt, {
-            address: receiptAddr,
-            nameLike: receiptAddr,
-          });
-          if (!ok) {
-            await androidPrintWithRetry(sampleReceipt, {
+          const combined = androidPrintLogoAndText(
+            logoData,
+            sampleReceipt + "\n\n",
+            { address: receiptAddr, nameLike: receiptAddr }
+          );
+          if (!combined) {
+            // fall back to text-only with retries
+            await androidPrintWithRetry(sampleReceipt + "\n\n\n", {
               address: receiptAddr,
               copies: 1,
               tries: 3,
               baseDelay: 500,
             });
+          } else {
+            // give the printer time to flush image buffer
+            await pause(700);
           }
         }
 
@@ -385,7 +407,11 @@ export default function Settings() {
         }
 
         const err = androidGetLastError();
-        setTestMsg(err ? "Finished with error: " + err : "Both prints sent ✅");
+        const okMsg = "Both prints sent ✅";
+        setTestMsg(err ? "Finished with error: " + err : okMsg);
+        show(err ? "Finished with error while printing." : okMsg, {
+          type: err ? "warning" : "success",
+        });
         return;
       }
 
@@ -417,8 +443,11 @@ export default function Settings() {
         );
 
       setTestMsg("Both receipt and kitchen test prints sent ✅");
+      show("Both test prints sent.", { type: "success" });
     } catch (e) {
-      setTestMsg("Print failed: " + (e?.message || String(e)));
+      const msg = "Print failed: " + (e?.message || String(e));
+      setTestMsg(msg);
+      show(msg, { type: "error" });
     }
   }
 
@@ -437,12 +466,14 @@ export default function Settings() {
       setPLoading(true);
       const { data } = await api.get("/promotions");
       setPromos(Array.isArray(data) ? data : []);
+      setPError("");
     } catch (err) {
-      setPError(
+      const msg =
         err?.response?.data?.message ||
-          err?.message ||
-          "Failed to load promotions."
-      );
+        err?.message ||
+        "Failed to load promotions.";
+      setPError(msg);
+      show(msg, { type: "error" });
     } finally {
       setPLoading(false);
     }
@@ -454,8 +485,10 @@ export default function Settings() {
 
   async function addPromo() {
     const val = Number(pValue);
-    if (!pName.trim() || !(val > 0))
-      return alert("Please fill promo name and value.");
+    if (!pName.trim() || !(val > 0)) {
+      show("Please fill promo name and value.", { type: "error" });
+      return;
+    }
     try {
       const { data } = await api.post("/promotions", {
         name: pName.trim(),
@@ -470,8 +503,9 @@ export default function Settings() {
       setPDesc("");
       setPType("percentage");
       setPActive(true);
+      show("Promotion added.", { type: "success" });
     } catch (e) {
-      alert("Add failed: " + (e?.message || "Unknown error."));
+      show("Add promotion failed.", { type: "error" });
     }
   }
 
@@ -481,18 +515,32 @@ export default function Settings() {
         active: !currentActive,
       });
       setPromos((prev) => prev.map((p) => (p._id === id ? data : p)));
+      show(currentActive ? "Promotion disabled." : "Promotion enabled.", {
+        type: "success",
+      });
     } catch {
-      alert("Failed to toggle promo.");
+      show("Failed to toggle promo.", { type: "error" });
     }
   }
 
   async function deletePromo(id) {
-    if (!window.confirm("Delete this promotion?")) return;
+    const ok =
+      (await confirm({
+        title: "Delete promotion?",
+        message: "This action cannot be undone.",
+        confirmText: "Delete",
+        cancelText: "Cancel",
+        danger: true,
+      })) ?? false;
+
+    if (!ok) return;
+
     try {
       await api.delete(`/promotions/${id}`);
       setPromos((p) => p.filter((x) => x._id !== id));
+      show("Promotion deleted.", { type: "success" });
     } catch {
-      alert("Delete failed.");
+      show("Delete failed.", { type: "error" });
     }
   }
 
@@ -541,8 +589,11 @@ export default function Settings() {
       });
       setChargesMsg("Saved ✓");
       setTimeout(() => setChargesMsg(""), 1200);
+      show("Charges saved.", { type: "success" });
     } catch (e) {
-      setChargesMsg(e?.response?.data?.message || e?.message || "Save failed.");
+      const msg = e?.response?.data?.message || e?.message || "Save failed.";
+      setChargesMsg(msg);
+      show(msg, { type: "error" });
     }
   }
 
@@ -717,7 +768,7 @@ export default function Settings() {
                     localStorage.setItem("print.density", String(density));
                     if (logoDataUrl)
                       localStorage.setItem("print.logo", logoDataUrl);
-                    alert("Print settings saved.");
+                    show("Print settings saved.", { type: "success" });
                   }}
                 >
                   Save
@@ -754,7 +805,7 @@ export default function Settings() {
                     localStorage.setItem("biz.name", shopName);
                     localStorage.setItem("biz.addr", shopAddr);
                     localStorage.setItem("biz.footer", footerMsg);
-                    alert("Business profile saved.");
+                    show("Business profile saved.", { type: "success" });
                   }}
                 >
                   Save

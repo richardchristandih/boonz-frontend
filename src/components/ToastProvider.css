@@ -6,8 +6,8 @@
   --toast-bg: #111;
   --toast-fg: #fff;
 
-  --toast-success: #5cc68c; /* green */
-  --toast-error: #dd5f5f;   /* red */
+  --toast-success: #65c280; /* green */
+  --toast-error: #d55b5b;   /* red */
   --toast-info: #111;       /* dark */
 }
 

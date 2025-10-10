@@ -1,6 +1,9 @@
 // src/pages/Categories.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "../components/ToastProvider";
+import { useConfirm } from "../components/ConfirmDialog";
+
 import {
   listCategories,
   createCategory,
@@ -37,8 +40,82 @@ function CatListSkeleton({ rows = 8 }) {
   );
 }
 
+/* ---------- Inline Prompt dialog (to avoid native prompt 'hostname says') ---------- */
+function PromptDialog({
+  open,
+  title = "Rename",
+  message = "Enter a new value:",
+  defaultValue = "",
+  onConfirm,
+  onCancel,
+}) {
+  const [value, setValue] = useState(defaultValue);
+
+  // keep input in sync when dialog is reopened with a different default
+  useEffect(() => {
+    if (open) setValue(defaultValue);
+  }, [open, defaultValue]);
+
+  if (!open) return null;
+
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") onCancel();
+    if (e.key === "Enter") onConfirm(value);
+  };
+
+  return (
+    <div
+      className="paymodal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="prompt-title"
+      onClick={onCancel}
+    >
+      <div
+        className="paymodal__dialog"
+        role="document"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="paymodal__head">
+          <h3 id="prompt-title">{title}</h3>
+          <button
+            className="paymodal__close"
+            aria-label="Close"
+            onClick={onCancel}
+          >
+            ✕
+          </button>
+        </header>
+        <div className="paymodal__body">
+          <p className="muted" style={{ marginBottom: 8 }}>
+            {message}
+          </p>
+          <input
+            type="text"
+            className="register-input"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={onKeyDown}
+            autoFocus
+          />
+        </div>
+        <footer className="paymodal__actions">
+          <button className="btn btn-primary" onClick={() => onConfirm(value)}>
+            OK
+          </button>
+          <button className="btn btn-ghost" onClick={onCancel}>
+            Cancel
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 export default function CategoriesPage() {
   const navigate = useNavigate();
+  const { show } = useToast();
+  const confirm = useConfirm();
 
   // simple admin gate (same behavior as before)
   const storedUser = localStorage.getItem("user");
@@ -51,6 +128,13 @@ export default function CategoriesPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [newName, setNewName] = useState("");
+
+  // rename modal state
+  const [renameModal, setRenameModal] = useState({
+    open: false,
+    id: null,
+    oldName: "",
+  });
 
   async function refresh() {
     try {
@@ -77,39 +161,65 @@ export default function CategoriesPage() {
   async function onAdd(e) {
     e.preventDefault();
     const name = (newName || "").trim();
-    if (!name) return;
+    if (!name) {
+      show("Please enter a category name.", { type: "info" });
+      return;
+    }
     try {
       await createCategory(name);
       setNewName("");
       await refresh();
+      show("Category added.", { type: "success" });
     } catch (e) {
-      alert(e?.response?.data?.message || "Failed to create category.");
+      show(e?.response?.data?.message || "Failed to create category.", {
+        type: "error",
+      });
     }
   }
 
-  async function onRename(id, oldName) {
-    const name = prompt("Rename category to:", oldName);
-    if (!name || name.trim() === oldName) return;
+  function onRename(id, oldName) {
+    // open custom prompt instead of window.prompt
+    setRenameModal({ open: true, id, oldName });
+  }
+
+  async function handleConfirmRename(nextName) {
+    const trimmed = (nextName || "").trim();
+    if (!trimmed || trimmed === renameModal.oldName) {
+      setRenameModal({ open: false, id: null, oldName: "" });
+      return;
+    }
     try {
-      await renameCategory(id, name.trim());
+      await renameCategory(renameModal.id, trimmed);
       await refresh();
+      show("Category renamed.", { type: "success" });
     } catch (e) {
-      alert(e?.response?.data?.message || "Failed to rename category.");
+      show(e?.response?.data?.message || "Failed to rename category.", {
+        type: "error",
+      });
+    } finally {
+      setRenameModal({ open: false, id: null, oldName: "" });
     }
   }
 
   async function onDelete(id) {
-    if (
-      !window.confirm(
-        "Delete this category? Products will keep the text name set previously."
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: "Delete category?",
+      message:
+        "Products will keep the text name set previously. This action cannot be undone.",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      danger: true,
+    });
+    if (!ok) return;
+
     try {
       await deleteCategory(id);
       await refresh();
+      show("Category deleted.", { type: "success" });
     } catch (e) {
-      alert(e?.response?.data?.message || "Failed to delete category.");
+      show(e?.response?.data?.message || "Failed to delete category.", {
+        type: "error",
+      });
     }
   }
 
@@ -179,6 +289,16 @@ export default function CategoriesPage() {
           )}
         </div>
       </div>
+
+      {/* Rename Prompt */}
+      <PromptDialog
+        open={renameModal.open}
+        title="Rename Category"
+        message="Enter a new category name:"
+        defaultValue={renameModal.oldName}
+        onConfirm={handleConfirmRename}
+        onCancel={() => setRenameModal({ open: false, id: null, oldName: "" })}
+      />
     </div>
   );
 }

@@ -129,7 +129,7 @@ function isAndroidChrome() {
 }
 function printReceiptViaSystem(html) {
   const w = window.open("", "_blank");
-  if (!w) return alert("Pop-up blocked. Please allow pop-ups and try again.");
+  if (!w) return false;
   w.document.open();
   w.document.write(html);
   w.document.close();
@@ -490,8 +490,14 @@ export default function MenuLayout() {
   );
 
   const handleEmailReceipt = async () => {
-    if (!orderNumber) return alert("Place an order first.");
-    if (!email) return alert("Enter an email address.");
+    if (!orderNumber) {
+      show("Place an order first.", { type: "info" });
+      return;
+    }
+    if (!email) {
+      show("Enter an email address.", { type: "warning" });
+      return;
+    }
     if (sendingEmail || emailCooldownLeft > 0) return;
     try {
       setSendingEmail(true);
@@ -970,13 +976,15 @@ export default function MenuLayout() {
           }
           await sleep(PAUSE_AFTER_KOT_MS);
           for (let i = 0; i < receiptCopies; i++) {
-            const printedWithLogo = androidPrintLogoAndText(
+            const res = await androidPrintLogoAndText(
               logoDataUrl,
-              receiptText,
+              receiptText + "\n\n",
               { address: receiptTarget, nameLike: receiptTarget }
             );
-            if (!printedWithLogo) {
-              await androidPrintWithRetry(receiptText, {
+
+            // If text wasn't confirmed sent, send it explicitly
+            if (!res?.text) {
+              await androidPrintWithRetry(receiptText + "\n\n\n", {
                 address: receiptTarget,
                 nameLike: receiptTarget,
                 copies: 1,
@@ -984,9 +992,10 @@ export default function MenuLayout() {
                 baseDelay: 500,
               });
             } else {
-              await sleep(700);
+              await sleep(800); // tiny flush delay after successful combo
             }
           }
+
           finishOrder(newOrderNumber);
           return;
         }
@@ -1010,7 +1019,13 @@ export default function MenuLayout() {
             discountNote: finalDiscountNote,
             logo: logoDataUrl,
           });
-          printReceiptViaSystem(html);
+          const ok = printReceiptViaSystem(html);
+          if (!ok) {
+            show("Pop-up blocked. Please allow pop-ups and try again.", {
+              type: "error",
+              ttl: 4000,
+            });
+          }
         } else {
           const printers = await listPrinters();
           if (!Array.isArray(printers) || printers.length === 0)
