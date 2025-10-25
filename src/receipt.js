@@ -106,7 +106,8 @@ export function buildReceipt({
     boldOff();
   if (payment) out += alignLeft() + line(`Payment: ${payment}`);
 
-  out += line("\nTerima kasih!");
+  out += alignCenter() + line("Terima kasih!");
+  out += line();
   out += cut();
 
   return out;

@@ -1,5 +1,11 @@
 // src/pages/Sidebar.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import { NavLink } from "react-router-dom";
 import "./Sidebar.css";
 import appLogo from "../images/login-logo.png"; // mobile / top-bar logo
@@ -118,8 +124,16 @@ export default function Sidebar({
     typeof window !== "undefined" ? window.innerWidth < MOBILE_BP : false
   );
 
+  // derive logo AFTER isMobile exists
+  const logoSrc = useMemo(
+    () => (isMobile ? appLogo : appLogoSideBar),
+    [isMobile]
+  );
+  const logoAlt = isMobile ? "Boonz logo" : "Boonz sidebar logo";
+
   // shimmer control for the logo
   const [logoLoaded, setLogoLoaded] = useState(false);
+  const logoRef = useRef(null);
 
   // read once
   const isAdmin = useMemo(() => {
@@ -168,20 +182,29 @@ export default function Sidebar({
     }
   }, []);
 
+  // reset shimmer and handle cached image whenever logoSrc changes
+  useEffect(() => {
+    setLogoLoaded(false);
+    const img = logoRef.current;
+    if (img && img.complete && img.naturalWidth > 0) setLogoLoaded(true);
+  }, [logoSrc]);
+
+  // repaint nudge when returning to tab (Android quirk)
+  useEffect(() => {
+    const onVis = () => {
+      if (document.hidden) return;
+      const img = logoRef.current;
+      if (img && img.complete && img.naturalWidth > 0) setLogoLoaded(true);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
   useEffect(() => {
     if (isMobile && collapsed) setCollapsed(false);
   }, [isMobile, collapsed]);
 
   const isCollapsed = !isMobile && collapsed;
-
-  // choose logo per layout
-  const logoSrc = isMobile ? appLogo : appLogoSideBar;
-  const logoAlt = isMobile ? "Boonz logo" : "Boonz sidebar logo";
-
-  // reset skeleton when the image source changes (mobile <-> desktop)
-  useEffect(() => {
-    setLogoLoaded(false);
-  }, [logoSrc]);
 
   return (
     <aside
@@ -201,15 +224,16 @@ export default function Sidebar({
             <span className="sidebar-logo__skeleton" aria-hidden="true" />
 
             <img
-              key={logoSrc /* forces image re-load when switching */}
+              ref={logoRef}
+              key={logoSrc} // forces image re-load when switching
               src={logoSrc}
               alt={logoAlt}
               width={56}
               height={56}
-              decoding="async"
-              loading="lazy"
+              decoding="sync"
+              loading="eager"
               onLoad={() => setLogoLoaded(true)}
-              onError={() => setLogoLoaded(true) /* fail safe: hide skeleton */}
+              onError={() => setLogoLoaded(true) /* hide skeleton on error */}
             />
           </NavLink>
         )}

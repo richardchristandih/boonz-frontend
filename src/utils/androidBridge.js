@@ -169,14 +169,14 @@ export async function androidPrintLogoAndText(
     if (address && typeof b.printLogoAndTextByAddress === "function") {
       b.printLogoAndTextByAddress(logo, payload, String(address));
       // Some bridges ignore the text param; we can't know. Be conservative:
-      return { logo: true, text: false };
+      return { logo: true, text: true };
     }
 
     // 2) Single-call by NAME LIKE
     if (typeof b.printLogoAndText === "function") {
       b.printLogoAndText(logo, payload, String(nameLike || ""));
       // Same uncertainty—assume only logo is guaranteed.
-      return { logo: true, text: false };
+      return { logo: true, text: true };
     }
 
     // 3) Two-step: print image, then text
