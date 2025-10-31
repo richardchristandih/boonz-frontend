@@ -133,6 +133,7 @@ function printReceiptViaSystem(html) {
   w.document.open();
   w.document.write(html);
   w.document.close();
+  return true;
 }
 
 const toStr = (v) => (v == null ? "" : String(v));
@@ -292,6 +293,16 @@ export default function MenuLayout() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [orderNumber, setOrderNumber] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  /* ---- NEW: Post-payment print dialog state ---- */
+  const [printDialog, setPrintDialog] = useState({
+    open: false,
+    orderNumber: null,
+    kotText: "",
+    receiptText: "",
+    logoDataUrl: "",
+  });
+  const [printBusy, setPrintBusy] = useState(""); // "", "kitchen", "receipt"
 
   /* ---- Drink customization & toppings ---- */
   const TOPPING_PRICE_IDR = 4000;
@@ -901,162 +912,60 @@ export default function MenuLayout() {
       const newOrderNumber = response.data?.orderNumber;
       setOrderNumber(newOrderNumber);
 
-      try {
-        const { receiptCopies, kitchenCopies } = getPrinterPrefs();
-        const dateStr = new Date().toLocaleString();
+      // Build printable strings but DO NOT print yet
+      const dateStr = new Date().toLocaleString();
 
-        const printedCustomerName =
-          (wantEmailReceipt && (customerName || "").trim()) || user?.name || "";
+      const printedCustomerName =
+        (wantEmailReceipt && (customerName || "").trim()) || user?.name || "";
 
-        const kotText = buildKitchenTicket({
-          orderNumber: newOrderNumber || "N/A",
-          dateStr,
-          orderType: orderData.orderType,
-          items: orderData.products,
-          customer: { name: printedCustomerName || user?.name },
-        });
+      const kotText = buildKitchenTicket({
+        orderNumber: newOrderNumber || "N/A",
+        dateStr,
+        orderType: orderData.orderType,
+        items: orderData.products,
+        customer: { name: printedCustomerName || user?.name },
+      });
 
-        const itemsForReceipt = orderData.products.map((it) => {
-          const n = normalizeNote(it.note);
-          return {
-            ...it,
-            name: n ? `${it.name} [${n}]` : it.name,
-          };
-        });
+      const itemsForReceipt = orderData.products.map((it) => {
+        const n = normalizeNote(it.note);
+        return {
+          ...it,
+          name: n ? `${it.name} [${n}]` : it.name,
+        };
+      });
 
-        let receiptText = buildReceipt({
-          address: "Jl. Mekar Utama No. 61, Bandung",
-          orderNumber: newOrderNumber || "N/A",
-          dateStr,
-          items: itemsForReceipt,
-          subtotal: orderData.subtotal,
-          tax: orderData.tax,
-          service: orderData.serviceCharge,
-          showTax: taxEnabled,
-          showService: serviceEnabled,
-          discount: orderData.discount,
-          total: orderData.totalAmount,
-          payment: orderData.paymentMethod,
-          orderType: orderData.orderType,
-          customer: { name: printedCustomerName || user?.name },
-          discountNote: finalDiscountNote,
-        }).replace(/^[\s\r\n]+/, "");
+      let receiptText = buildReceipt({
+        address: "Jl. Mekar Utama No. 61, Bandung",
+        orderNumber: newOrderNumber || "N/A",
+        dateStr,
+        items: itemsForReceipt,
+        subtotal: orderData.subtotal,
+        tax: orderData.tax,
+        service: orderData.serviceCharge,
+        showTax: taxEnabled,
+        showService: serviceEnabled,
+        discount: orderData.discount,
+        total: orderData.totalAmount,
+        payment: orderData.paymentMethod,
+        orderType: orderData.orderType,
+        customer: { name: printedCustomerName || user?.name },
+        discountNote: finalDiscountNote,
+      }).replace(/^[\s\r\n]+/, "");
 
-        const logoPref = localStorage.getItem("print.logo") || appLogo;
-        const logoDataUrl =
-          typeof logoPref === "string" && logoPref.startsWith("data:")
-            ? logoPref
-            : await toDataUrl(logoPref);
+      const logoPref = localStorage.getItem("print.logo") || appLogo;
+      const logoDataUrl =
+        typeof logoPref === "string" && logoPref.startsWith("data:")
+          ? logoPref
+          : await toDataUrl(logoPref);
 
-        if (isAndroidBridge()) {
-          const paired = androidListPrintersDetailed();
-          const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
-          const receiptTarget =
-            extractBtAddress(localStorage.getItem("printer.receipt")) ||
-            fallbackAddr;
-          const kitchenTarget =
-            extractBtAddress(localStorage.getItem("printer.kitchen")) ||
-            fallbackAddr;
-
-          if (!androidIsBtOn()) {
-            show("⚠️ Bluetooth is OFF. Please enable it and try again.", {
-              type: "error",
-              ttl: 5000,
-            });
-            throw new Error("Bluetooth disabled");
-          }
-          for (let i = 0; i < kitchenCopies; i++) {
-            await androidPrintWithRetry(kotText, {
-              address: kitchenTarget,
-              nameLike: kitchenTarget,
-              copies: 1,
-              tries: 3,
-              baseDelay: 3000,
-            });
-          }
-          await sleep(PAUSE_AFTER_KOT_MS);
-          for (let i = 0; i < receiptCopies; i++) {
-            const res = await androidPrintLogoAndText(
-              logoDataUrl,
-              receiptText + "\n\n",
-              { address: receiptTarget, nameLike: receiptTarget }
-            );
-
-            // If text wasn't confirmed sent, send it explicitly
-            if (!res?.text) {
-              await androidPrintWithRetry(receiptText + "\n\n\n", {
-                address: receiptTarget,
-                nameLike: receiptTarget,
-                copies: 1,
-                tries: 3,
-                baseDelay: 500,
-              });
-            } else {
-              await sleep(800); // tiny flush delay after successful combo
-            }
-          }
-
-          finishOrder(newOrderNumber);
-          return;
-        }
-
-        if (isAndroidChrome()) {
-          const html = buildReceiptHtml({
-            address: "Jl. Mekar Utama No. 61, Bandung",
-            orderNumber: newOrderNumber || "N/A",
-            dateStr,
-            items: orderData.products,
-            subtotal: orderData.subtotal,
-            tax: orderData.tax,
-            service: orderData.serviceCharge,
-            showTax: taxEnabled,
-            showService: serviceEnabled,
-            discount: orderData.discount,
-            total: orderData.totalAmount,
-            payment: orderData.paymentMethod,
-            orderType: orderData.orderType,
-            customer: { name: user?.name || "" },
-            discountNote: finalDiscountNote,
-            logo: logoDataUrl,
-          });
-          const ok = printReceiptViaSystem(html);
-          if (!ok) {
-            show("Pop-up blocked. Please allow pop-ups and try again.", {
-              type: "error",
-              ttl: 4000,
-            });
-          }
-        } else {
-          const printers = await listPrinters();
-          if (!Array.isArray(printers) || printers.length === 0)
-            throw new Error("No printers found (QZ).");
-          const receiptPrinterName =
-            printers.find((p) => RECEIPT_PRINTER_HINT.test(p)) || printers[0];
-
-          await printRaw(receiptPrinterName, kotText);
-          await sleep(300);
-          await printRaw(receiptPrinterName, receiptText);
-        }
-      } catch (printErr) {
-        console.error("Printing failed:", printErr);
-        show(
-          "Order saved, but printing failed: " +
-            (printErr?.message || "Unknown error"),
-          { type: "error" }
-        );
-      }
-
-      setCart([]);
-      setSelectedPromoId("");
-      setDiscountMode("promo");
-      setDiscountValue("0");
-      setDiscountNote("");
-      setDiscountType("flat");
+      // Close the payment modal and open a persistent print options dialog
       setShowPaymentModal(false);
-      setSelectedPaymentMethod("");
-
-      show(`Order #${newOrderNumber} placed successfully!`, {
-        type: "success",
+      setPrintDialog({
+        open: true,
+        orderNumber: newOrderNumber || "N/A",
+        kotText,
+        receiptText: receiptText + "\n\n",
+        logoDataUrl,
       });
     } catch (error) {
       console.error("Error placing order:", error);
@@ -1084,7 +993,8 @@ export default function MenuLayout() {
     wantEmailReceipt,
     customerEmail,
     customerName,
-    PAUSE_AFTER_KOT_MS,
+    taxEnabled,
+    serviceEnabled,
   ]);
 
   /** Build a simple 58mm print HTML (system print) */
@@ -1201,6 +1111,154 @@ export default function MenuLayout() {
     <div class="c">Thank you!</div>
   </div>
 </body></html>`;
+  }
+
+  /* ==========================
+     NEW: Manual print handlers
+     ========================== */
+  async function handlePrintKitchen(kotText) {
+    if (!kotText) return;
+    try {
+      setPrintBusy("kitchen");
+
+      if (isAndroidBridge()) {
+        if (!androidIsBtOn()) {
+          show("⚠️ Bluetooth is OFF. Please enable it and try again.", {
+            type: "error",
+            ttl: 5000,
+          });
+          return;
+        }
+        const paired = androidListPrintersDetailed();
+        const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
+        const kitchenTarget =
+          extractBtAddress(localStorage.getItem("printer.kitchen")) ||
+          fallbackAddr;
+
+        const { kitchenCopies } = getPrinterPrefs();
+        for (let i = 0; i < kitchenCopies; i++) {
+          await androidPrintWithRetry(kotText, {
+            address: kitchenTarget,
+            nameLike: kitchenTarget,
+            copies: 1,
+            tries: 3,
+            baseDelay: 3000,
+          });
+        }
+        await sleep(PAUSE_AFTER_KOT_MS);
+        show("Kitchen ticket sent.", { type: "success" });
+        return;
+      }
+
+      // Desktop / QZ (fallback)
+      const printers = await listPrinters();
+      if (!Array.isArray(printers) || printers.length === 0)
+        throw new Error("No printers found (QZ).");
+
+      const preferred =
+        printers.find((p) => RECEIPT_PRINTER_HINT.test(p)) || printers[0];
+
+      await printRaw(preferred, kotText);
+      show("Kitchen ticket printed.", { type: "success" });
+    } catch (err) {
+      console.error(err);
+      show("Failed to print kitchen ticket: " + (err?.message || "Unknown"), {
+        type: "error",
+      });
+    } finally {
+      setPrintBusy("");
+    }
+  }
+
+  async function handlePrintReceipt(receiptText, logoDataUrl) {
+    if (!receiptText) return;
+    try {
+      setPrintBusy("receipt");
+
+      if (isAndroidBridge()) {
+        if (!androidIsBtOn()) {
+          show("⚠️ Bluetooth is OFF. Please enable it and try again.", {
+            type: "error",
+            ttl: 5000,
+          });
+          return;
+        }
+        const paired = androidListPrintersDetailed();
+        const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
+        const receiptTarget =
+          extractBtAddress(localStorage.getItem("printer.receipt")) ||
+          fallbackAddr;
+
+        const { receiptCopies } = getPrinterPrefs();
+        for (let i = 0; i < receiptCopies; i++) {
+          const res = await androidPrintLogoAndText(
+            logoDataUrl,
+            receiptText + "\n\n",
+            { address: receiptTarget, nameLike: receiptTarget }
+          );
+          if (!res?.text) {
+            await androidPrintWithRetry(receiptText + "\n\n\n", {
+              address: receiptTarget,
+              nameLike: receiptTarget,
+              copies: 1,
+              tries: 3,
+              baseDelay: 500,
+            });
+          } else {
+            await sleep(800);
+          }
+        }
+        show("Receipt sent.", { type: "success" });
+        return;
+      }
+
+      if (isAndroidChrome()) {
+        // Fallback simple print content
+        const ok = printReceiptViaSystem(
+          `<pre style="white-space:pre-wrap">${escapeHtml(receiptText)}</pre>`
+        );
+        if (!ok) {
+          show("Pop-up blocked. Please allow pop-ups and try again.", {
+            type: "error",
+            ttl: 4000,
+          });
+        } else {
+          show("Receipt opened in system print.", { type: "success" });
+        }
+        return;
+      }
+
+      // Desktop / QZ (fallback)
+      const printers = await listPrinters();
+      if (!Array.isArray(printers) || printers.length === 0)
+        throw new Error("No printers found (QZ).");
+
+      const preferred =
+        printers.find((p) => RECEIPT_PRINTER_HINT.test(p)) || printers[0];
+
+      await printRaw(preferred, receiptText);
+      show("Receipt printed.", { type: "success" });
+    } catch (err) {
+      console.error(err);
+      show("Failed to print receipt: " + (err?.message || "Unknown"), {
+        type: "error",
+      });
+    } finally {
+      setPrintBusy("");
+    }
+  }
+
+  function closePostPrintDialog() {
+    const on = printDialog.orderNumber;
+    setPrintDialog({
+      open: false,
+      orderNumber: null,
+      kotText: "",
+      receiptText: "",
+      logoDataUrl: "",
+    });
+    // Finalize/cleanup only when the user closes the dialog
+    finishOrder(on || "N/A");
   }
 
   // discount modal controls
@@ -1896,6 +1954,74 @@ export default function MenuLayout() {
                 disabled={isSubmitting}
               >
                 Cancel
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {/* NEW: Post-Payment Print Options Modal */}
+      {printDialog.open && (
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="post-print-title"
+          onClick={() => {}}
+        >
+          <div
+            className="paymodal__dialog"
+            role="document"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="paymodal__head">
+              <h3 id="post-print-title">Print Options</h3>
+              {/* Intentionally no auto-close; user must click Close */}
+            </header>
+
+            <div className="paymodal__body">
+              <p style={{ marginTop: 0 }}>
+                Order <strong>#{printDialog.orderNumber}</strong> has been
+                created. Choose what to print:
+              </p>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => handlePrintKitchen(printDialog.kotText)}
+                  disabled={printBusy === "kitchen"}
+                  title="Print Kitchen Ticket"
+                >
+                  {printBusy === "kitchen" ? "Printing…" : "Print Kitchen"}
+                </button>
+
+                <button
+                  className="btn btn-primary"
+                  onClick={() =>
+                    handlePrintReceipt(
+                      printDialog.receiptText,
+                      printDialog.logoDataUrl
+                    )
+                  }
+                  disabled={printBusy === "receipt"}
+                  title="Print Customer Receipt"
+                >
+                  {printBusy === "receipt" ? "Printing…" : "Print Receipt"}
+                </button>
+              </div>
+
+              <p className="muted" style={{ marginTop: 12 }}>
+                You can print either or both. This window will remain open until
+                you close it.
+              </p>
+            </div>
+
+            <footer className="paymodal__actions">
+              <button
+                className="btn btn-ghost"
+                onClick={closePostPrintDialog}
+                disabled={!!printBusy}
+              >
+                Close
               </button>
             </footer>
           </div>
