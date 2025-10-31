@@ -27,9 +27,25 @@ function dblOff() {
 function init() {
   return ESC + "@";
 }
-function cut() {
-  return GS + "V" + "\x41" + "\x10";
-} // partial cut
+
+/**
+ * Feed n lines (ESC d n). Many printers honor this precisely.
+ * @param {number} n 0-255
+ */
+function feed(n = 0) {
+  return ESC + "d" + String.fromCharCode(Math.max(0, Math.min(255, n)));
+}
+
+/**
+ * Cut the paper with minimal/controlled feed.
+ * m = 0x41 (partial), 0x42 (full). We default to partial cut.
+ * n = lines to feed BEFORE cut. Keep this small to avoid long gaps.
+ */
+function cut(n = 0, mode = "partial") {
+  const m = mode === "full" ? "\x42" : "\x41"; // default partial
+  const lines = String.fromCharCode(Math.max(0, Math.min(255, n)));
+  return GS + "V" + m + lines;
+}
 
 function line(text = "") {
   return text + "\n";
@@ -106,9 +122,13 @@ export function buildReceipt({
     boldOff();
   if (payment) out += alignLeft() + line(`Payment: ${payment}`);
 
-  out += alignCenter() + line("Terima kasih!");
-  out += line();
-  out += cut();
+  // Thank you line WITHOUT an extra blank line before it
+  out += line("Terima kasih!");
+
+  // Keep tail short & consistent with kitchen ticket:
+  // feed just 2 lines, then do a zero-feed partial cut.
+  out += feed(2);
+  out += cut(0, "partial");
 
   return out;
 }

@@ -68,7 +68,8 @@ export function buildKitchenTicket({
       return block;
     })
     .join("");
-  const tail = `\n[C]${divider}\n[C]x\n\n`;
+
+  const tail = `\n[C]${divider}\n[C]\n\n\n`;
 
   return header + lines + tail;
 }
