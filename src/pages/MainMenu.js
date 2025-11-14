@@ -293,6 +293,11 @@ export default function MenuLayout() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [orderNumber, setOrderNumber] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [coffeeCustomize, setCoffeeCustomize] = useState({
+    open: false,
+    product: null,
+    temperature: "Ice",
+  });
 
   /* ---- NEW: Post-payment print dialog state ---- */
   const [printDialog, setPrintDialog] = useState({
@@ -327,6 +332,67 @@ export default function MenuLayout() {
     return name.includes("fries") || sku.startsWith("FRY");
   };
 
+  /* ---- Burger cut options ---- */
+  const isBurger = (p) => {
+    const name = (p?.name || "").toLowerCase();
+    const sku = (p?.sku || "").toUpperCase();
+    return (
+      name.includes("burger") ||
+      sku.startsWith("BRG") ||
+      name.includes("smoky") ||
+      name.startsWith("truffle") ||
+      name.startsWith("double") ||
+      name.startsWith("crispy")
+    );
+  };
+
+  const COFFEE_KEYWORDS = [
+    "latte",
+    "cappuccino",
+    "americano",
+    "long black",
+    "mocha",
+    "espresso",
+    "macchiato",
+    "flat white",
+    "cold brew",
+    "dalgona",
+    "affogato",
+  ];
+
+  const isCoffee = (p) => {
+    const name = (p?.name || "").toLowerCase();
+    const cat = (p?.category || "").trim().toLowerCase();
+
+    if (cat === "coffee") return true; // primary signal
+    return COFFEE_KEYWORDS.some((k) => name.includes(k));
+  };
+
+  const SODA_KEYWORDS = [
+    "soda",
+    "sparkling",
+    "cola",
+    "coke",
+    "fizz",
+    "tonic",
+    "fanta",
+    "sprite",
+    "mineral",
+    "water",
+  ];
+
+  const isSoda = (p) => {
+    const name = (p?.name || "").toLowerCase();
+    const cat = (p?.category || "").trim().toLowerCase();
+
+    // match by category, sku prefix, or keyword
+    return (
+      cat === "soda" ||
+      cat === "water" ||
+      SODA_KEYWORDS.some((k) => name.includes(k))
+    );
+  };
+
   /* ---- Qty change ---- */
   const handleDecreaseQty = useCallback((id) => {
     setCart((prev) =>
@@ -344,6 +410,72 @@ export default function MenuLayout() {
       }, [])
     );
   }, []);
+
+  const openCoffeeCustomize = useCallback((product) => {
+    setCoffeeCustomize({ open: true, product, temperature: "Ice" });
+  }, []);
+
+  const cancelCoffeeCustomize = useCallback(() => {
+    setCoffeeCustomize((s) => ({ ...s, open: false, product: null }));
+  }, []);
+
+  const applyCoffeeCustomize = useCallback(() => {
+    const { product, temperature } = coffeeCustomize;
+    if (!product) return;
+
+    const note = `Temp: ${temperature}`;
+    const baseId = product._id || product.id || product.sku || product.name;
+    const uniqueId = `${baseId}-${Date.now()}`;
+
+    setCart((prev) => [
+      ...prev,
+      {
+        ...product,
+        id: uniqueId,
+        quantity: 1,
+        note,
+        options: { temperature },
+      },
+    ]);
+
+    setCoffeeCustomize({ open: false, product: null, temperature: "Ice" });
+  }, [coffeeCustomize, setCart]);
+
+  const [sodaCustomize, setSodaCustomize] = useState({
+    open: false,
+    product: null,
+    ice: "Ice",
+  });
+
+  const openSodaCustomize = useCallback((product) => {
+    setSodaCustomize({ open: true, product, ice: "Ice" });
+  }, []);
+
+  const cancelSodaCustomize = useCallback(() => {
+    setSodaCustomize((s) => ({ ...s, open: false, product: null }));
+  }, []);
+
+  const applySodaCustomize = useCallback(() => {
+    const { product, ice } = sodaCustomize;
+    if (!product) return;
+
+    const note = `Ice: ${ice}`;
+    const baseId = product._id || product.id || product.sku || product.name;
+    const uniqueId = `${baseId}-${Date.now()}`;
+
+    setCart((prev) => [
+      ...prev,
+      {
+        ...product,
+        id: uniqueId,
+        quantity: 1,
+        note,
+        options: { ice },
+      },
+    ]);
+
+    setSodaCustomize({ open: false, product: null, ice: "Ice" });
+  }, [sodaCustomize, setCart]);
 
   /* ---- Fries modal state ---- */
   const [friesCustomize, setFriesCustomize] = useState({
@@ -377,6 +509,39 @@ export default function MenuLayout() {
 
     setFriesCustomize({ open: false, product: null, flavor: "Truffle Mayo" });
   }, [friesCustomize, setCart]);
+
+  /* ---- Burger customize (cut style) ---- */
+  const [burgerCustomize, setBurgerCustomize] = useState({
+    open: false,
+    product: null,
+    cut: "Whole",
+  });
+  const openBurgerCustomize = useCallback((product) => {
+    setBurgerCustomize({ open: true, product, cut: "Whole" });
+  }, []);
+  const cancelBurgerCustomize = useCallback(() => {
+    setBurgerCustomize((s) => ({ ...s, open: false, product: null }));
+  }, []);
+  const applyBurgerCustomize = useCallback(() => {
+    const { product, cut } = burgerCustomize;
+    if (!product) return;
+
+    const note = `Cut: ${cut}`;
+    const productId = product._id || product.id || product.sku || product.name;
+    setCart((prev) => [
+      ...prev,
+      {
+        ...product,
+        price: Number(product.price ?? 0),
+        quantity: 1,
+        id: `${productId}-${Date.now()}`, // unique per cut selection
+        note,
+        options: { cut },
+      },
+    ]);
+
+    setBurgerCustomize({ open: false, product: null, cut: "Whole" });
+  }, [burgerCustomize, setCart]);
 
   /* ---- Categories ---- */
   const reloadCategories = useCallback(async () => {
@@ -422,6 +587,7 @@ export default function MenuLayout() {
     sugar: "Full",
     ice: "Normal",
     toppings: [], // array of topping SKUs
+    temperature: "Ice",
   });
   const openCustomize = useCallback((product) => {
     setCustomize({
@@ -430,6 +596,7 @@ export default function MenuLayout() {
       sugar: "Full",
       ice: "Normal",
       toppings: [],
+      temperature: "Ice",
     });
   }, []);
   const cancelCustomize = useCallback(() => {
@@ -437,7 +604,7 @@ export default function MenuLayout() {
   }, []);
 
   const applyCustomize = useCallback(() => {
-    const { product, sugar, ice, toppings } = customize;
+    const { product, sugar, ice, toppings, temperature } = customize;
     if (!product) return;
 
     const basePrice = Number(product.price ?? 0);
@@ -454,7 +621,9 @@ export default function MenuLayout() {
             .join(", ")}`
         : "";
 
-    const note = `Sugar: ${sugar} | Ice: ${ice}${chosenToppings}`;
+    const effectiveIce = temperature === "Hot" ? "No" : ice; // Hot implies no ice
+    const note = `Temp: ${temperature} | Sugar: ${sugar} | Ice: ${effectiveIce}${chosenToppings}`;
+
     const baseId = product._id || product.id || product.sku || product.name;
     const uniqueId = `${baseId}-${Date.now()}`;
 
@@ -468,9 +637,10 @@ export default function MenuLayout() {
         note,
         options: {
           sugar,
-          ice,
+          ice: effectiveIce,
           toppings: Array.from(toppings || []),
           toppingUnitAddOn: TOPPING_PRICE_IDR,
+          temperature, // NEW
         },
       },
     ]);
@@ -481,6 +651,7 @@ export default function MenuLayout() {
       sugar: "Normal",
       ice: "Normal",
       toppings: [],
+      temperature: "Ice", // reset
     });
   }, [customize, setCart]);
 
@@ -769,9 +940,17 @@ export default function MenuLayout() {
       const category = (product.category || "").trim();
 
       // 1) Drinks -> customization modal
-      if (
-        DRINK_CATEGORIES.some((c) => c.toLowerCase() === category.toLowerCase())
-      ) {
+      if (isCoffee(product)) {
+        openCoffeeCustomize(product);
+        return;
+      }
+
+      if (isSoda(product)) {
+        openSodaCustomize(product);
+        return;
+      }
+
+      if (DRINK_CATEGORIES.includes(product.category)) {
         openCustomize(product);
         return;
       }
@@ -782,7 +961,13 @@ export default function MenuLayout() {
         return;
       }
 
-      // 3) Default path (no customization)
+      // 3) Burger -> cut modal
+      if (isBurger(product)) {
+        openBurgerCustomize(product);
+        return;
+      }
+
+      // 4) Default path (no customization)
       const productId = product._id || product.id || product.sku;
       setCart((prev) => {
         const existing = prev.find((i) => i.id === productId);
@@ -802,7 +987,13 @@ export default function MenuLayout() {
         ];
       });
     },
-    [openCustomize, openFriesCustomize]
+    [
+      openCustomize,
+      openFriesCustomize,
+      openBurgerCustomize,
+      openCoffeeCustomize,
+      openSodaCustomize,
+    ]
   );
 
   const handleIncreaseQty = useCallback(
@@ -1191,11 +1382,10 @@ export default function MenuLayout() {
 
         const { receiptCopies } = getPrinterPrefs();
         for (let i = 0; i < receiptCopies; i++) {
-          const res = await androidPrintLogoAndText(
-            logoDataUrl,
-            receiptText + "\n\n",
-            { address: receiptTarget, nameLike: receiptTarget }
-          );
+          const res = await androidPrintLogoAndText(logoDataUrl, receiptText, {
+            address: receiptTarget,
+            nameLike: receiptTarget,
+          });
           if (!res?.text) {
             await androidPrintWithRetry(receiptText + "\n\n\n", {
               address: receiptTarget,
@@ -2272,6 +2462,27 @@ export default function MenuLayout() {
             </header>
 
             <div className="paymodal__body">
+              <div style={{ marginBottom: 12 }}>
+                <div className="register-label" style={{ marginBottom: 6 }}>
+                  Temperature
+                </div>
+                <div className="radio-row">
+                  {["Ice", "Hot"].map((v) => (
+                    <label key={v}>
+                      <input
+                        type="radio"
+                        name="temperature"
+                        value={v}
+                        checked={customize.temperature === v}
+                        onChange={() =>
+                          setCustomize((s) => ({ ...s, temperature: v }))
+                        }
+                      />{" "}
+                      {v}
+                    </label>
+                  ))}
+                </div>
+              </div>
               {/* Sugar */}
               <div style={{ marginBottom: 12 }}>
                 <div className="register-label" style={{ marginBottom: 6 }}>
@@ -2296,7 +2507,12 @@ export default function MenuLayout() {
               </div>
 
               {/* Ice */}
-              <div style={{ marginBottom: 12 }}>
+              <div
+                style={{
+                  marginBottom: 12,
+                  opacity: customize.temperature === "Hot" ? 0.5 : 1,
+                }}
+              >
                 <div className="register-label" style={{ marginBottom: 6 }}>
                   Ice
                 </div>
@@ -2309,6 +2525,7 @@ export default function MenuLayout() {
                         value={v}
                         checked={customize.ice === v}
                         onChange={() => setCustomize((s) => ({ ...s, ice: v }))}
+                        disabled={customize.temperature === "Hot"} // NEW
                       />{" "}
                       {v}
                     </label>
@@ -2427,6 +2644,193 @@ export default function MenuLayout() {
                 Add to cart
               </button>
               <button className="btn btn-ghost" onClick={cancelFriesCustomize}>
+                Cancel
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {/* Burger Cut Modal */}
+      {burgerCustomize.open && (
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="burger-customize-title"
+          onClick={cancelBurgerCustomize}
+        >
+          <div
+            className="paymodal__dialog"
+            role="document"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="paymodal__head">
+              <h3 id="burger-customize-title">
+                Choose Cut — {burgerCustomize.product?.name || "Burger"}
+              </h3>
+              <button
+                className="paymodal__close"
+                aria-label="Close"
+                onClick={cancelBurgerCustomize}
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="paymodal__body">
+              <div className="register-label" style={{ marginBottom: 6 }}>
+                Cut Style
+              </div>
+              <div className="radio-row">
+                {["Whole", "Half", "4"].map((v) => (
+                  <label key={v}>
+                    <input
+                      type="radio"
+                      name="burger-cut"
+                      value={v}
+                      checked={burgerCustomize.cut === v}
+                      onChange={() =>
+                        setBurgerCustomize((s) => ({ ...s, cut: v }))
+                      }
+                    />{" "}
+                    {v === "4" ? "4 cut" : v}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <footer className="paymodal__actions">
+              <button
+                className="btn btn-primary"
+                onClick={applyBurgerCustomize}
+              >
+                Add to cart
+              </button>
+              <button className="btn btn-ghost" onClick={cancelBurgerCustomize}>
+                Cancel
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {coffeeCustomize.open && (
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="coffee-customize-title"
+          onClick={cancelCoffeeCustomize}
+        >
+          <div
+            className="paymodal__dialog"
+            role="document"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="paymodal__head">
+              <h3 id="coffee-customize-title">
+                Choose Temperature — {coffeeCustomize.product?.name || "Coffee"}
+              </h3>
+              <button
+                className="paymodal__close"
+                aria-label="Close"
+                onClick={cancelCoffeeCustomize}
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="paymodal__body">
+              <div className="register-label" style={{ marginBottom: 6 }}>
+                Temperature
+              </div>
+              <div className="radio-row">
+                {["Ice", "Hot"].map((v) => (
+                  <label key={v}>
+                    <input
+                      type="radio"
+                      name="coffee-temp"
+                      value={v}
+                      checked={coffeeCustomize.temperature === v}
+                      onChange={() =>
+                        setCoffeeCustomize((s) => ({ ...s, temperature: v }))
+                      }
+                    />{" "}
+                    {v}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <footer className="paymodal__actions">
+              <button
+                className="btn btn-primary"
+                onClick={applyCoffeeCustomize}
+              >
+                Add to cart
+              </button>
+              <button className="btn btn-ghost" onClick={cancelCoffeeCustomize}>
+                Cancel
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {sodaCustomize.open && (
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="soda-customize-title"
+          onClick={cancelSodaCustomize}
+        >
+          <div
+            className="paymodal__dialog"
+            role="document"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="paymodal__head">
+              <h3 id="soda-customize-title">
+                Choose Ice — {sodaCustomize.product?.name || "Soda"}
+              </h3>
+              <button
+                className="paymodal__close"
+                aria-label="Close"
+                onClick={cancelSodaCustomize}
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="paymodal__body">
+              <div className="register-label" style={{ marginBottom: 6 }}>
+                Ice Option
+              </div>
+              <div className="radio-row">
+                {["Ice", "No Ice"].map((v) => (
+                  <label key={v}>
+                    <input
+                      type="radio"
+                      name="soda-ice"
+                      value={v}
+                      checked={sodaCustomize.ice === v}
+                      onChange={() =>
+                        setSodaCustomize((s) => ({ ...s, ice: v }))
+                      }
+                    />{" "}
+                    {v}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <footer className="paymodal__actions">
+              <button className="btn btn-primary" onClick={applySodaCustomize}>
+                Add to cart
+              </button>
+              <button className="btn btn-ghost" onClick={cancelSodaCustomize}>
                 Cancel
               </button>
             </footer>
