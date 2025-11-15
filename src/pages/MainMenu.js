@@ -309,6 +309,31 @@ export default function MenuLayout() {
   });
   const [printBusy, setPrintBusy] = useState(""); // "", "kitchen", "receipt"
 
+  /* ---- Open Bill Feature ---- */
+  const [openBills, setOpenBills] = useState([]); // Array of unpaid orders
+  const [showOpenBills, setShowOpenBills] = useState(false);
+  
+  // Load open bills from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("openBills");
+      if (stored) {
+        setOpenBills(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.warn("Failed to load open bills:", e);
+    }
+  }, []);
+
+  // Save open bills to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem("openBills", JSON.stringify(openBills));
+    } catch (e) {
+      console.warn("Failed to save open bills:", e);
+    }
+  }, [openBills]);
+
   /* ---- Drink customization & toppings ---- */
   const TOPPING_PRICE_IDR = 4000;
   const DRINK_CATEGORIES = ["Drink"];
@@ -1008,14 +1033,26 @@ export default function MenuLayout() {
     []
   );
 
+  /* ---------- Customer Name Dialog State ---------- */
+  const [showCustomerNameDialog, setShowCustomerNameDialog] = useState(false);
+  const [checkoutCustomerName, setCheckoutCustomerName] = useState("");
+
   /* ---------- Checkout ---------- */
   const handleCheckout = useCallback(() => {
     if (cart.length === 0) {
       show("Your cart is empty!", { type: "info" });
       return;
     }
+    // Show customer name dialog first
+    setCheckoutCustomerName(customerName || user?.name || "");
+    setShowCustomerNameDialog(true);
+  }, [cart.length, customerName, user?.name]);
+  
+  const handleCustomerNameConfirm = useCallback(() => {
+    setCustomerName(checkoutCustomerName);
+    setShowCustomerNameDialog(false);
     setShowPaymentModal(true);
-  }, [cart.length]);
+  }, [checkoutCustomerName]);
 
   const finishOrder = (newOrderNumber) => {
     setShowPaymentModal(false);
@@ -1066,6 +1103,9 @@ export default function MenuLayout() {
           : "Custom Flat Discount";
     }
 
+    // Check if this is an open bill (unpaid)
+    const isOpenBill = selectedPaymentMethod === "Open Bill";
+    
     const orderData = {
       products: cart.map((item) => ({
         productId: item._id || item.id || item.sku,
@@ -1073,6 +1113,7 @@ export default function MenuLayout() {
         quantity: item.quantity,
         price: Number(item.price ?? 0),
         note: normalizeNote(item.note) || undefined,
+        options: item.options || {}, // Preserve options for kitchen ticket
       })),
       subtotal: sub,
       tax: tx,
@@ -1082,7 +1123,7 @@ export default function MenuLayout() {
       totalAmount: total,
       user: user?._id,
       orderType,
-      paymentMethod: selectedPaymentMethod,
+      paymentMethod: isOpenBill ? "Open Bill" : selectedPaymentMethod,
       discountMode,
       ...(promoMeta || {}),
 
@@ -1098,8 +1139,31 @@ export default function MenuLayout() {
     };
 
     try {
-      const response = await api.post("/orders", orderData);
-      const newOrderNumber = response.data?.orderNumber;
+      let newOrderNumber;
+      
+      if (isOpenBill) {
+        // Save as open bill locally (don't send to server yet)
+        newOrderNumber = `OPEN-${Date.now()}`;
+        const openBill = {
+          orderNumber: newOrderNumber,
+          orderData,
+          customerName: customerName || user?.name || "",
+          createdAt: new Date().toISOString(),
+          kotText: null, // Will be generated when needed
+          receiptText: null,
+          logoDataUrl: null,
+        };
+        setOpenBills((prev) => [...prev, openBill]);
+        show(`Order #${newOrderNumber} saved as open bill!`, {
+          type: "success",
+          ttl: 3000,
+        });
+      } else {
+        // Normal paid order - send to server
+        const response = await api.post("/orders", orderData);
+        newOrderNumber = response.data?.orderNumber;
+      }
+      
       setOrderNumber(newOrderNumber);
 
       // Build printable strings but DO NOT print yet
@@ -1108,13 +1172,32 @@ export default function MenuLayout() {
       const printedCustomerName =
         (wantEmailReceipt && (customerName || "").trim()) || user?.name || "";
 
+      // Ensure items have all required fields for kitchen ticket
+      const kitchenItems = (orderData.products || []).map((it) => ({
+        name: it.name || "Item",
+        quantity: Number(it.quantity) || 0,
+        note: it.note || "",
+        options: it.options || {}, // Preserve options if they exist
+      }));
+
+      // Debug: log if items are missing
+      if (kitchenItems.length === 0) {
+        console.warn("No items found for kitchen ticket!");
+      }
+
       const kotText = buildKitchenTicket({
         orderNumber: newOrderNumber || "N/A",
         dateStr,
         orderType: orderData.orderType,
-        items: orderData.products,
+        items: kitchenItems,
         customer: { name: printedCustomerName || user?.name },
       });
+
+      // Debug: log kitchen ticket content (first 500 chars)
+      if (process.env.NODE_ENV === "development") {
+        console.log("Kitchen ticket preview:", kotText.substring(0, 500));
+        console.log("Kitchen items count:", kitchenItems.length);
+      }
 
       const itemsForReceipt = orderData.products.map((it) => {
         const n = normalizeNote(it.note);
@@ -1147,6 +1230,25 @@ export default function MenuLayout() {
         typeof logoPref === "string" && logoPref.startsWith("data:")
           ? logoPref
           : await toDataUrl(logoPref);
+
+      // For open bills, update the stored bill with receipt data
+      if (isOpenBill) {
+        setOpenBills((prev) =>
+          prev.map((bill) =>
+            bill.orderNumber === newOrderNumber
+              ? {
+                  ...bill,
+                  kotText,
+                  receiptText,
+                  logoDataUrl,
+                }
+              : bill
+          )
+        );
+        // Don't show print dialog for open bills - they can print later
+        finishOrder(newOrderNumber);
+        return;
+      }
 
       // Close the payment modal and open a persistent print options dialog
       setShowPaymentModal(false);
@@ -1332,10 +1434,13 @@ export default function MenuLayout() {
             nameLike: kitchenTarget,
             copies: 1,
             tries: 3,
-            baseDelay: 3000,
+            baseDelay: 500, // Reduced from 3000ms for faster printing
           });
         }
-        await sleep(PAUSE_AFTER_KOT_MS);
+        // Reduced pause time - only wait if multiple copies
+        if (kitchenCopies > 1) {
+          await sleep(Math.min(PAUSE_AFTER_KOT_MS, 1000));
+        }
         show("Kitchen ticket sent.", { type: "success" });
         return;
       }
@@ -1450,6 +1555,75 @@ export default function MenuLayout() {
     finishOrder(on || "N/A");
   }
 
+  /* ---- Re-print Functions ---- */
+  async function handleReprintKitchen(bill) {
+    if (!bill.kotText) {
+      // Generate KOT text if not available
+      const dateStr = new Date(bill.createdAt).toLocaleString();
+      const kitchenItems = (bill.orderData.products || []).map((it) => ({
+        name: it.name || "Item",
+        quantity: Number(it.quantity) || 0,
+        note: it.note || "",
+        options: it.options || {},
+      }));
+      const kotText = buildKitchenTicket({
+        orderNumber: bill.orderNumber || "N/A",
+        dateStr,
+        orderType: bill.orderData.orderType,
+        items: kitchenItems,
+        customer: { name: bill.customerName },
+      });
+      await handlePrintKitchen(kotText);
+    } else {
+      await handlePrintKitchen(bill.kotText);
+    }
+  }
+
+  async function handleReprintReceipt(bill) {
+    if (!bill.receiptText || !bill.logoDataUrl) {
+      // Generate receipt text if not available
+      const dateStr = new Date(bill.createdAt).toLocaleString();
+      const itemsForReceipt = (bill.orderData.products || []).map((it) => {
+        const n = normalizeNote(it.note);
+        return {
+          ...it,
+          name: n ? `${it.name} [${n}]` : it.name,
+        };
+      });
+      const receiptText = buildReceipt({
+        address: "Jl. Mekar Utama No. 61, Bandung",
+        orderNumber: bill.orderNumber || "N/A",
+        dateStr,
+        items: itemsForReceipt,
+        subtotal: bill.orderData.subtotal,
+        tax: bill.orderData.tax,
+        service: bill.orderData.serviceCharge,
+        showTax: taxEnabled,
+        showService: serviceEnabled,
+        discount: bill.orderData.discount,
+        total: bill.orderData.totalAmount,
+        payment: bill.orderData.paymentMethod,
+        orderType: bill.orderData.orderType,
+        customer: { name: bill.customerName },
+        discountNote: bill.orderData.discountNote,
+      }).replace(/^[\s\r\n]+/, "");
+
+      const logoPref = localStorage.getItem("print.logo") || appLogo;
+      const logoDataUrl =
+        typeof logoPref === "string" && logoPref.startsWith("data:")
+          ? logoPref
+          : await toDataUrl(logoPref);
+      await handlePrintReceipt(receiptText, logoDataUrl);
+    } else {
+      await handlePrintReceipt(bill.receiptText, bill.logoDataUrl);
+    }
+  }
+
+  function handleDeleteOpenBill(orderNumber) {
+    setOpenBills((prev) => prev.filter((bill) => bill.orderNumber !== orderNumber));
+    show("Open bill deleted.", { type: "success" });
+  }
+
   // discount modal controls
   const handleOpenDiscountModal = async () => {
     setShowDiscountModal(true);
@@ -1536,6 +1710,36 @@ export default function MenuLayout() {
 
           {/* right controls */}
           <div className="topbar-actions">
+            {openBills.length > 0 && (
+              <button
+                className="icon-btn"
+                aria-label="Open Bills"
+                title={`${openBills.length} Open Bill${openBills.length > 1 ? "s" : ""}`}
+                onClick={() => setShowOpenBills(true)}
+                style={{ position: "relative" }}
+              >
+                <i className="fas fa-file-invoice" />
+                <span
+                  style={{
+                    position: "absolute",
+                    top: -4,
+                    right: -4,
+                    background: "#ef4444",
+                    color: "white",
+                    borderRadius: "50%",
+                    width: 18,
+                    height: 18,
+                    fontSize: 11,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {openBills.length}
+                </span>
+              </button>
+            )}
             <button
               className="icon-btn"
               aria-label="Refresh data"
@@ -2021,6 +2225,72 @@ export default function MenuLayout() {
         </div>
       </aside>
 
+      {/* Customer Name Dialog */}
+      {showCustomerNameDialog && (
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="customer-name-title"
+          onClick={() => setShowCustomerNameDialog(false)}
+        >
+          <div
+            className="paymodal__dialog"
+            onClick={(e) => e.stopPropagation()}
+            role="document"
+          >
+            <header className="paymodal__head">
+              <h3 id="customer-name-title">Customer Name</h3>
+              <button
+                className="paymodal__close"
+                aria-label="Close"
+                onClick={() => setShowCustomerNameDialog(false)}
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="paymodal__body">
+              <label
+                className="register-label"
+                style={{ display: "block", marginBottom: 6 }}
+              >
+                Enter customer name
+              </label>
+              <input
+                type="text"
+                className="register-input"
+                value={checkoutCustomerName}
+                onChange={(e) => setCheckoutCustomerName(e.target.value)}
+                placeholder="Customer name"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && checkoutCustomerName.trim()) {
+                    handleCustomerNameConfirm();
+                  }
+                }}
+              />
+            </div>
+
+            <footer className="paymodal__actions">
+              <button
+                className="btn btn-primary"
+                onClick={handleCustomerNameConfirm}
+                disabled={!checkoutCustomerName.trim()}
+              >
+                Continue to Payment
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setShowCustomerNameDialog(false)}
+              >
+                Cancel
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
       {/* Payment Modal */}
       {showPaymentModal && (
         <div
@@ -2059,6 +2329,7 @@ export default function MenuLayout() {
                   { k: "QRIS", i: "🔳" },
                   { k: "Go Pay", i: "🟦" },
                   { k: "Grab Pay", i: "🟩" },
+                  { k: "Open Bill", i: "📋" },
                 ].map(({ k, i }) => {
                   const selected = selectedPaymentMethod === k;
                   return (
@@ -2847,6 +3118,132 @@ export default function MenuLayout() {
           });
         }}
       />
+
+      {/* Open Bills Modal */}
+      {showOpenBills && (
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="open-bills-title"
+          onClick={() => setShowOpenBills(false)}
+        >
+          <div
+            className="paymodal__dialog"
+            style={{ maxWidth: "600px", maxHeight: "80vh", overflow: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+            role="document"
+          >
+            <header className="paymodal__head">
+              <h3 id="open-bills-title">Open Bills ({openBills.length})</h3>
+              <button
+                className="paymodal__close"
+                aria-label="Close"
+                onClick={() => setShowOpenBills(false)}
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="paymodal__body">
+              {openBills.length === 0 ? (
+                <p style={{ textAlign: "center", padding: "2rem", color: "#666" }}>
+                  No open bills
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {openBills.map((bill) => (
+                    <div
+                      key={bill.orderNumber}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 8,
+                        padding: 16,
+                        background: "#f9fafb",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          marginBottom: 8,
+                        }}
+                      >
+                        <div>
+                          <strong>Order #{bill.orderNumber}</strong>
+                          <div style={{ fontSize: 14, color: "#666", marginTop: 4 }}>
+                            {bill.customerName || "No name"}
+                          </div>
+                          <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>
+                            {new Date(bill.createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <strong style={{ fontSize: 18 }}>
+                            {formatIDR(bill.orderData.totalAmount, {
+                              withDecimals: true,
+                            })}
+                          </strong>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          marginTop: 12,
+                        }}
+                      >
+                        <button
+                          className="btn btn-primary"
+                          style={{ fontSize: 12, padding: "6px 12px" }}
+                          onClick={() => handleReprintKitchen(bill)}
+                          disabled={printBusy === "kitchen"}
+                        >
+                          {printBusy === "kitchen" ? "Printing…" : "Print KOT"}
+                        </button>
+                        <button
+                          className="btn btn-primary"
+                          style={{ fontSize: 12, padding: "6px 12px" }}
+                          onClick={() => handleReprintReceipt(bill)}
+                          disabled={printBusy === "receipt"}
+                        >
+                          {printBusy === "receipt" ? "Printing…" : "Print Receipt"}
+                        </button>
+                        <button
+                          className="btn btn-ghost"
+                          style={{ fontSize: 12, padding: "6px 12px" }}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Delete order #${bill.orderNumber}? This cannot be undone.`
+                              )
+                            ) {
+                              handleDeleteOpenBill(bill.orderNumber);
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <footer className="paymodal__actions">
+              <button
+                className="btn btn-ghost"
+                onClick={() => setShowOpenBills(false)}
+              >
+                Close
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

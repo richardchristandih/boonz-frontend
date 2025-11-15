@@ -34,40 +34,54 @@ export function buildKitchenTicket({
     (showCustomer && customer?.name ? `[L]Cust : ${customer.name}\n` : "") +
     `[C]${divider}\n`;
 
-  const lines = items
-    .map((it) => {
-      const qty = Number(it?.quantity || 0);
-      const name = (it?.name || "Item").toString();
+  // Ensure items array is valid
+  const validItems = Array.isArray(items) ? items.filter(it => it && (Number(it?.quantity) || 0) > 0) : [];
+  
+  const lines = validItems.length > 0
+    ? validItems
+        .map((it) => {
+          const qty = Number(it?.quantity || 0);
+          const name = String(it?.name || "Item").trim();
 
-      // Bold product line
-      let block = `[L]<b>${qty} x ${name}</b>\n`;
+          // Skip if invalid
+          if (qty <= 0 || !name) return "";
 
-      if (includeNotes) {
-        // Standard free-text note (already on your cart items)
-        const baseNote = normalizeNote(it?.note);
+          // Bold product line - ensure it's always printed
+          let block = `[L]<b>${qty} x ${name}</b>\n`;
 
-        // Optional structured options (sugar/ice/toppings) if you stored them
-        const opt = it?.options || {};
-        const sugar = opt?.sugar ? `Sugar: ${opt.sugar}` : "";
-        const ice = opt?.ice ? `Ice: ${opt.ice}` : "";
-        const toppingsArr = Array.isArray(opt?.toppings) ? opt.toppings : [];
-        const toppings =
-          toppingsArr.length > 0 ? `Toppings: ${toppingsArr.join(", ")}` : "";
+          if (includeNotes) {
+            // Standard free-text note (already on your cart items)
+            const baseNote = normalizeNote(it?.note);
 
-        // Combine nicely if present
-        const optionNote = [sugar, ice, toppings].filter(Boolean).join(" | ");
+            // Optional structured options (sugar/ice/toppings) if you stored them
+            const opt = it?.options || {};
+            const sugar = opt?.sugar ? `Sugar: ${opt.sugar}` : "";
+            const ice = opt?.ice ? `Ice: ${opt.ice}` : "";
+            const temperature = opt?.temperature ? `Temp: ${opt.temperature}` : "";
+            const flavor = opt?.flavor ? `Flavor: ${opt.flavor}` : "";
+            const cut = opt?.cut ? `Cut: ${opt.cut}` : "";
+            const toppingsArr = Array.isArray(opt?.toppings) ? opt.toppings : [];
+            const toppings =
+              toppingsArr.length > 0 ? `Toppings: ${toppingsArr.join(", ")}` : "";
 
-        const finalNote = [baseNote, optionNote]
-          .filter(Boolean)
-          .map((x) => normalizeNote(x))
-          .join(" | ");
+            // Combine nicely if present
+            const optionNote = [temperature, sugar, ice, flavor, cut, toppings]
+              .filter(Boolean)
+              .join(" | ");
 
-        if (finalNote) block += `[L]   - ${finalNote}\n`;
-      }
+            const finalNote = [baseNote, optionNote]
+              .filter(Boolean)
+              .map((x) => normalizeNote(x))
+              .join(" | ");
 
-      return block;
-    })
-    .join("");
+            if (finalNote) block += `[L]   - ${finalNote}\n`;
+          }
+
+          return block;
+        })
+        .filter(Boolean) // Remove empty strings
+        .join("")
+    : `[L]No items in order\n`; // Fallback message if no items
 
   const tail = `\n[C]${divider}\n[C]\n\n\n`;
 

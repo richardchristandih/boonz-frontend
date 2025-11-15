@@ -71,7 +71,10 @@ export function buildReceipt({
   subtotal = 0,
   tax = 0,
   service = 0,
+  showTax = false,
+  showService = false,
   discount = 0,
+  discountNote = "",
   total = 0,
   payment,
   orderType,
@@ -92,27 +95,46 @@ export function buildReceipt({
   if (orderType) out += alignLeft() + line(`Type: ${orderType}`);
   out += line("--------------------------------");
 
-  for (const it of items) {
-    const qty = Number(it?.quantity) || 0;
-    const price = Number(it?.price) || 0;
-    const lineTotal = qty * price;
-    const name = it?.name || "";
-    out += alignLeft() + line(name);
-    out +=
-      alignLeft() +
-      line(
-        lr(`  ${qty} x Rp.${price.toFixed(2)}`, `Rp.${lineTotal.toFixed(2)}`, w)
-      );
+  // Ensure items are valid and print them
+  const validItems = Array.isArray(items) ? items.filter(it => it && (Number(it?.quantity) || 0) > 0) : [];
+  
+  if (validItems.length === 0) {
+    out += alignLeft() + line("No items in order");
+  } else {
+    for (const it of validItems) {
+      const qty = Number(it?.quantity) || 0;
+      const price = Number(it?.price) || 0;
+      const lineTotal = qty * price;
+      const name = String(it?.name || "Item").trim();
+      
+      if (qty > 0 && name) {
+        out += alignLeft() + line(name);
+        out +=
+          alignLeft() +
+          line(
+            lr(`  ${qty} x Rp.${price.toFixed(2)}`, `Rp.${lineTotal.toFixed(2)}`, w)
+          );
+      }
+    }
   }
 
   out += line("--------------------------------");
   out += alignLeft() + line(lr("Subtotal", `Rp.${(+subtotal).toFixed(2)}`, w));
-  out += alignLeft() + line(lr("Tax (10%)", `Rp.${(+tax).toFixed(2)}`, w));
-  out +=
-    alignLeft() + line(lr("Service (5%)", `Rp.${(+service).toFixed(2)}`, w));
-  if (+discount > 0)
-    out +=
-      alignLeft() + line(lr("Discount", `-Rp.${(+discount).toFixed(2)}`, w));
+  
+  // Only show tax if enabled and > 0
+  if (showTax && Number(tax) > 0) {
+    out += alignLeft() + line(lr("Tax", `Rp.${(+tax).toFixed(2)}`, w));
+  }
+  
+  // Only show service if enabled and > 0
+  if (showService && Number(service) > 0) {
+    out += alignLeft() + line(lr("Service", `Rp.${(+service).toFixed(2)}`, w));
+  }
+  
+  if (+discount > 0) {
+    const discountLabel = discountNote ? `Discount (${discountNote})` : "Discount";
+    out += alignLeft() + line(lr(discountLabel, `-Rp.${(+discount).toFixed(2)}`, w));
+  }
 
   out += line("--------------------------------");
   out +=
@@ -122,12 +144,11 @@ export function buildReceipt({
     boldOff();
   if (payment) out += alignLeft() + line(`Payment: ${payment}`);
 
-  // Thank you line WITHOUT an extra blank line before it
+  // Thank you line
   out += line("Terima kasih!");
 
-  // Keep tail short & consistent with kitchen ticket:
-  // feed just 2 lines, then do a zero-feed partial cut.
-  out += feed(2);
+  // Reduced white space - match kitchen receipt (just 1 line feed, then cut)
+  out += feed(1);
   out += cut(0, "partial");
 
   return out;
