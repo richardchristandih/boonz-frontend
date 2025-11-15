@@ -949,7 +949,6 @@ export default function MenuLayout() {
         openSodaCustomize(product);
         return;
       }
-
       if (DRINK_CATEGORIES.includes(product.category)) {
         openCustomize(product);
         return;
