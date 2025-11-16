@@ -209,12 +209,46 @@ export default function Orders() {
     return orders.filter((o) => new Date(o.createdAt) >= from);
   }, [orders, timeRangeLabel, customFrom, customTo]);
 
-  // ✅ Summary stats for filtered list
-  const totalTransactions = filteredOrders.length;
-  const totalRevenue = filteredOrders.reduce(
+  // ✅ Summary stats for filtered list (exclude cancelled and refunded orders)
+  const validOrders = filteredOrders.filter(
+    (order) =>
+      order.status !== "cancelled" && order.status !== "refunded"
+  );
+  
+  const totalTransactions = validOrders.length;
+  const cancelledCount = filteredOrders.filter(
+    (order) => order.status === "cancelled"
+  ).length;
+  const refundedCount = filteredOrders.filter(
+    (order) => order.status === "refunded"
+  ).length;
+  
+  // Detailed revenue breakdown (only for valid orders - exclude cancelled/refunded)
+  const totalSubtotal = validOrders.reduce(
+    (acc, order) => acc + (Number(order.subtotal) || 0),
+    0
+  );
+  const totalTax = validOrders.reduce(
+    (acc, order) => acc + (Number(order.tax) || 0),
+    0
+  );
+  const totalService = validOrders.reduce(
+    (acc, order) => acc + (Number(order.serviceCharge) || 0),
+    0
+  );
+  const totalDiscount = validOrders.reduce(
+    (acc, order) => acc + (Number(order.discount) || 0),
+    0
+  );
+  // Net revenue = Subtotal + Tax + Service - Discount
+  // Using totalAmount from orders (which should already be calculated correctly)
+  const totalRevenue = validOrders.reduce(
     (acc, order) => acc + (Number(order.totalAmount) || 0),
     0
   );
+  
+  // Calculate average order value
+  const averageOrder = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
 
   const handleCancelOrder = async (orderId) => {
     const ok =
@@ -529,13 +563,92 @@ export default function Orders() {
 
         <div className="orders-summary">
           <div className="summary-item">
-            <strong>Transactions:</strong> {loading ? "…" : totalTransactions}
+            <strong>Valid Transactions:</strong> {loading ? "…" : totalTransactions}
           </div>
+          {cancelledCount > 0 && (
+            <div className="summary-item" style={{ color: "#b71c1c" }}>
+              <strong>Cancelled:</strong> {cancelledCount}
+            </div>
+          )}
+          {refundedCount > 0 && (
+            <div className="summary-item" style={{ color: "#f57c00" }}>
+              <strong>Refunded:</strong> {refundedCount}
+            </div>
+          )}
           {/* 👇 Hide Revenue for non-admin users */}
           {isAdmin && (
-            <div className="summary-item">
-              <strong>Revenue:</strong> {loading ? "…" : fmtRp(totalRevenue)}
-            </div>
+            <>
+              <div className="summary-item">
+                <strong>Total Revenue:</strong> {loading ? "…" : fmtRp(totalRevenue)}
+              </div>
+              <details style={{ marginTop: 8, cursor: "pointer" }}>
+                <summary style={{ fontWeight: 600, color: "#666" }}>
+                  Revenue Details
+                </summary>
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: 12,
+                    background: "#f9fafb",
+                    borderRadius: 6,
+                    fontSize: 14,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span>Subtotal:</span>
+                    <strong>{fmtRp(totalSubtotal)}</strong>
+                  </div>
+                  {totalTax > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span>Tax:</span>
+                      <strong>{fmtRp(totalTax)}</strong>
+                    </div>
+                  )}
+                  {totalService > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span>Service Charge:</span>
+                      <strong>{fmtRp(totalService)}</strong>
+                    </div>
+                  )}
+                  {totalDiscount > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, color: "#b71c1c" }}>
+                      <span>Total Discount:</span>
+                      <strong>-{fmtRp(totalDiscount)}</strong>
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginTop: 8,
+                      paddingTop: 8,
+                      borderTop: "1px solid #e5e7eb",
+                      fontWeight: 600,
+                      fontSize: 16,
+                    }}
+                  >
+                    <span>Net Revenue:</span>
+                    <strong style={{ color: "#059669" }}>{fmtRp(totalRevenue)}</strong>
+                  </div>
+                  {totalTransactions > 0 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginTop: 8,
+                        paddingTop: 8,
+                        borderTop: "1px solid #e5e7eb",
+                        fontSize: 14,
+                        color: "#666",
+                      }}
+                    >
+                      <span>Average per Order:</span>
+                      <strong>{fmtRp(averageOrder)}</strong>
+                    </div>
+                  )}
+                </div>
+              </details>
+            </>
           )}
         </div>
       </div>

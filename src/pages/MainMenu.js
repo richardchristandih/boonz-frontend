@@ -312,7 +312,8 @@ export default function MenuLayout() {
   /* ---- Open Bill Feature ---- */
   const [openBills, setOpenBills] = useState([]); // Array of unpaid orders
   const [showOpenBills, setShowOpenBills] = useState(false);
-  
+  const [editingOpenBill, setEditingOpenBill] = useState(null); // Currently editing open bill order number
+
   // Load open bills from localStorage on mount
   useEffect(() => {
     try {
@@ -1047,7 +1048,7 @@ export default function MenuLayout() {
     setCheckoutCustomerName(customerName || user?.name || "");
     setShowCustomerNameDialog(true);
   }, [cart.length, customerName, user?.name]);
-  
+
   const handleCustomerNameConfirm = useCallback(() => {
     setCustomerName(checkoutCustomerName);
     setShowCustomerNameDialog(false);
@@ -1057,13 +1058,17 @@ export default function MenuLayout() {
   const finishOrder = (newOrderNumber) => {
     setShowPaymentModal(false);
     setMobileCartOpen(false);
-    setCart([]);
-    setSelectedPromoId("");
-    setDiscountMode("promo");
-    setDiscountValue("0");
-    setDiscountNote("");
-    setDiscountType("flat");
+    // Only clear cart if not editing an open bill
+    if (!editingOpenBill) {
+      setCart([]);
+      setSelectedPromoId("");
+      setDiscountMode("promo");
+      setDiscountValue("0");
+      setDiscountNote("");
+      setDiscountType("flat");
+    }
     setSelectedPaymentMethod("");
+    setEditingOpenBill(null);
     show(`Order #${newOrderNumber} placed successfully!`, {
       type: "success",
       ttl: 5000,
@@ -1105,7 +1110,7 @@ export default function MenuLayout() {
 
     // Check if this is an open bill (unpaid)
     const isOpenBill = selectedPaymentMethod === "Open Bill";
-    
+
     const orderData = {
       products: cart.map((item) => ({
         productId: item._id || item.id || item.sku,
@@ -1141,37 +1146,135 @@ export default function MenuLayout() {
 
     try {
       let newOrderNumber;
-      
+
       if (isOpenBill) {
-        // Save as open bill locally (don't send to server yet)
-        newOrderNumber = `OPEN-${Date.now()}`;
-        const openBill = {
-          orderNumber: newOrderNumber,
-          orderData,
-          customerName: customerName || user?.name || "",
-          createdAt: new Date().toISOString(),
-          kotText: null, // Will be generated when needed
-          receiptText: null,
-          logoDataUrl: null,
-        };
-        setOpenBills((prev) => [...prev, openBill]);
-        show(`Order #${newOrderNumber} saved as open bill!`, {
-          type: "success",
-          ttl: 3000,
-        });
+        // Check if we're updating an existing open bill
+        if (editingOpenBill) {
+          // Update existing open bill
+          const existingBill = openBills.find(
+            (b) => b.orderNumber === editingOpenBill
+          );
+          if (existingBill) {
+            // Merge the old and new items
+            const existingProducts = existingBill.orderData.products || [];
+            const newProducts = orderData.products || [];
+
+            // Combine products (add quantities if same product, otherwise append)
+            const productMap = new Map();
+
+            // Add existing products
+            existingProducts.forEach((p) => {
+              const key = p.productId || p.name;
+              productMap.set(key, { ...p });
+            });
+
+            // Add/merge new products
+            newProducts.forEach((p) => {
+              const key = p.productId || p.name;
+              if (productMap.has(key)) {
+                // Same product - add quantities
+                const existing = productMap.get(key);
+                existing.quantity =
+                  (Number(existing.quantity) || 0) + (Number(p.quantity) || 0);
+              } else {
+                // New product
+                productMap.set(key, { ...p });
+              }
+            });
+
+            const mergedProducts = Array.from(productMap.values());
+            const mergedSubtotal = mergedProducts.reduce(
+              (sum, p) =>
+                sum + (Number(p.price) || 0) * (Number(p.quantity) || 0),
+              0
+            );
+            const mergedTax = taxEnabled ? mergedSubtotal * taxRate : 0;
+            const mergedService = serviceEnabled
+              ? mergedSubtotal * serviceRate
+              : 0;
+            const mergedTotal = Math.max(
+              0,
+              mergedSubtotal + mergedTax + mergedService - discount
+            );
+
+            const updatedOrderData = {
+              ...orderData,
+              products: mergedProducts,
+              subtotal: mergedSubtotal,
+              tax: mergedTax,
+              serviceCharge: mergedService,
+              totalAmount: mergedTotal,
+            };
+
+            setOpenBills((prev) =>
+              prev.map((bill) =>
+                bill.orderNumber === editingOpenBill
+                  ? {
+                      ...bill,
+                      orderData: updatedOrderData,
+                      customerName: customerName || bill.customerName || "",
+                      updatedAt: new Date().toISOString(),
+                    }
+                  : bill
+              )
+            );
+
+            newOrderNumber = editingOpenBill;
+            setEditingOpenBill(null);
+            show(`Order #${newOrderNumber} updated!`, {
+              type: "success",
+              ttl: 3000,
+            });
+          } else {
+            // Bill not found, create new one
+            newOrderNumber = `OPEN-${Date.now()}`;
+            const openBill = {
+              orderNumber: newOrderNumber,
+              orderData,
+              customerName: customerName || user?.name || "",
+              createdAt: new Date().toISOString(),
+              kotText: null,
+              receiptText: null,
+              logoDataUrl: null,
+            };
+            setOpenBills((prev) => [...prev, openBill]);
+            show(`Order #${newOrderNumber} saved as open bill!`, {
+              type: "success",
+              ttl: 3000,
+            });
+          }
+        } else {
+          // Create new open bill
+          newOrderNumber = `OPEN-${Date.now()}`;
+          const openBill = {
+            orderNumber: newOrderNumber,
+            orderData,
+            customerName: customerName || user?.name || "",
+            createdAt: new Date().toISOString(),
+            kotText: null, // Will be generated when needed
+            receiptText: null,
+            logoDataUrl: null,
+          };
+          setOpenBills((prev) => [...prev, openBill]);
+          show(`Order #${newOrderNumber} saved as open bill!`, {
+            type: "success",
+            ttl: 3000,
+          });
+        }
       } else {
         // Normal paid order - send to server
         const response = await api.post("/orders", orderData);
         newOrderNumber = response.data?.orderNumber;
       }
-      
+
       setOrderNumber(newOrderNumber);
 
       // Build printable strings but DO NOT print yet
       const dateStr = new Date().toLocaleString();
 
       // Always use customerName if provided, otherwise fall back to user name
-      const printedCustomerName = (customerName || "").trim() || user?.name || "";
+      const printedCustomerName =
+        (customerName || "").trim() || user?.name || "";
 
       // Ensure items have all required fields for kitchen ticket
       const kitchenItems = (orderData.products || []).map((it) => ({
@@ -1247,6 +1350,8 @@ export default function MenuLayout() {
           )
         );
         // Don't show print dialog for open bills - they can print later
+        // Clear editing state
+        setEditingOpenBill(null);
         finishOrder(newOrderNumber);
         return;
       }
@@ -1621,8 +1726,62 @@ export default function MenuLayout() {
   }
 
   function handleDeleteOpenBill(orderNumber) {
-    setOpenBills((prev) => prev.filter((bill) => bill.orderNumber !== orderNumber));
+    setOpenBills((prev) =>
+      prev.filter((bill) => bill.orderNumber !== orderNumber)
+    );
+    if (editingOpenBill === orderNumber) {
+      setEditingOpenBill(null);
+    }
     show("Open bill deleted.", { type: "success" });
+  }
+
+  function handleLoadOpenBillToCart(bill) {
+    // Load the open bill's products back into the cart
+    const itemsToLoad = (bill.orderData.products || []).map(
+      (product, index) => {
+        // Reconstruct cart item from order product
+        // Use productId as base, but ensure unique ID for cart
+        const baseId = product.productId || product.name || `item-${index}`;
+        return {
+          _id: baseId,
+          id: `${baseId}-${Date.now()}-${index}`, // Ensure unique ID
+          name: product.name,
+          price: Number(product.price || 0),
+          quantity: Number(product.quantity || 0),
+          note: product.note || "",
+          options: product.options || {},
+        };
+      }
+    );
+
+    setCart(itemsToLoad);
+    setCustomerName(bill.customerName || "");
+    setOrderType(bill.orderData.orderType || "Delivery");
+
+    // Set discount if exists
+    if (bill.orderData.discount > 0) {
+      setDiscountMode(bill.orderData.discountMode || "custom");
+      if (bill.orderData.discountMode === "promo") {
+        setSelectedPromoId(bill.orderData.promoId || "");
+      } else {
+        // Calculate discount value from discount amount
+        const discountValue = bill.orderData.discount;
+        setDiscountValue(String(discountValue));
+        setDiscountType("flat");
+      }
+      setDiscountNote(bill.orderData.discountNote || "");
+    }
+
+    // Mark this open bill as being edited
+    setEditingOpenBill(bill.orderNumber);
+
+    // Close the open bills modal
+    setShowOpenBills(false);
+
+    show(`Loaded order #${bill.orderNumber} to cart. You can add more items.`, {
+      type: "success",
+      ttl: 3000,
+    });
   }
 
   // discount modal controls
@@ -1715,7 +1874,9 @@ export default function MenuLayout() {
               <button
                 className="icon-btn"
                 aria-label="Open Bills"
-                title={`${openBills.length} Open Bill${openBills.length > 1 ? "s" : ""}`}
+                title={`${openBills.length} Open Bill${
+                  openBills.length > 1 ? "s" : ""
+                }`}
                 onClick={() => setShowOpenBills(true)}
                 style={{ position: "relative" }}
               >
@@ -2067,7 +2228,16 @@ export default function MenuLayout() {
         <div className="cart-header">
           <h3>Cart</h3>
           <p className="cart-order-id">
-            Order #{orderNumber ? orderNumber : "Pending"}
+            {editingOpenBill ? (
+              <>
+                Editing: Order #{editingOpenBill}
+                <span style={{ fontSize: 12, color: "#3b82f6", marginLeft: 8 }}>
+                  (Add more items)
+                </span>
+              </>
+            ) : (
+              <>Order #{orderNumber ? orderNumber : "Pending"}</>
+            )}
           </p>
         </div>
 
@@ -3148,11 +3318,19 @@ export default function MenuLayout() {
 
             <div className="paymodal__body">
               {openBills.length === 0 ? (
-                <p style={{ textAlign: "center", padding: "2rem", color: "#666" }}>
+                <p
+                  style={{
+                    textAlign: "center",
+                    padding: "2rem",
+                    color: "#666",
+                  }}
+                >
                   No open bills
                 </p>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                >
                   {openBills.map((bill) => (
                     <div
                       key={bill.orderNumber}
@@ -3173,12 +3351,45 @@ export default function MenuLayout() {
                       >
                         <div>
                           <strong>Order #{bill.orderNumber}</strong>
-                          <div style={{ fontSize: 14, color: "#666", marginTop: 4 }}>
-                            {bill.customerName || "No name"}
+                          <div
+                            style={{
+                              fontSize: 14,
+                              color: "#666",
+                              marginTop: 4,
+                              fontWeight: 500,
+                            }}
+                          >
+                            Customer: {bill.customerName || "No name"}
                           </div>
-                          <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "#999",
+                              marginTop: 2,
+                            }}
+                          >
                             {new Date(bill.createdAt).toLocaleString()}
+                            {bill.updatedAt && (
+                              <span
+                                style={{ marginLeft: 8, fontStyle: "italic" }}
+                              >
+                                (Updated:{" "}
+                                {new Date(bill.updatedAt).toLocaleString()})
+                              </span>
+                            )}
                           </div>
+                          {editingOpenBill === bill.orderNumber && (
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: "#3b82f6",
+                                marginTop: 4,
+                                fontWeight: 500,
+                              }}
+                            >
+                              Currently editing...
+                            </div>
+                          )}
                         </div>
                         <div style={{ textAlign: "right" }}>
                           <strong style={{ fontSize: 18 }}>
@@ -3198,6 +3409,24 @@ export default function MenuLayout() {
                       >
                         <button
                           className="btn btn-primary"
+                          style={{
+                            fontSize: 12,
+                            padding: "6px 12px",
+                            fontWeight: 600,
+                          }}
+                          onClick={() => handleLoadOpenBillToCart(bill)}
+                          disabled={
+                            !!editingOpenBill &&
+                            editingOpenBill !== bill.orderNumber
+                          }
+                          title="Load this order to cart and add more items"
+                        >
+                          {editingOpenBill === bill.orderNumber
+                            ? "Currently Editing"
+                            : "Add Items"}
+                        </button>
+                        <button
+                          className="btn btn-primary"
                           style={{ fontSize: 12, padding: "6px 12px" }}
                           onClick={() => handleReprintKitchen(bill)}
                           disabled={printBusy === "kitchen"}
@@ -3210,7 +3439,9 @@ export default function MenuLayout() {
                           onClick={() => handleReprintReceipt(bill)}
                           disabled={printBusy === "receipt"}
                         >
-                          {printBusy === "receipt" ? "Printing…" : "Print Receipt"}
+                          {printBusy === "receipt"
+                            ? "Printing…"
+                            : "Print Receipt"}
                         </button>
                         <button
                           className="btn btn-ghost"
