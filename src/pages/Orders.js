@@ -5,6 +5,17 @@ import api from "../services/api";
 import "./Orders.css";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmDialog";
+import { buildKitchenTicket } from "../kitchenReceipt";
+import { buildReceipt } from "../receipt";
+import { printRaw, listPrinters } from "../utils/qzHelper";
+import {
+  isAndroidBridge,
+  androidListPrintersDetailed,
+  androidPrintWithRetry,
+  androidIsBtOn,
+  androidPrintLogoAndText,
+} from "../utils/androidBridge";
+import appLogo from "../images/logo.jpg";
 
 /* ========= Helpers ========= */
 const timeRangeMapping = {
@@ -27,6 +38,52 @@ function fmtRp(n) {
     maximumFractionDigits: 2,
   })}`;
 }
+
+// Helper functions for printing
+const toStr = (v) => (v == null ? "" : String(v));
+
+function normalizeNote(raw, max = 140) {
+  const s = toStr(raw)
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
+
+async function toDataUrl(url) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return await new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+}
+
+function extractBtAddress(val) {
+  const s = String(val || "");
+  const m = s.match(/\(([^)]+)\)\s*$/);
+  return (m && m[1]) || s;
+}
+
+function getPrinterPrefs() {
+  return {
+    receiptName: localStorage.getItem("printer.receipt") || "",
+    kitchenName: localStorage.getItem("printer.kitchen") || "",
+    receiptCopies: Math.max(
+      1,
+      Number(localStorage.getItem("printer.receiptCopies")) || 1
+    ),
+    kitchenCopies: Math.max(
+      1,
+      Number(localStorage.getItem("printer.kitchenCopies")) || 1
+    ),
+  };
+}
+
+const RECEIPT_PRINTER_HINT = /RPP02N/i;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ========= Skeletons ========= */
 function SkeletonOrderCard() {
@@ -74,6 +131,7 @@ export default function Orders() {
   const [fetchErr, setFetchErr] = useState("");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [printBusy, setPrintBusy] = useState(""); // "", "kitchen", "receipt"
 
   // --- Detect role (admin vs user) ---
   const [isAdmin, setIsAdmin] = useState(false);
@@ -130,9 +188,17 @@ export default function Orders() {
 
     const now = new Date();
     if (timeRangeLabel === "today") {
+      // Use local timezone to ensure correct day boundary
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
-      return orders.filter((o) => new Date(o.createdAt) >= startOfToday);
+      const endOfToday = new Date(startOfToday);
+      endOfToday.setHours(23, 59, 59, 999);
+      
+      return orders.filter((o) => {
+        const created = new Date(o.createdAt);
+        // Ensure we're comparing dates in the same timezone
+        return created >= startOfToday && created <= endOfToday;
+      });
     }
 
     const days = timeRangeMapping[timeRangeLabel];
@@ -212,6 +278,195 @@ export default function Orders() {
       show("There was an error processing the refund.", { type: "error" });
     }
   };
+
+  // Reprint functions
+  async function handlePrintKitchen(kotText) {
+    if (!kotText) return;
+    try {
+      setPrintBusy("kitchen");
+
+      if (isAndroidBridge()) {
+        if (!androidIsBtOn()) {
+          show("⚠️ Bluetooth is OFF. Please enable it and try again.", {
+            type: "error",
+            ttl: 5000,
+          });
+          return;
+        }
+        const paired = androidListPrintersDetailed();
+        const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
+        const kitchenTarget =
+          extractBtAddress(localStorage.getItem("printer.kitchen")) ||
+          fallbackAddr;
+
+        const { kitchenCopies } = getPrinterPrefs();
+        for (let i = 0; i < kitchenCopies; i++) {
+          await androidPrintWithRetry(kotText, {
+            address: kitchenTarget,
+            nameLike: kitchenTarget,
+            copies: 1,
+            tries: 3,
+            baseDelay: 500,
+          });
+        }
+        if (kitchenCopies > 1) {
+          await sleep(1000);
+        }
+        show("Kitchen ticket sent.", { type: "success" });
+        return;
+      }
+
+      // Desktop / QZ (fallback)
+      const printers = await listPrinters();
+      if (!Array.isArray(printers) || printers.length === 0)
+        throw new Error("No printers found (QZ).");
+
+      const preferred =
+        printers.find((p) => RECEIPT_PRINTER_HINT.test(p)) || printers[0];
+
+      await printRaw(preferred, kotText);
+      show("Kitchen ticket printed.", { type: "success" });
+    } catch (err) {
+      console.error(err);
+      show("Failed to print kitchen ticket: " + (err?.message || "Unknown"), {
+        type: "error",
+      });
+    } finally {
+      setPrintBusy("");
+    }
+  }
+
+  async function handlePrintReceipt(receiptText, logoDataUrl) {
+    if (!receiptText) return;
+    try {
+      setPrintBusy("receipt");
+
+      if (isAndroidBridge()) {
+        if (!androidIsBtOn()) {
+          show("⚠️ Bluetooth is OFF. Please enable it and try again.", {
+            type: "error",
+            ttl: 5000,
+          });
+          return;
+        }
+        const paired = androidListPrintersDetailed();
+        const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
+        const receiptTarget =
+          extractBtAddress(localStorage.getItem("printer.receipt")) ||
+          fallbackAddr;
+
+        const { receiptCopies } = getPrinterPrefs();
+        for (let i = 0; i < receiptCopies; i++) {
+          const res = await androidPrintLogoAndText(logoDataUrl, receiptText, {
+            address: receiptTarget,
+            nameLike: receiptTarget,
+          });
+          if (!res?.text) {
+            await androidPrintWithRetry(receiptText + "\n\n\n", {
+              address: receiptTarget,
+              nameLike: receiptTarget,
+              copies: 1,
+              tries: 3,
+              baseDelay: 500,
+            });
+          } else {
+            await sleep(800);
+          }
+        }
+        show("Receipt sent.", { type: "success" });
+        return;
+      }
+
+      // Desktop / QZ (fallback)
+      const printers = await listPrinters();
+      if (!Array.isArray(printers) || printers.length === 0)
+        throw new Error("No printers found (QZ).");
+
+      const preferred =
+        printers.find((p) => RECEIPT_PRINTER_HINT.test(p)) || printers[0];
+
+      await printRaw(preferred, receiptText);
+      show("Receipt printed.", { type: "success" });
+    } catch (err) {
+      console.error(err);
+      show("Failed to print receipt: " + (err?.message || "Unknown"), {
+        type: "error",
+      });
+    } finally {
+      setPrintBusy("");
+    }
+  }
+
+  async function handleReprintKitchen(order) {
+    try {
+      const dateStr = new Date(order.createdAt).toLocaleString();
+      const kitchenItems = (order.products || []).map((it) => ({
+        name: it.name || "Item",
+        quantity: Number(it.quantity) || 0,
+        note: normalizeNote(it.note),
+        options: it.options || {},
+      }));
+
+      const kotText = buildKitchenTicket({
+        orderNumber: order.orderNumber || "N/A",
+        dateStr,
+        orderType: order.orderType,
+        items: kitchenItems,
+        customer: { name: order.customerName || "" },
+      });
+
+      await handlePrintKitchen(kotText);
+    } catch (error) {
+      console.error("Error reprinting kitchen ticket:", error);
+      show("Failed to reprint kitchen ticket.", { type: "error" });
+    }
+  }
+
+  async function handleReprintReceipt(order) {
+    try {
+      const dateStr = new Date(order.createdAt).toLocaleString();
+      const itemsForReceipt = (order.products || []).map((it) => {
+        const n = normalizeNote(it.note);
+        return {
+          ...it,
+          name: n ? `${it.name} [${n}]` : it.name,
+        };
+      });
+
+      // Get tax/service settings (simplified - you might want to fetch from API)
+      const taxEnabled = true; // Default, adjust as needed
+      const serviceEnabled = true; // Default, adjust as needed
+
+      const receiptText = buildReceipt({
+        address: "Jl. Mekar Utama No. 61, Bandung",
+        orderNumber: order.orderNumber || "N/A",
+        dateStr,
+        items: itemsForReceipt,
+        subtotal: order.subtotal || 0,
+        tax: order.tax || 0,
+        service: order.serviceCharge || 0,
+        showTax: taxEnabled && Number(order.tax) > 0,
+        showService: serviceEnabled && Number(order.serviceCharge) > 0,
+        discount: order.discount || 0,
+        total: order.totalAmount || 0,
+        payment: order.paymentMethod,
+        orderType: order.orderType,
+        customer: { name: order.customerName || "" },
+        discountNote: order.discountNote || "",
+      }).replace(/^[\s\r\n]+/, "");
+
+      const logoPref = localStorage.getItem("print.logo") || appLogo;
+      const logoDataUrl =
+        typeof logoPref === "string" && logoPref.startsWith("data:")
+          ? logoPref
+          : await toDataUrl(logoPref);
+
+      await handlePrintReceipt(receiptText, logoDataUrl);
+    } catch (error) {
+      console.error("Error reprinting receipt:", error);
+      show("Failed to reprint receipt.", { type: "error" });
+    }
+  }
 
   return (
     <div className="orders-page">
@@ -392,13 +647,33 @@ export default function Orders() {
                   )}
 
                   {/* DONE actions */}
-                  {status === "done" && isAdmin && (
-                    <button
-                      className="btn warn"
-                      onClick={() => handleRefundOrder(order._id)}
-                    >
-                      Refund
-                    </button>
+                  {status === "done" && (
+                    <>
+                      <button
+                        className="btn primary"
+                        onClick={() => handleReprintKitchen(order)}
+                        disabled={printBusy === "kitchen"}
+                        title="Reprint Kitchen Ticket"
+                      >
+                        {printBusy === "kitchen" ? "Printing…" : "Print KOT"}
+                      </button>
+                      <button
+                        className="btn primary"
+                        onClick={() => handleReprintReceipt(order)}
+                        disabled={printBusy === "receipt"}
+                        title="Reprint Customer Receipt"
+                      >
+                        {printBusy === "receipt" ? "Printing…" : "Print Receipt"}
+                      </button>
+                      {isAdmin && (
+                        <button
+                          className="btn warn"
+                          onClick={() => handleRefundOrder(order._id)}
+                        >
+                          Refund
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

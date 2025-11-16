@@ -1132,7 +1132,8 @@ export default function MenuLayout() {
       customerEmail: wantEmailReceipt
         ? (customerEmail || "").trim()
         : undefined,
-      customerName: wantEmailReceipt ? (customerName || "").trim() : undefined,
+      // Always save customer name if provided (not just for email receipts)
+      customerName: (customerName || "").trim() || undefined,
 
       // Optional logo for email template
       logoUrl: appLogo,
@@ -1169,8 +1170,8 @@ export default function MenuLayout() {
       // Build printable strings but DO NOT print yet
       const dateStr = new Date().toLocaleString();
 
-      const printedCustomerName =
-        (wantEmailReceipt && (customerName || "").trim()) || user?.name || "";
+      // Always use customerName if provided, otherwise fall back to user name
+      const printedCustomerName = (customerName || "").trim() || user?.name || "";
 
       // Ensure items have all required fields for kitchen ticket
       const kitchenItems = (orderData.products || []).map((it) => ({
