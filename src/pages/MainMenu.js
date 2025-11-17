@@ -1154,7 +1154,7 @@ export default function MenuLayout() {
           const existingBill = openBills.find(
             (b) => b.orderNumber === editingOpenBill
           );
-          if (existingBill) {
+          if (existingBill && existingBill.orderId) {
             // Merge the old and new items
             const existingProducts = existingBill.orderData.products || [];
             const newProducts = orderData.products || [];
@@ -1206,6 +1206,21 @@ export default function MenuLayout() {
               totalAmount: mergedTotal,
             };
 
+            // Update the existing order in backend
+            try {
+              await api.patch(`/orders/${existingBill.orderId}`, {
+                products: updatedOrderData.products,
+                subtotal: updatedOrderData.subtotal,
+                tax: updatedOrderData.tax,
+                serviceCharge: updatedOrderData.serviceCharge,
+                discount: updatedOrderData.discount,
+                totalAmount: updatedOrderData.totalAmount,
+                customerName: customerName || existingBill.customerName || "",
+              });
+            } catch (err) {
+              console.warn("Failed to update order in backend:", err);
+            }
+
             setOpenBills((prev) =>
               prev.map((bill) =>
                 bill.orderNumber === editingOpenBill
@@ -1219,15 +1234,66 @@ export default function MenuLayout() {
               )
             );
 
-            newOrderNumber = editingOpenBill;
+            newOrderNumber = editingOpenBill; // Keep the same order number
             setEditingOpenBill(null);
             show(`Order #${newOrderNumber} updated!`, {
               type: "success",
               ttl: 3000,
             });
           } else {
-            // Bill not found, create new one
-            newOrderNumber = `OPEN-${Date.now()}`;
+            // Bill not found or no orderId, create new one
+            const response = await api.post("/orders", {
+              ...orderData,
+              paymentMethod: "Open Bill",
+              status: "pending",
+            });
+            newOrderNumber = response.data?.orderNumber;
+            const openBill = {
+              orderNumber: newOrderNumber,
+              orderData,
+              customerName: customerName || user?.name || "",
+              createdAt: new Date().toISOString(),
+              kotText: null,
+              receiptText: null,
+              logoDataUrl: null,
+              orderId: response.data._id,
+            };
+            setOpenBills((prev) => [...prev, openBill]);
+            show(`Order #${newOrderNumber} saved as open bill!`, {
+              type: "success",
+              ttl: 3000,
+            });
+          }
+        } else {
+          // Create new open bill - create order in backend to get proper order number
+          try {
+            const response = await api.post("/orders", {
+              ...orderData,
+              paymentMethod: "Open Bill", // Mark as open bill
+              status: "pending", // Keep as pending until paid
+            });
+            newOrderNumber = response.data?.orderNumber;
+            const openBill = {
+              orderNumber: newOrderNumber,
+              orderData,
+              customerName: customerName || user?.name || "",
+              createdAt: new Date().toISOString(),
+              kotText: null, // Will be generated when needed
+              receiptText: null,
+              logoDataUrl: null,
+              orderId: response.data._id, // Store order ID for future updates
+            };
+            setOpenBills((prev) => [...prev, openBill]);
+            show(`Order #${newOrderNumber} saved as open bill!`, {
+              type: "success",
+              ttl: 3000,
+            });
+          } catch (apiError) {
+            // If API call fails, fall back to local storage only
+            console.warn("Failed to create order in backend, saving locally only:", apiError);
+            // Generate a temporary order number (will be replaced when order is paid)
+            const tempOrderNumber = `TEMP-${Date.now()}`;
+            newOrderNumber = tempOrderNumber;
             const openBill = {
               orderNumber: newOrderNumber,
               orderData,
@@ -1238,28 +1304,11 @@ export default function MenuLayout() {
               logoDataUrl: null,
             };
             setOpenBills((prev) => [...prev, openBill]);
-            show(`Order #${newOrderNumber} saved as open bill!`, {
-              type: "success",
+            show(`Order saved as open bill (local only).`, {
+              type: "warning",
               ttl: 3000,
             });
           }
-        } else {
-          // Create new open bill
-          newOrderNumber = `OPEN-${Date.now()}`;
-          const openBill = {
-            orderNumber: newOrderNumber,
-            orderData,
-            customerName: customerName || user?.name || "",
-            createdAt: new Date().toISOString(),
-            kotText: null, // Will be generated when needed
-            receiptText: null,
-            logoDataUrl: null,
-          };
-          setOpenBills((prev) => [...prev, openBill]);
-          show(`Order #${newOrderNumber} saved as open bill!`, {
-            type: "success",
-            ttl: 3000,
-          });
         }
       } else {
         // Normal paid order - send to server
@@ -1725,15 +1774,39 @@ export default function MenuLayout() {
     }
   }
 
-  function handleDeleteOpenBill(orderNumber) {
-    setOpenBills((prev) =>
-      prev.filter((bill) => bill.orderNumber !== orderNumber)
-    );
-    if (editingOpenBill === orderNumber) {
-      setEditingOpenBill(null);
+  const handleDeleteOpenBill = useCallback(async (bill) => {
+    const ok = await confirm({
+      title: "Delete open bill?",
+      message: `Are you sure you want to delete order #${bill.orderNumber}? This cannot be undone.`,
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      danger: true,
+    });
+    
+    if (!ok) return;
+
+    try {
+      // If order exists in backend, cancel it
+      if (bill.orderId) {
+        try {
+          await api.patch(`/orders/${bill.orderId}`, { status: "cancelled" });
+        } catch (err) {
+          console.warn("Failed to cancel order in backend:", err);
+        }
+      }
+      
+      setOpenBills((prev) =>
+        prev.filter((b) => b.orderNumber !== bill.orderNumber)
+      );
+      if (editingOpenBill === bill.orderNumber) {
+        setEditingOpenBill(null);
+      }
+      show("Open bill deleted.", { type: "success" });
+    } catch (error) {
+      console.error("Error deleting open bill:", error);
+      show("Failed to delete open bill.", { type: "error" });
     }
-    show("Open bill deleted.", { type: "success" });
-  }
+  }, [editingOpenBill, confirm]);
 
   function handleLoadOpenBillToCart(bill) {
     // Load the open bill's products back into the cart
@@ -3446,15 +3519,7 @@ export default function MenuLayout() {
                         <button
                           className="btn btn-ghost"
                           style={{ fontSize: 12, padding: "6px 12px" }}
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                `Delete order #${bill.orderNumber}? This cannot be undone.`
-                              )
-                            ) {
-                              handleDeleteOpenBill(bill.orderNumber);
-                            }
-                          }}
+                          onClick={() => handleDeleteOpenBill(bill)}
                         >
                           Delete
                         </button>
