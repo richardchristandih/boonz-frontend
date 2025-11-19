@@ -113,6 +113,22 @@ const LayoutGrid = () => (
     />
   </svg>
 );
+const Package = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    />
+    <path
+      d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    />
+  </svg>
+);
 
 /* ---------- Component ---------- */
 export default function Sidebar({
@@ -274,6 +290,14 @@ export default function Sidebar({
         >
           <Bag />
           <span>Orders</span>
+        </NavLink>
+
+        <NavLink
+          to="/inventory"
+          className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
+        >
+          <Package />
+          <span>Inventory</span>
         </NavLink>
 
         <NavLink

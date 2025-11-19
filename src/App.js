@@ -16,6 +16,7 @@ import Dashboard from "./pages/Dashboard";
 import ProductPage from "./pages/ProductPage";
 import PrinterTest from "./components/PrinterTest";
 import Settings from "./pages/Settings";
+import Inventory from "./pages/Inventory";
 
 // NEW: admin-only Categories page
 import CategoriesPage from "./pages/Categories";
@@ -45,6 +46,7 @@ function App() {
             <Route path="/product-page" element={<ProductPage />} />
             <Route path="/printer-test" element={<PrinterTest />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/inventory" element={<Inventory />} />
             <Route path="/menu" element={<PublicMenu />} />
 
             {/* Auth routes */}
