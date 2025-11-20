@@ -132,6 +132,11 @@ export default function Orders() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [printBusy, setPrintBusy] = useState(""); // "", "kitchen", "receipt"
+  const [showSettlement, setShowSettlement] = useState(false);
+  const [settlementDateRange, setSettlementDateRange] = useState({
+    from: new Date().toISOString().split("T")[0],
+    to: new Date().toISOString().split("T")[0],
+  });
 
   // --- Detect role (admin vs user) ---
   const [isAdmin, setIsAdmin] = useState(false);
@@ -290,6 +295,36 @@ export default function Orders() {
       orderTypes[type] = (orderTypes[type] || 0) + 1;
     });
 
+    // Product sales breakdown - count quantities and totals per product
+    const productSales = {};
+    valid.forEach((order) => {
+      if (order.products && Array.isArray(order.products)) {
+        order.products.forEach((product) => {
+          const productName = product.name || "Unknown Item";
+          const quantity = Number(product.quantity) || 0;
+          const price = Number(product.price) || 0;
+          const lineTotal = quantity * price;
+
+          if (!productSales[productName]) {
+            productSales[productName] = {
+              name: productName,
+              quantity: 0,
+              total: 0,
+              orders: 0, // how many orders included this product
+            };
+          }
+          productSales[productName].quantity += quantity;
+          productSales[productName].total += lineTotal;
+          productSales[productName].orders += 1;
+        });
+      }
+    });
+
+    // Convert to array and sort by quantity (descending)
+    const productSalesArray = Object.values(productSales).sort(
+      (a, b) => b.quantity - a.quantity
+    );
+
     return {
       totalOrders: settlementOrders.length,
       validOrders: valid.length,
@@ -302,6 +337,7 @@ export default function Orders() {
       netRevenue,
       paymentMethods,
       orderTypes,
+      productSales: productSalesArray,
     };
   }, [settlementOrders, settlementValidOrders]);
 
@@ -1126,6 +1162,91 @@ export default function Orders() {
                         <strong>{count} orders</strong>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Product Sales Breakdown */}
+              {settlementSummary.productSales && settlementSummary.productSales.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <h4>Product Sales Breakdown</h4>
+                  <div
+                    style={{
+                      maxHeight: "400px",
+                      overflowY: "auto",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 8,
+                      padding: 12,
+                    }}
+                  >
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        fontSize: 14,
+                      }}
+                    >
+                      <thead>
+                        <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                          <th style={{ textAlign: "left", padding: 8, fontWeight: 700 }}>
+                            Product
+                          </th>
+                          <th style={{ textAlign: "center", padding: 8, fontWeight: 700 }}>
+                            Qty
+                          </th>
+                          <th style={{ textAlign: "center", padding: 8, fontWeight: 700 }}>
+                            Orders
+                          </th>
+                          <th style={{ textAlign: "right", padding: 8, fontWeight: 700 }}>
+                            Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {settlementSummary.productSales.map((product, index) => (
+                          <tr
+                            key={index}
+                            style={{
+                              borderBottom: "1px solid #f3f4f6",
+                              background: index % 2 === 0 ? "#fff" : "#f9fafb",
+                            }}
+                          >
+                            <td style={{ padding: 8, fontWeight: 600 }}>{product.name}</td>
+                            <td style={{ textAlign: "center", padding: 8 }}>
+                              {product.quantity}
+                            </td>
+                            <td style={{ textAlign: "center", padding: 8 }}>
+                              {product.orders || 1}
+                            </td>
+                            <td style={{ textAlign: "right", padding: 8, fontWeight: 600 }}>
+                              {fmtRp(product.total)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ borderTop: "2px solid #e5e7eb", fontWeight: 700 }}>
+                          <td style={{ padding: 8 }}>TOTAL</td>
+                          <td style={{ textAlign: "center", padding: 8 }}>
+                            {settlementSummary.productSales.reduce(
+                              (sum, p) => sum + (p.quantity || 0),
+                              0
+                            )}
+                          </td>
+                          <td style={{ textAlign: "center", padding: 8 }}>
+                            {settlementSummary.validOrders}
+                          </td>
+                          <td style={{ textAlign: "right", padding: 8, color: "#059669" }}>
+                            {fmtRp(
+                              settlementSummary.productSales.reduce(
+                                (sum, p) => sum + (p.total || 0),
+                                0
+                              )
+                            )}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
                 </div>
               )}

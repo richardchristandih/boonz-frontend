@@ -116,6 +116,19 @@ export function buildSettlementReport({
     out += feed(1);
   }
 
+  // Product sales breakdown
+  if (summary.productSales && summary.productSales.length > 0) {
+    out += alignLeft() + boldOn() + line("PRODUCT SALES") + boldOff();
+    out += alignCenter() + line("---------------------------------");
+    summary.productSales.forEach((product) => {
+      out += alignLeft() + line(`${product.name || "Unknown"}`);
+      out += alignLeft() + line(`  Qty: ${product.quantity} | Orders: ${product.orders || 1}`);
+      out += alignLeft() + line(`  Total: Rp.${(product.total || 0).toFixed(2)}`);
+      out += alignCenter() + line("---------------------------------");
+    });
+    out += feed(1);
+  }
+
   // Detailed orders list
   if (orders.length > 0) {
     out += alignLeft() + boldOn() + line("DETAILED ORDERS") + boldOff();
