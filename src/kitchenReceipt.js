@@ -69,9 +69,9 @@ export function buildKitchenTicket({
               .filter(Boolean)
               .join(" | ");
 
+            // Combine baseNote and optionNote, but don't normalize again (already normalized)
             const finalNote = [baseNote, optionNote]
               .filter(Boolean)
-              .map((x) => normalizeNote(x))
               .join(" | ");
 
             if (finalNote) block += `[L]   - ${finalNote}\n`;

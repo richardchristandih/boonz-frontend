@@ -1,8 +1,10 @@
 /* src/pages/Inventory.css */
 .inventory-page {
-  padding: 20px;
-  max-width: 1400px;
+  width: 100%;
+  max-width: none;      /* full width */
   margin: 0 auto;
+  padding: 32px 32px 80px;  /* <-- add consistent left/right padding */
+  box-sizing: border-box;
 }
 
 .inventory-heading {
