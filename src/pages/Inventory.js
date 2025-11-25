@@ -114,6 +114,10 @@ export default function Inventory() {
   const [showNoteModal, setShowNoteModal] = useState(null); // item id
   const [noteText, setNoteText] = useState("");
   const [quantityChange, setQuantityChange] = useState({ id: null, value: "" });
+  const [selectedDate, setSelectedDate] = useState(() =>
+    new Date().toISOString().slice(0, 10)
+  );
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Form state for add/edit
   const [formData, setFormData] = useState({
@@ -124,14 +128,12 @@ export default function Inventory() {
     notes: "",
   });
 
-  useEffect(() => {
-    fetchItems();
-  }, []);
-
-  async function fetchItems() {
+  const fetchItems = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await listInventoryItems();
+      const data = await listInventoryItems({
+        date: selectedDate || undefined,
+      });
       setItems(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching inventory:", error);
@@ -140,7 +142,11 @@ export default function Inventory() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [selectedDate, show]);
+
+  useEffect(() => {
+    fetchItems();
+  }, [fetchItems]);
 
   // Initialize default items if inventory is empty
   useEffect(() => {
@@ -185,9 +191,26 @@ export default function Inventory() {
     }
   }
 
-  const filteredItems = items.filter(
-    (item) => item.category === selectedCategory
-  );
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const shouldFilterByDate = Boolean(selectedDate);
+  const filteredItems = items
+    .filter((item) => item.category === selectedCategory)
+    .filter((item) => {
+      const name = (item.name || "").toLowerCase();
+      const matchesSearch = !normalizedSearch || name.includes(normalizedSearch);
+
+      if (!matchesSearch) return false;
+
+      if (!shouldFilterByDate) return true;
+      const timestamp = item.updatedAt || item.createdAt;
+      if (!timestamp) return false;
+      const itemDate = new Date(timestamp);
+      if (Number.isNaN(itemDate.getTime())) return false;
+      const itemDateStr = itemDate.toLocaleDateString("en-CA");
+      return itemDateStr === selectedDate;
+    });
+  const filtersActive =
+    shouldFilterByDate || normalizedSearch.length > 0;
 
   const handleAddItem = async () => {
     if (!formData.name.trim()) {
@@ -382,22 +405,54 @@ export default function Inventory() {
       </div>
 
       {/* Add Item Button */}
-      <div className="inventory-actions">
-        <button
-          className="btn btn-primary"
-          onClick={() => {
-            setFormData({
-              name: "",
-              unit: "",
-              category: selectedCategory,
-              quantity: 0,
-              notes: "",
-            });
-            setShowAddModal(true);
-          }}
-        >
-          <i className="fas fa-plus" /> Add Item
-        </button>
+      <div className="inventory-controls">
+        <div className="inventory-filter-group">
+          <label className="inventory-filter-label">Show date</label>
+          <div className="inventory-date-row">
+            <input
+              type="date"
+              className="inventory-date-input"
+              value={selectedDate || ""}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setSelectedDate(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost inventory-date-clear"
+              onClick={() => setSelectedDate("")}
+              disabled={!selectedDate}
+            >
+              All dates
+            </button>
+          </div>
+        </div>
+        <div className="inventory-filter-group">
+          <label className="inventory-filter-label">Lookup item</label>
+          <input
+            type="search"
+            className="inventory-search-input"
+            placeholder={`Search ${selectedCategory}`}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <div className="inventory-actions">
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setFormData({
+                name: "",
+                unit: "",
+                category: selectedCategory,
+                quantity: 0,
+                notes: "",
+              });
+              setShowAddModal(true);
+            }}
+          >
+            <i className="fas fa-plus" /> Add Item
+          </button>
+        </div>
       </div>
 
       {/* Items List */}
@@ -405,7 +460,11 @@ export default function Inventory() {
         <div className="inventory-loading">Loading inventory...</div>
       ) : filteredItems.length === 0 ? (
         <div className="inventory-empty">
-          <p>No items in {selectedCategory} category.</p>
+          <p>
+            {filtersActive
+              ? "No inventory matches your filters yet."
+              : `No items in ${selectedCategory} category.`}
+          </p>
         </div>
       ) : (
         <div className="inventory-table-wrapper">
