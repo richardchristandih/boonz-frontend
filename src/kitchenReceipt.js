@@ -51,7 +51,7 @@ export function buildKitchenTicket({
 
           if (includeNotes) {
             // Standard free-text note (already on your cart items)
-            const baseNote = normalizeNote(it?.note);
+            let baseNote = normalizeNote(it?.note);
 
             // Optional structured options (sugar/ice/toppings) if you stored them
             const opt = it?.options || {};
@@ -63,6 +63,63 @@ export function buildKitchenTicket({
             const toppingsArr = Array.isArray(opt?.toppings) ? opt.toppings : [];
             const toppings =
               toppingsArr.length > 0 ? `Toppings: ${toppingsArr.join(", ")}` : "";
+
+            // Remove duplicate structured option info from baseNote to prevent duplication
+            // If structured options exist, remove matching parts from baseNote
+            if (baseNote && Object.keys(opt).length > 0) {
+              // Split baseNote by | to check each part
+              const noteParts = baseNote.split('|').map(p => p.trim()).filter(Boolean);
+              const cleanedParts = [];
+              
+              // Helper function to check if a note part matches an option value
+              const matchesOption = (part, optionKey, optionValue) => {
+                if (!optionValue) return false;
+                const partLower = part.toLowerCase();
+                const valueLower = optionValue.toLowerCase();
+                const keyLower = optionKey.toLowerCase();
+                
+                // Exact matches
+                if (partLower === `${keyLower}: ${valueLower}` || partLower === valueLower) return true;
+                
+                // Contains matches (handles variations like "whole cut" vs "Cut: Whole")
+                if (partLower.includes(valueLower) && (partLower.includes(keyLower) || partLower.includes(valueLower + ' cut') || partLower.includes('cut ' + valueLower))) {
+                  return true;
+                }
+                
+                // Reverse order matches (e.g., "whole cut" when option is "Whole")
+                if (partLower === `${valueLower} ${keyLower}` || partLower === `${valueLower} cut`) {
+                  return true;
+                }
+                
+                return false;
+              };
+              
+              // Check each part - exclude if it matches a structured option
+              for (const part of noteParts) {
+                let isDuplicate = false;
+                
+                // Check all structured options
+                if (opt?.cut && matchesOption(part, 'cut', opt.cut)) isDuplicate = true;
+                if (opt?.flavor && matchesOption(part, 'flavor', opt.flavor)) isDuplicate = true;
+                if (opt?.sugar && matchesOption(part, 'sugar', opt.sugar)) isDuplicate = true;
+                if (opt?.ice && matchesOption(part, 'ice', opt.ice)) isDuplicate = true;
+                if (opt?.temperature && matchesOption(part, 'temp', opt.temperature)) isDuplicate = true;
+                
+                // Check toppings
+                if (toppingsArr.length > 0 && part.toLowerCase().includes('topping')) {
+                  const partLower = part.toLowerCase();
+                  if (toppingsArr.some(t => partLower.includes(t.toLowerCase()))) {
+                    isDuplicate = true;
+                  }
+                }
+                
+                if (!isDuplicate) {
+                  cleanedParts.push(part);
+                }
+              }
+              
+              baseNote = cleanedParts.length > 0 ? cleanedParts.join(' | ') : null;
+            }
 
             // Combine nicely if present
             const optionNote = [temperature, sugar, ice, flavor, cut, toppings]
