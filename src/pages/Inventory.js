@@ -242,7 +242,10 @@ export default function Inventory() {
   };
 
   const normalizedSearch = searchTerm.trim().toLowerCase();
-  const shouldFilterByDate = Boolean(selectedDate);
+  
+  // Date filter: only active when a date is explicitly selected (not empty string)
+  // By default (selectedDate = ""), show ALL items regardless of update date
+  const shouldFilterByDate = Boolean(selectedDate && selectedDate.trim());
   
   // First, deduplicate items by ID before filtering
   const uniqueItems = items.reduce((acc, item) => {
@@ -264,16 +267,20 @@ export default function Inventory() {
     return acc;
   }, []);
   
+  // Filter items: show ALL by default, only filter by date when user selects one
   const filteredItems = uniqueItems
     .filter((item) => item.category === selectedCategory)
     .filter((item) => {
+      // Search filter
       const name = (item.name || "").toLowerCase();
       const matchesSearch = !normalizedSearch || name.includes(normalizedSearch);
-
       if (!matchesSearch) return false;
 
-      // Date filter is optional - only apply if a date is selected
+      // Date filter: only apply if user explicitly selected a date
+      // If no date selected (shouldFilterByDate = false), show ALL items
       if (!shouldFilterByDate) return true;
+      
+      // If date filter is active, only show items updated on that date
       const timestamp = item.updatedAt || item.createdAt;
       if (!timestamp) return false;
       const itemDate = new Date(timestamp);
@@ -484,9 +491,9 @@ export default function Inventory() {
             <input
               type="date"
               className="inventory-date-input"
-              value={selectedDate || ""}
+              value={selectedDate}
               max={new Date().toISOString().slice(0, 10)}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={(e) => setSelectedDate(e.target.value || "")}
               placeholder="View historical data"
             />
             {selectedDate && (
@@ -494,8 +501,9 @@ export default function Inventory() {
                 type="button"
                 className="btn btn-ghost inventory-date-clear"
                 onClick={() => setSelectedDate("")}
+                title="Clear date filter to show all items"
               >
-                Show all
+                Clear
               </button>
             )}
           </div>
