@@ -281,6 +281,61 @@
   border-color: #dc2626;
 }
 
+/* Last Updated Cell Styles */
+.last-updated-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.update-status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  width: fit-content;
+}
+
+.update-status-today {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.update-status-yesterday {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.update-status-recent {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.update-status-old {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.update-status-very-old {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.update-status-never {
+  background: #f3f4f6;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.update-full-date {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
 @media (max-width: 768px) {
   .inventory-controls {
     flex-direction: column;
@@ -308,6 +363,14 @@
 
   .qty-input {
     width: 60px;
+  }
+
+  .last-updated-cell {
+    min-width: 100px;
+  }
+
+  .update-full-date {
+    font-size: 10px;
   }
 }
 

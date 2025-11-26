@@ -114,9 +114,7 @@ export default function Inventory() {
   const [showNoteModal, setShowNoteModal] = useState(null); // item id
   const [noteText, setNoteText] = useState("");
   const [quantityChange, setQuantityChange] = useState({ id: null, value: "" });
-  const [selectedDate, setSelectedDate] = useState(() =>
-    new Date().toISOString().slice(0, 10)
-  );
+  const [selectedDate, setSelectedDate] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
   // Form state for add/edit
@@ -131,9 +129,8 @@ export default function Inventory() {
   const fetchItems = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await listInventoryItems({
-        date: selectedDate || undefined,
-      });
+      // Always fetch all items (no date filter by default)
+      const data = await listInventoryItems();
       setItems(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching inventory:", error);
@@ -142,7 +139,7 @@ export default function Inventory() {
     } finally {
       setLoading(false);
     }
-  }, [selectedDate, show]);
+  }, [show]);
 
   useEffect(() => {
     fetchItems();
@@ -191,6 +188,35 @@ export default function Inventory() {
     }
   }
 
+  // Helper function to get relative update time
+  const getUpdateStatus = (item) => {
+    const timestamp = item.updatedAt || item.createdAt;
+    if (!timestamp) return { text: "Never updated", status: "never" };
+    
+    const updateDate = new Date(timestamp);
+    if (Number.isNaN(updateDate.getTime())) return { text: "Never updated", status: "never" };
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const updateDay = new Date(updateDate.getFullYear(), updateDate.getMonth(), updateDate.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const diffDays = Math.floor((today - updateDay) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+      return { text: "Updated today", status: "today" };
+    } else if (diffDays === 1) {
+      return { text: "Updated yesterday", status: "yesterday" };
+    } else if (diffDays < 7) {
+      return { text: `Updated ${diffDays} days ago`, status: "recent" };
+    } else if (diffDays < 30) {
+      return { text: `Updated ${Math.floor(diffDays / 7)} weeks ago`, status: "old" };
+    } else {
+      return { text: `Updated ${Math.floor(diffDays / 30)} months ago`, status: "very-old" };
+    }
+  };
+
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const shouldFilterByDate = Boolean(selectedDate);
   const filteredItems = items
@@ -201,6 +227,7 @@ export default function Inventory() {
 
       if (!matchesSearch) return false;
 
+      // Date filter is optional - only apply if a date is selected
       if (!shouldFilterByDate) return true;
       const timestamp = item.updatedAt || item.createdAt;
       if (!timestamp) return false;
@@ -407,7 +434,7 @@ export default function Inventory() {
       {/* Add Item Button */}
       <div className="inventory-controls">
         <div className="inventory-filter-group">
-          <label className="inventory-filter-label">Show date</label>
+          <label className="inventory-filter-label">Filter by date (optional)</label>
           <div className="inventory-date-row">
             <input
               type="date"
@@ -415,15 +442,17 @@ export default function Inventory() {
               value={selectedDate || ""}
               max={new Date().toISOString().slice(0, 10)}
               onChange={(e) => setSelectedDate(e.target.value)}
+              placeholder="View historical data"
             />
-            <button
-              type="button"
-              className="btn btn-ghost inventory-date-clear"
-              onClick={() => setSelectedDate("")}
-              disabled={!selectedDate}
-            >
-              All dates
-            </button>
+            {selectedDate && (
+              <button
+                type="button"
+                className="btn btn-ghost inventory-date-clear"
+                onClick={() => setSelectedDate("")}
+              >
+                Show all
+              </button>
+            )}
           </div>
         </div>
         <div className="inventory-filter-group">
@@ -548,23 +577,32 @@ export default function Inventory() {
                     </button>
                   </td>
                   <td>
-                    {item.updatedAt
-                      ? new Date(item.updatedAt).toLocaleString("id-ID", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : item.createdAt
-                      ? new Date(item.createdAt).toLocaleString("id-ID", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "-"}
+                    {(() => {
+                      const status = getUpdateStatus(item);
+                      const timestamp = item.updatedAt || item.createdAt;
+                      const fullDate = timestamp
+                        ? new Date(timestamp).toLocaleString("id-ID", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : null;
+                      
+                      return (
+                        <div className="last-updated-cell">
+                          <span className={`update-status-badge update-status-${status.status}`}>
+                            {status.text}
+                          </span>
+                          {fullDate && (
+                            <span className="update-full-date" title={fullDate}>
+                              {fullDate}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td>
                     <div className="action-buttons">
