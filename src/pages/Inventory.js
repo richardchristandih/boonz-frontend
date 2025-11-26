@@ -131,7 +131,31 @@ export default function Inventory() {
       setLoading(true);
       // Always fetch all items (no date filter by default)
       const data = await listInventoryItems();
-      setItems(Array.isArray(data) ? data : []);
+      const itemsArray = Array.isArray(data) ? data : [];
+      
+      // Deduplicate items by ID to prevent duplicates
+      const uniqueItems = itemsArray.reduce((acc, item) => {
+        const id = item._id || item.id;
+        if (!id) return acc; // Skip items without ID
+        
+        // Check if we already have this item
+        const existing = acc.find(i => (i._id || i.id) === id);
+        if (!existing) {
+          acc.push(item);
+        } else {
+          // If duplicate found, keep the one with the most recent update
+          const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+          const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+          if (itemTime > existingTime) {
+            // Replace with newer version
+            const index = acc.indexOf(existing);
+            acc[index] = item;
+          }
+        }
+        return acc;
+      }, []);
+      
+      setItems(uniqueItems);
     } catch (error) {
       console.error("Error fetching inventory:", error);
       show("Failed to load inventory items.", { type: "error" });
@@ -219,7 +243,28 @@ export default function Inventory() {
 
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const shouldFilterByDate = Boolean(selectedDate);
-  const filteredItems = items
+  
+  // First, deduplicate items by ID before filtering
+  const uniqueItems = items.reduce((acc, item) => {
+    const id = item._id || item.id;
+    if (!id) return acc;
+    
+    const existing = acc.find(i => (i._id || i.id) === id);
+    if (!existing) {
+      acc.push(item);
+    } else {
+      // Keep the most recently updated version
+      const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+      const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+      if (itemTime > existingTime) {
+        const index = acc.indexOf(existing);
+        acc[index] = item;
+      }
+    }
+    return acc;
+  }, []);
+  
+  const filteredItems = uniqueItems
     .filter((item) => item.category === selectedCategory)
     .filter((item) => {
       const name = (item.name || "").toLowerCase();
@@ -511,7 +556,7 @@ export default function Inventory() {
             </thead>
             <tbody>
               {filteredItems.map((item, index) => (
-                <tr key={item._id || item.id}>
+                <tr key={item._id || item.id || `item-${index}`}>
                   <td>{index + 1}</td>
                   <td>
                     <strong>{item.name}</strong>
