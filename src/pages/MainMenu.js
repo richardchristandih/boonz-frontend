@@ -358,6 +358,14 @@ export default function MenuLayout() {
     return name.includes("fries") || sku.startsWith("FRY");
   };
 
+  /* ---- Onion Rings flavors (same as fries) ---- */
+  const ONION_RINGS_FLAVORS = ["Truffle Mayo", "Garlic", "Cheese"];
+  const isOnionRings = (p) => {
+    const name = (p?.name || "").toLowerCase();
+    const sku = (p?.sku || "").toUpperCase();
+    return name.includes("onion rings") || sku.startsWith("ONR") || sku.includes("ONR");
+  };
+
   /* ---- Burger cut options ---- */
   const isBurger = (p) => {
     const name = (p?.name || "").toLowerCase();
@@ -535,6 +543,39 @@ export default function MenuLayout() {
 
     setFriesCustomize({ open: false, product: null, flavor: "Truffle Mayo" });
   }, [friesCustomize, setCart]);
+
+  /* ---- Onion Rings modal state ---- */
+  const [onionRingsCustomize, setOnionRingsCustomize] = useState({
+    open: false,
+    product: null,
+    flavor: "Truffle Mayo",
+  });
+  const openOnionRingsCustomize = useCallback((product) => {
+    setOnionRingsCustomize({ open: true, product, flavor: "Truffle Mayo" });
+  }, []);
+  const cancelOnionRingsCustomize = useCallback(() => {
+    setOnionRingsCustomize((s) => ({ ...s, open: false, product: null }));
+  }, []);
+  const applyOnionRingsCustomize = useCallback(() => {
+    const { product, flavor } = onionRingsCustomize;
+    if (!product) return;
+
+    const note = `Flavor: ${flavor}`;
+    const productId = product._id || product.id || product.sku;
+    setCart((prev) => [
+      ...prev,
+      {
+        ...product,
+        price: Number(product.price ?? 0),
+        quantity: 1,
+        id: `${productId}-${Date.now()}`, // keep lines separate per flavor
+        note,
+        options: { flavor },
+      },
+    ]);
+
+    setOnionRingsCustomize({ open: false, product: null, flavor: "Truffle Mayo" });
+  }, [onionRingsCustomize, setCart]);
 
   /* ---- Burger customize (cut style) ---- */
   const [burgerCustomize, setBurgerCustomize] = useState({
@@ -986,6 +1027,12 @@ export default function MenuLayout() {
         return;
       }
 
+      // 2.5) Onion Rings -> flavor modal
+      if (isOnionRings(product)) {
+        openOnionRingsCustomize(product);
+        return;
+      }
+
       // 3) Burger -> cut modal
       if (isBurger(product)) {
         openBurgerCustomize(product);
@@ -1015,6 +1062,7 @@ export default function MenuLayout() {
     [
       openCustomize,
       openFriesCustomize,
+      openOnionRingsCustomize,
       openBurgerCustomize,
       openCoffeeCustomize,
       openSodaCustomize,
@@ -3158,6 +3206,67 @@ export default function MenuLayout() {
                 Add to cart
               </button>
               <button className="btn btn-ghost" onClick={cancelFriesCustomize}>
+                Cancel
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {/* Onion Rings Flavor Modal */}
+      {onionRingsCustomize.open && (
+        <div
+          className="paymodal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="onion-rings-customize-title"
+          onClick={cancelOnionRingsCustomize}
+        >
+          <div
+            className="paymodal__dialog"
+            role="document"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="paymodal__head">
+              <h3 id="onion-rings-customize-title">
+                Choose Flavor — {onionRingsCustomize.product?.name || "Onion Rings"}
+              </h3>
+              <button
+                className="paymodal__close"
+                aria-label="Close"
+                onClick={cancelOnionRingsCustomize}
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="paymodal__body">
+              <div className="register-label" style={{ marginBottom: 6 }}>
+                Flavor
+              </div>
+              <div className="radio-row">
+                {ONION_RINGS_FLAVORS.map((v) => (
+                  <label key={v}>
+                    <input
+                      type="radio"
+                      name="onion-rings-flavor"
+                      value={v}
+                      checked={onionRingsCustomize.flavor === v}
+                      onChange={() =>
+                        setOnionRingsCustomize((s) => ({ ...s, flavor: v }))
+                      }
+                    />{" "}
+                    {v}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <footer className="paymodal__actions">
+              <button className="btn btn-primary" onClick={applyOnionRingsCustomize}>
+                Add to cart
+              </button>
+              <button className="btn btn-ghost" onClick={cancelOnionRingsCustomize}>
                 Cancel
               </button>
             </footer>
