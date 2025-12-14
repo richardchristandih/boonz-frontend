@@ -133,25 +133,53 @@ export default function Inventory() {
       const data = await listInventoryItems();
       const itemsArray = Array.isArray(data) ? data : [];
       
-      // Deduplicate items by ID to prevent duplicates
+      // Deduplicate items by ID first, then by name + category
+      // This handles cases where backend creates new records with different IDs for same item
       const uniqueItems = itemsArray.reduce((acc, item) => {
         const id = item._id || item.id;
-        if (!id) return acc; // Skip items without ID
+        const name = (item.name || "").trim().toLowerCase();
+        const category = (item.category || "").trim();
         
-        // Check if we already have this item
-        const existing = acc.find(i => (i._id || i.id) === id);
-        if (!existing) {
-          acc.push(item);
-        } else {
-          // If duplicate found, keep the one with the most recent update
-          const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-          const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-          if (itemTime > existingTime) {
-            // Replace with newer version
-            const index = acc.indexOf(existing);
-            acc[index] = item;
+        if (!name) return acc; // Skip items without name
+        
+        // First check by ID
+        if (id) {
+          const existingById = acc.find(i => (i._id || i.id) === id);
+          if (existingById) {
+            // Update existing if this one is newer
+            const existingTime = new Date(existingById.updatedAt || existingById.createdAt || 0).getTime();
+            const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+            if (itemTime > existingTime) {
+              const index = acc.indexOf(existingById);
+              acc[index] = item;
+            }
+            return acc;
           }
         }
+        
+        // Then check by name + category (to catch duplicates with different IDs)
+        const existingByName = acc.find(i => {
+          const iName = (i.name || "").trim().toLowerCase();
+          const iCategory = (i.category || "").trim();
+          return iName === name && iCategory === category;
+        });
+        
+        if (existingByName) {
+          // Keep the most recently updated version
+          const existingTime = new Date(existingByName.updatedAt || existingByName.createdAt || 0).getTime();
+          const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+          
+          if (itemTime > existingTime) {
+            // Replace older version with newer one
+            const index = acc.indexOf(existingByName);
+            acc[index] = item;
+          }
+          // If existing is newer, keep it (don't add new item)
+        } else {
+          // New unique item (by name + category), add it
+          acc.push(item);
+        }
+        
         return acc;
       }, []);
       
@@ -247,23 +275,53 @@ export default function Inventory() {
   // By default (selectedDate = ""), show ALL items regardless of update date
   const shouldFilterByDate = Boolean(selectedDate && selectedDate.trim());
   
-  // First, deduplicate items by ID before filtering
+  // Deduplicate items by ID first, then by name + category (to catch duplicates with different IDs)
+  // This handles cases where backend creates new records instead of updating existing ones
   const uniqueItems = items.reduce((acc, item) => {
     const id = item._id || item.id;
-    if (!id) return acc;
+    const name = (item.name || "").trim().toLowerCase();
+    const category = (item.category || "").trim();
     
-    const existing = acc.find(i => (i._id || i.id) === id);
-    if (!existing) {
-      acc.push(item);
-    } else {
-      // Keep the most recently updated version
-      const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-      const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-      if (itemTime > existingTime) {
-        const index = acc.indexOf(existing);
-        acc[index] = item;
+    if (!name) return acc; // Skip items without name
+    
+    // First check by ID
+    if (id) {
+      const existingById = acc.find(i => (i._id || i.id) === id);
+      if (existingById) {
+        // Update existing if this one is newer
+        const existingTime = new Date(existingById.updatedAt || existingById.createdAt || 0).getTime();
+        const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+        if (itemTime > existingTime) {
+          const index = acc.indexOf(existingById);
+          acc[index] = item;
+        }
+        return acc;
       }
     }
+    
+    // Then check by name + category (to catch duplicates with different IDs)
+    const existingByName = acc.find(i => {
+      const iName = (i.name || "").trim().toLowerCase();
+      const iCategory = (i.category || "").trim();
+      return iName === name && iCategory === category;
+    });
+    
+    if (existingByName) {
+      // Keep the most recently updated version
+      const existingTime = new Date(existingByName.updatedAt || existingByName.createdAt || 0).getTime();
+      const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+      
+      if (itemTime > existingTime) {
+        // Replace older version with newer one
+        const index = acc.indexOf(existingByName);
+        acc[index] = item;
+      }
+      // If existing is newer, keep it (don't add new item)
+    } else {
+      // New unique item (by name + category), add it
+      acc.push(item);
+    }
+    
     return acc;
   }, []);
   
@@ -375,13 +433,43 @@ export default function Inventory() {
         item._id || item.id,
         newQty
       );
-      setItems((prev) =>
-        prev.map((i) =>
-          (i._id || i.id) === (item._id || item.id)
-            ? { ...i, ...updated }
-            : i
-        )
-      );
+      
+      // Update the item in state, replacing by ID
+      setItems((prev) => {
+        const itemId = item._id || item.id;
+        const name = (item.name || "").trim().toLowerCase();
+        const category = (item.category || "").trim();
+        
+        // First, try to update by ID
+        const hasById = prev.some(i => (i._id || i.id) === itemId);
+        if (hasById) {
+          return prev.map((i) =>
+            (i._id || i.id) === itemId ? { ...i, ...updated } : i
+          );
+        }
+        
+        // If not found by ID, try to find by name + category and replace
+        const updatedList = prev.map((i) => {
+          const iName = (i.name || "").trim().toLowerCase();
+          const iCategory = (i.category || "").trim();
+          if (iName === name && iCategory === category) {
+            return { ...updated, _id: updated._id || updated.id || i._id || i.id };
+          }
+          return i;
+        });
+        
+        // If still not found, add the updated item
+        const foundByName = updatedList.some(i => {
+          const iName = (i.name || "").trim().toLowerCase();
+          const iCategory = (i.category || "").trim();
+          return iName === name && iCategory === category;
+        });
+        
+        return foundByName ? updatedList : [...updatedList, updated];
+      });
+      
+      // Refetch to ensure we have the latest state and remove any duplicates
+      setTimeout(() => fetchItems(), 500);
     } catch (error) {
       console.error("Error updating quantity:", error);
       show("Failed to update quantity.", { type: "error" });
@@ -401,15 +489,39 @@ export default function Inventory() {
         newQty,
         quantityChange.note || ""
       );
-      setItems((prev) =>
-        prev.map((i) =>
-          (i._id || i.id) === (item._id || item.id)
-            ? { ...i, ...updated }
-            : i
-        )
-      );
+      
+      // Update the item in state
+      setItems((prev) => {
+        const itemId = item._id || item.id;
+        const name = (item.name || "").trim().toLowerCase();
+        const category = (item.category || "").trim();
+        
+        // First, try to update by ID
+        const hasById = prev.some(i => (i._id || i.id) === itemId);
+        if (hasById) {
+          return prev.map((i) =>
+            (i._id || i.id) === itemId ? { ...i, ...updated } : i
+          );
+        }
+        
+        // If not found by ID, try to find by name + category and replace
+        const updatedList = prev.map((i) => {
+          const iName = (i.name || "").trim().toLowerCase();
+          const iCategory = (i.category || "").trim();
+          if (iName === name && iCategory === category) {
+            return { ...updated, _id: updated._id || updated.id || i._id || i.id };
+          }
+          return i;
+        });
+        
+        return updatedList;
+      });
+      
       setQuantityChange({ id: null, value: "", note: "" });
       show("Quantity updated successfully.", { type: "success" });
+      
+      // Refetch to ensure we have the latest state and remove any duplicates
+      setTimeout(() => fetchItems(), 500);
     } catch (error) {
       console.error("Error setting quantity:", error);
       show("Failed to update quantity.", { type: "error" });
