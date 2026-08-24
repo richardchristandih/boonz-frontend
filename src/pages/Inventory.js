@@ -101,6 +101,38 @@ const DEFAULT_ITEMS = [
   { name: "Sabun Cuci Piring", unit: "dirigen", category: "Kitchen" },
 ];
 
+function getInventoryItemTime(item) {
+  const time = new Date(item?.updatedAt || item?.createdAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function dedupeInventoryItemsById(itemsArray = []) {
+  return itemsArray.reduce((acc, item) => {
+    const name = (item?.name || "").trim();
+    if (!name) return acc;
+
+    const id = item._id || item.id;
+    if (!id) {
+      acc.push(item);
+      return acc;
+    }
+
+    const existingIndex = acc.findIndex((i) => (i._id || i.id) === id);
+    if (existingIndex === -1) {
+      acc.push(item);
+      return acc;
+    }
+
+    if (
+      getInventoryItemTime(item) > getInventoryItemTime(acc[existingIndex])
+    ) {
+      acc[existingIndex] = item;
+    }
+
+    return acc;
+  }, []);
+}
+
 export default function Inventory() {
   const navigate = useNavigate();
   const { show } = useToast();
@@ -132,58 +164,8 @@ export default function Inventory() {
       // Always fetch all items (no date filter by default)
       const data = await listInventoryItems();
       const itemsArray = Array.isArray(data) ? data : [];
-      
-      // Deduplicate items by ID first, then by name + category
-      // This handles cases where backend creates new records with different IDs for same item
-      const uniqueItems = itemsArray.reduce((acc, item) => {
-        const id = item._id || item.id;
-        const name = (item.name || "").trim().toLowerCase();
-        const category = (item.category || "").trim();
-        
-        if (!name) return acc; // Skip items without name
-        
-        // First check by ID
-        if (id) {
-          const existingById = acc.find(i => (i._id || i.id) === id);
-          if (existingById) {
-            // Update existing if this one is newer
-            const existingTime = new Date(existingById.updatedAt || existingById.createdAt || 0).getTime();
-            const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-            if (itemTime > existingTime) {
-              const index = acc.indexOf(existingById);
-              acc[index] = item;
-            }
-            return acc;
-          }
-        }
-        
-        // Then check by name + category (to catch duplicates with different IDs)
-        const existingByName = acc.find(i => {
-          const iName = (i.name || "").trim().toLowerCase();
-          const iCategory = (i.category || "").trim();
-          return iName === name && iCategory === category;
-        });
-        
-        if (existingByName) {
-          // Keep the most recently updated version
-          const existingTime = new Date(existingByName.updatedAt || existingByName.createdAt || 0).getTime();
-          const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-          
-          if (itemTime > existingTime) {
-            // Replace older version with newer one
-            const index = acc.indexOf(existingByName);
-            acc[index] = item;
-          }
-          // If existing is newer, keep it (don't add new item)
-        } else {
-          // New unique item (by name + category), add it
-          acc.push(item);
-        }
-        
-        return acc;
-      }, []);
-      
-      setItems(uniqueItems);
+
+      setItems(dedupeInventoryItemsById(itemsArray));
     } catch (error) {
       console.error("Error fetching inventory:", error);
       show("Failed to load inventory items.", { type: "error" });
@@ -275,55 +257,7 @@ export default function Inventory() {
   // By default (selectedDate = ""), show ALL items regardless of update date
   const shouldFilterByDate = Boolean(selectedDate && selectedDate.trim());
   
-  // Deduplicate items by ID first, then by name + category (to catch duplicates with different IDs)
-  // This handles cases where backend creates new records instead of updating existing ones
-  const uniqueItems = items.reduce((acc, item) => {
-    const id = item._id || item.id;
-    const name = (item.name || "").trim().toLowerCase();
-    const category = (item.category || "").trim();
-    
-    if (!name) return acc; // Skip items without name
-    
-    // First check by ID
-    if (id) {
-      const existingById = acc.find(i => (i._id || i.id) === id);
-      if (existingById) {
-        // Update existing if this one is newer
-        const existingTime = new Date(existingById.updatedAt || existingById.createdAt || 0).getTime();
-        const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-        if (itemTime > existingTime) {
-          const index = acc.indexOf(existingById);
-          acc[index] = item;
-        }
-        return acc;
-      }
-    }
-    
-    // Then check by name + category (to catch duplicates with different IDs)
-    const existingByName = acc.find(i => {
-      const iName = (i.name || "").trim().toLowerCase();
-      const iCategory = (i.category || "").trim();
-      return iName === name && iCategory === category;
-    });
-    
-    if (existingByName) {
-      // Keep the most recently updated version
-      const existingTime = new Date(existingByName.updatedAt || existingByName.createdAt || 0).getTime();
-      const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-      
-      if (itemTime > existingTime) {
-        // Replace older version with newer one
-        const index = acc.indexOf(existingByName);
-        acc[index] = item;
-      }
-      // If existing is newer, keep it (don't add new item)
-    } else {
-      // New unique item (by name + category), add it
-      acc.push(item);
-    }
-    
-    return acc;
-  }, []);
+  const uniqueItems = dedupeInventoryItemsById(items);
   
   // Filter items: show ALL by default, only filter by date when user selects one
   const filteredItems = uniqueItems
@@ -468,7 +402,7 @@ export default function Inventory() {
         return foundByName ? updatedList : [...updatedList, updated];
       });
       
-      // Refetch to ensure we have the latest state and remove any duplicates
+      // Refetch to ensure we have the latest state from the server.
       setTimeout(() => fetchItems(), 500);
     } catch (error) {
       console.error("Error updating quantity:", error);
@@ -520,7 +454,7 @@ export default function Inventory() {
       setQuantityChange({ id: null, value: "", note: "" });
       show("Quantity updated successfully.", { type: "success" });
       
-      // Refetch to ensure we have the latest state and remove any duplicates
+      // Refetch to ensure we have the latest state from the server.
       setTimeout(() => fetchItems(), 500);
     } catch (error) {
       console.error("Error setting quantity:", error);
@@ -970,4 +904,3 @@ export default function Inventory() {
     </div>
   );
 }
-
