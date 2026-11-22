@@ -48,6 +48,7 @@ export default function ProductList({ showTitle = false, scroll = false }) {
   // Filters
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
+  const [sort, setSort] = useState("name");
 
   // Editor state
   const [editorOpen, setEditorOpen] = useState(false);
@@ -124,7 +125,7 @@ export default function ProductList({ showTitle = false, scroll = false }) {
 
   async function handleRemove(productId) {
     if (!isAdmin || !productId) return;
-    const ok = window.confirm("Remove this product? This cannot be undone.");
+    const ok = await confirm({ title: "Remove product?", message: "This removes the product from the menu.", confirmText: "Remove" });
     if (!ok) return;
 
     try {
@@ -155,12 +156,16 @@ export default function ProductList({ showTitle = false, scroll = false }) {
     return products.filter((p) => {
       const name = p?.name?.toLowerCase() || "";
       const cat = String(p?.category || "").toLowerCase();
-      const matchSearch = !q || name.includes(q) || cat.includes(q);
+      const matchSearch = !q || name.includes(q) || cat.includes(q) || String(p?.sku || "").toLowerCase().includes(q);
       const matchCategory =
         category === "all" || cat === category.toLowerCase();
       return matchSearch && matchCategory;
+    }).sort((a, b) => {
+      if (sort === "price") return Number(a.price) - Number(b.price) || a.name.localeCompare(b.name);
+      if (sort === "quantity") return Number(a.quantity ?? 0) - Number(b.quantity ?? 0) || a.name.localeCompare(b.name);
+      return String(a.name || "").localeCompare(String(b.name || ""));
     });
-  }, [products, search, category]);
+  }, [products, search, category, sort]);
 
   const containerClass = `product-list-container${
     showTitle ? "" : " no-title"
@@ -172,26 +177,21 @@ export default function ProductList({ showTitle = false, scroll = false }) {
 
       {/* Filter controls */}
       {!loading && !error && products.length > 0 && (
-        <div className="product-filters">
-          <input
-            type="text"
-            className="product-search"
-            placeholder="Search products..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select
-            className="product-category"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c === "all" ? "All Categories" : c}
-              </option>
-            ))}
-          </select>
-        </div>
+        <>
+          <div className="product-filters workspace-tools">
+            <label>Search products<input type="search" className="product-search" placeholder="Name, SKU, or category"
+              value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+            <label>Category<select aria-label="Category" className="product-category" value={category} onChange={(event) => setCategory(event.target.value)}>
+              {categories.map((item) => <option key={item} value={item}>{item === "all" ? "All categories" : item}</option>)}
+            </select></label>
+            <label>Sort by<select aria-label="Sort by" value={sort} onChange={(event) => setSort(event.target.value)}>
+              <option value="name">Name</option><option value="price">Price, low to high</option><option value="quantity">Quantity, low to high</option>
+            </select></label>
+            {(search || category !== "all" || sort !== "name") && <button type="button" className="workspace-button"
+              onClick={() => { setSearch(""); setCategory("all"); setSort("name"); }}>Reset filters</button>}
+          </div>
+          <p className="workspace-muted" role="status">{filtered.length} of {products.length} products</p>
+        </>
       )}
 
       {/* Loading skeleton */}
@@ -204,7 +204,7 @@ export default function ProductList({ showTitle = false, scroll = false }) {
       )}
 
       {!loading && error && (
-        <p className="product-list-status error">{error}</p>
+        <div role="alert"><p className="product-list-status error">{error}</p><button className="workspace-button" type="button" onClick={load}>Try again</button></div>
       )}
 
       {!loading && !error && filtered.length === 0 && (
@@ -238,6 +238,7 @@ export default function ProductList({ showTitle = false, scroll = false }) {
                     </span>
                     {tag && <span className="product-tag">{tag}</span>}
                     <span className="product-price">{price}</span>
+                    <span className="product-row-meta">{p.sku && <>SKU {p.sku} · </>}Quantity {p.quantity ?? 0}</span>
                   </div>
 
                   {isAdmin && (

@@ -58,3 +58,22 @@
 
 .section { margin-top: 32px; }
 .section h2 { font-size: 28px; margin: 0 0 12px; }
+
+:where(.page-container, .orders-page, .product-page) {
+  color: var(--boonz-ink);
+  font-family: var(--boonz-font);
+}
+
+:where(.page-container, .orders-page, .product-page) .back-btn {
+  min-height: 44px;
+  border-color: var(--boonz-border);
+  color: var(--boonz-rail);
+  font: inherit;
+  font-weight: 650;
+}
+
+:where(.page-container, .orders-page, .product-page) .back-btn:hover { background: var(--boonz-wash); }
+:where(.page-container, .orders-page, .product-page) :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--boonz-accent);
+  outline-offset: 2px;
+}

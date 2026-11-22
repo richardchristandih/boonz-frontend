@@ -1,6 +1,6 @@
-// src/pages/Inventory.js
-import React, { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import WorkspacePage, { WorkspaceMetrics } from "../components/WorkspacePage";
+import { FiEdit2, FiFileText, FiPlus, FiSearch, FiTrash2 } from "react-icons/fi";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmDialog";
 import {
@@ -101,806 +101,402 @@ const DEFAULT_ITEMS = [
   { name: "Sabun Cuci Piring", unit: "dirigen", category: "Kitchen" },
 ];
 
-function getInventoryItemTime(item) {
-  const time = new Date(item?.updatedAt || item?.createdAt || 0).getTime();
-  return Number.isFinite(time) ? time : 0;
+const CATEGORIES = ["Barista", "Kitchen"];
+const dateKey = (date) => {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+};
+const itemId = (item) => item._id || item.id;
+const stockKey = ({ category, name, unit = "pcs" }) =>
+  JSON.stringify([category, name.trim().toLowerCase(), unit.trim().toLowerCase()]);
+const updatedAt = (item) => new Date(item.updatedAt || item.createdAt || NaN);
+const dateFormat = new Intl.DateTimeFormat("id-ID", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+const sortItems = (items) => [...items].sort((a, b) => a.name.localeCompare(b.name));
+
+function InventoryQuantity({ item, saving, onSave }) {
+  const [draft, setDraft] = useState(null);
+  const quantity = Number(item.quantity ?? 0);
+  const changed = draft !== null && draft !== String(quantity);
+
+  async function save(event) {
+    event.preventDefault();
+    if (changed && await onSave(Number(draft))) setDraft(null);
+  }
+
+  return (
+    <form className="quantity-controls" onSubmit={save}>
+      <button
+        type="button"
+        className="qty-btn"
+        aria-label={`Decrease ${item.name} quantity`}
+        disabled={saving || changed || quantity === 0}
+        onClick={() => onSave(Math.max(0, quantity - 1))}
+      >−</button>
+      <input
+        type="number"
+        className="qty-input"
+        value={draft ?? quantity}
+        min="0"
+        step="any"
+        required
+        inputMode="decimal"
+        readOnly={saving}
+        aria-label={`${item.name} quantity`}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !saving) setDraft(null);
+        }}
+      />
+      <button
+        type="button"
+        className="qty-btn plus"
+        aria-label={`Increase ${item.name} quantity`}
+        disabled={saving || changed}
+        onClick={() => onSave(quantity + 1)}
+      >+</button>
+      {changed && <button className="inventory-button" type="submit" disabled={saving}>Save</button>}
+      {saving && <span role="status" className="inventory-saving">Saving…</span>}
+    </form>
+  );
 }
 
-function dedupeInventoryItemsById(itemsArray = []) {
-  return itemsArray.reduce((acc, item) => {
-    const name = (item?.name || "").trim();
-    if (!name) return acc;
+function InventoryEditor({ editor, onChange, onClose, onSave, saving, error }) {
+  const dialog = useRef(null);
+  const isNote = editor.mode === "note";
+  const isNew = editor.mode === "add";
+  const title = isNote ? `Notes · ${editor.name}` : isNew ? "Add item" : "Edit item";
 
-    const id = item._id || item.id;
-    if (!id) {
-      acc.push(item);
-      return acc;
-    }
-
-    const existingIndex = acc.findIndex((i) => (i._id || i.id) === id);
-    if (existingIndex === -1) {
-      acc.push(item);
-      return acc;
-    }
-
-    if (
-      getInventoryItemTime(item) > getInventoryItemTime(acc[existingIndex])
-    ) {
-      acc[existingIndex] = item;
-    }
-
-    return acc;
+  useEffect(() => {
+    dialog.current.showModal();
   }, []);
+
+  function field(event) {
+    onChange({ ...editor, [event.target.name]: event.target.value });
+  }
+
+  return (
+    <dialog
+      className="inventory-dialog"
+      ref={dialog}
+      aria-labelledby="inventory-dialog-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!saving) onClose();
+      }}
+    >
+      <form onSubmit={(event) => { event.preventDefault(); onSave(); }}>
+        <h2 id="inventory-dialog-title">{title}</h2>
+        <fieldset disabled={saving}>
+          {!isNote && (
+            <>
+              <label>Item name<input name="name" value={editor.name} onChange={field} required autoFocus /></label>
+              <label>Unit<input name="unit" value={editor.unit} onChange={field} placeholder="pcs" /></label>
+              <label>
+                Category
+                <select name="category" value={editor.category} onChange={field}>
+                  {CATEGORIES.map((category) => <option key={category}>{category}</option>)}
+                </select>
+              </label>
+              {isNew && (
+                <label>
+                  Initial quantity
+                  <input type="number" name="quantity" min="0" step="any" required value={editor.quantity} onChange={field} />
+                </label>
+              )}
+            </>
+          )}
+          <label>
+            Notes
+            <textarea name="notes" value={editor.notes} onChange={field} rows={isNote ? 5 : 3} autoFocus={isNote} />
+          </label>
+        </fieldset>
+        {error && <p className="inventory-editor-error" role="alert">{error}</p>}
+        <div className="inventory-dialog-actions">
+          <button className="inventory-button" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="inventory-button primary" type="submit" disabled={saving}>
+            {saving ? "Saving…" : isNew ? "Add item" : "Save changes"}
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
 }
 
 export default function Inventory() {
-  const navigate = useNavigate();
   const { show } = useToast();
   const confirm = useConfirm();
-
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState("loading");
   const [selectedCategory, setSelectedCategory] = useState("Barista");
-  const [editingItem, setEditingItem] = useState(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showNoteModal, setShowNoteModal] = useState(null); // item id
-  const [noteText, setNoteText] = useState("");
-  const [quantityChange, setQuantityChange] = useState({ id: null, value: "" });
   const [selectedDate, setSelectedDate] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-
-  // Form state for add/edit
-  const [formData, setFormData] = useState({
-    name: "",
-    unit: "",
-    category: "Barista",
-    quantity: 0,
-    notes: "",
-  });
+  const [stockFilter, setStockFilter] = useState("all");
+  const [editor, setEditor] = useState(null);
+  const [editorError, setEditorError] = useState("");
+  const [savingItems, setSavingItems] = useState([]);
+  const pendingItems = useRef(new Set());
+  const [seedIncomplete, setSeedIncomplete] = useState(false);
 
   const fetchItems = useCallback(async () => {
+    setLoadState("loading");
     try {
-      setLoading(true);
-      // Always fetch all items (no date filter by default)
       const data = await listInventoryItems();
-      const itemsArray = Array.isArray(data) ? data : [];
-
-      setItems(dedupeInventoryItemsById(itemsArray));
-    } catch (error) {
-      console.error("Error fetching inventory:", error);
-      show("Failed to load inventory items.", { type: "error" });
-      setItems([]);
-    } finally {
-      setLoading(false);
+      const unique = new Map();
+      for (const item of data) {
+        const key = itemId(item);
+        const previous = unique.get(key);
+        if (!previous || updatedAt(item) > updatedAt(previous)) unique.set(key, item);
+      }
+      setItems(sortItems([...unique.values()]));
+      setLoadState("ready");
+    } catch {
+      setLoadState("error");
     }
-  }, [show]);
+  }, []);
 
   useEffect(() => {
     fetchItems();
   }, [fetchItems]);
 
-  // Initialize default items if inventory is empty
-  useEffect(() => {
-    if (!loading && items.length === 0) {
-      initializeDefaultItems();
-    }
-  }, [loading, items.length]);
-
-  async function initializeDefaultItems() {
+  async function withPendingItem(key, action) {
+    if (pendingItems.current.has(key)) return false;
+    pendingItems.current.add(key);
+    setSavingItems((previous) => [...previous, key]);
     try {
-      const ok = await confirm({
-        title: "Initialize Inventory?",
-        message:
-          "No inventory items found. Would you like to initialize with default items?",
-        confirmText: "Yes, Initialize",
-        cancelText: "No",
-      });
-      if (!ok) return;
-
-      setLoading(true);
-      const created = [];
-      for (const item of DEFAULT_ITEMS) {
-        try {
-          const result = await createInventoryItem({
-            ...item,
-            quantity: 0,
-            notes: "",
-          });
-          created.push(result);
-        } catch (err) {
-          console.warn(`Failed to create ${item.name}:`, err);
-        }
-      }
-      setItems(created);
-      show(`Initialized ${created.length} inventory items.`, {
-        type: "success",
-      });
-    } catch (error) {
-      console.error("Error initializing inventory:", error);
+      return await action();
     } finally {
-      setLoading(false);
+      pendingItems.current.delete(key);
+      setSavingItems((previous) => previous.filter((pending) => pending !== key));
     }
   }
 
-  // Helper function to get relative update time
-  const getUpdateStatus = (item) => {
-    const timestamp = item.updatedAt || item.createdAt;
-    if (!timestamp) return { text: "Never updated", status: "never" };
-    
-    const updateDate = new Date(timestamp);
-    if (Number.isNaN(updateDate.getTime())) return { text: "Never updated", status: "never" };
-    
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const updateDay = new Date(updateDate.getFullYear(), updateDate.getMonth(), updateDate.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const diffDays = Math.floor((today - updateDay) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) {
-      return { text: "Updated today", status: "today" };
-    } else if (diffDays === 1) {
-      return { text: "Updated yesterday", status: "yesterday" };
-    } else if (diffDays < 7) {
-      return { text: `Updated ${diffDays} days ago`, status: "recent" };
-    } else if (diffDays < 30) {
-      return { text: `Updated ${Math.floor(diffDays / 7)} weeks ago`, status: "old" };
-    } else {
-      return { text: `Updated ${Math.floor(diffDays / 30)} months ago`, status: "very-old" };
-    }
-  };
+  function replaceItem(updated) {
+    setItems((previous) => sortItems(
+      previous.map((item) => itemId(item) === itemId(updated) ? { ...item, ...updated } : item)
+    ));
+  }
 
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  
-  // Date filter: only active when a date is explicitly selected (not empty string)
-  // By default (selectedDate = ""), show ALL items regardless of update date
-  const shouldFilterByDate = Boolean(selectedDate && selectedDate.trim());
-  
-  const uniqueItems = dedupeInventoryItemsById(items);
-  
-  // Filter items: show ALL by default, only filter by date when user selects one
-  const filteredItems = uniqueItems
-    .filter((item) => item.category === selectedCategory)
-    .filter((item) => {
-      // Search filter
-      const name = (item.name || "").toLowerCase();
-      const matchesSearch = !normalizedSearch || name.includes(normalizedSearch);
-      if (!matchesSearch) return false;
-
-      // Date filter: only apply if user explicitly selected a date
-      // If no date selected (shouldFilterByDate = false), show ALL items
-      if (!shouldFilterByDate) return true;
-      
-      // If date filter is active, only show items updated on that date
-      const timestamp = item.updatedAt || item.createdAt;
-      if (!timestamp) return false;
-      const itemDate = new Date(timestamp);
-      if (Number.isNaN(itemDate.getTime())) return false;
-      const itemDateStr = itemDate.toLocaleDateString("en-CA");
-      return itemDateStr === selectedDate;
+  function saveQuantity(item, quantity) {
+    return withPendingItem(itemId(item), async () => {
+      try {
+        replaceItem(await updateInventoryQuantity(itemId(item), quantity));
+        return true;
+      } catch (error) {
+        show(error.response?.data?.error || "Couldn’t save the quantity. Try again.", { type: "error" });
+        return false;
+      }
     });
-  const filtersActive =
-    shouldFilterByDate || normalizedSearch.length > 0;
+  }
 
-  const handleAddItem = async () => {
-    if (!formData.name.trim()) {
-      show("Item name is required.", { type: "warning" });
+  function saveEditor() {
+    const name = editor.name.trim();
+    if (!name) {
+      setEditorError("Enter an item name.");
       return;
     }
-    try {
-      const newItem = await createInventoryItem({
-        name: formData.name.trim(),
-        unit: formData.unit.trim() || "pcs",
-        category: formData.category,
-        quantity: Number(formData.quantity) || 0,
-        notes: formData.notes.trim() || "",
-      });
-      setItems((prev) => [...prev, newItem]);
-      setShowAddModal(false);
-      setFormData({ name: "", unit: "", category: "Barista", quantity: 0, notes: "" });
-      show("Item added successfully.", { type: "success" });
-    } catch (error) {
-      console.error("Error adding item:", error);
-      show("Failed to add item.", { type: "error" });
-    }
-  };
-
-  const handleEditItem = async () => {
-    if (!editingItem || !formData.name.trim()) {
-      show("Item name is required.", { type: "warning" });
-      return;
-    }
-    try {
-      const updated = await updateInventoryItem(editingItem._id || editingItem.id, {
-        name: formData.name.trim(),
-        unit: formData.unit.trim() || "pcs",
-        category: formData.category,
-        notes: formData.notes.trim() || "",
-      });
-      setItems((prev) =>
-        prev.map((item) =>
-          (item._id || item.id) === (editingItem._id || editingItem.id)
-            ? { ...item, ...updated }
-            : item
-        )
-      );
-      setEditingItem(null);
-      setFormData({ name: "", unit: "", category: "Barista", quantity: 0, notes: "" });
-      show("Item updated successfully.", { type: "success" });
-    } catch (error) {
-      console.error("Error updating item:", error);
-      show("Failed to update item.", { type: "error" });
-    }
-  };
-
-  const handleDeleteItem = async (item) => {
-    const ok = await confirm({
-      title: "Delete Item?",
-      message: `Are you sure you want to delete "${item.name}"?`,
-      confirmText: "Delete",
-      cancelText: "Cancel",
-      danger: true,
-    });
-    if (!ok) return;
-
-    try {
-      await deleteInventoryItem(item._id || item.id);
-      setItems((prev) =>
-        prev.filter(
-          (i) => (i._id || i.id) !== (item._id || item.id)
-        )
-      );
-      show("Item deleted successfully.", { type: "success" });
-    } catch (error) {
-      console.error("Error deleting item:", error);
-      show("Failed to delete item.", { type: "error" });
-    }
-  };
-
-  const handleQuantityChange = async (item, delta) => {
-    const currentQty = Number(item.quantity || 0);
-    const newQty = Math.max(0, currentQty + delta);
-    
-    try {
-      const updated = await updateInventoryQuantity(
-        item._id || item.id,
-        newQty
-      );
-      
-      // Update the item in state, replacing by ID
-      setItems((prev) => {
-        const itemId = item._id || item.id;
-        const name = (item.name || "").trim().toLowerCase();
-        const category = (item.category || "").trim();
-        
-        // First, try to update by ID
-        const hasById = prev.some(i => (i._id || i.id) === itemId);
-        if (hasById) {
-          return prev.map((i) =>
-            (i._id || i.id) === itemId ? { ...i, ...updated } : i
-          );
+    return withPendingItem(editor.id || "add", async () => {
+      setEditorError("");
+      const notes = editor.notes.trim();
+      const details = { name, notes, unit: editor.unit.trim() || "pcs", category: editor.category };
+      try {
+        if (editor.mode === "add") {
+          const added = await createInventoryItem({ ...details, quantity: Number(editor.quantity) });
+          setItems((previous) => sortItems([...previous, added]));
+          setSelectedCategory(added.category);
+          setSearchTerm("");
+          setSelectedDate("");
+        } else {
+          const updated = await updateInventoryItem(editor.id, editor.mode === "note" ? { notes } : details);
+          replaceItem(updated);
         }
-        
-        // If not found by ID, try to find by name + category and replace
-        const updatedList = prev.map((i) => {
-          const iName = (i.name || "").trim().toLowerCase();
-          const iCategory = (i.category || "").trim();
-          if (iName === name && iCategory === category) {
-            return { ...updated, _id: updated._id || updated.id || i._id || i.id };
-          }
-          return i;
-        });
-        
-        // If still not found, add the updated item
-        const foundByName = updatedList.some(i => {
-          const iName = (i.name || "").trim().toLowerCase();
-          const iCategory = (i.category || "").trim();
-          return iName === name && iCategory === category;
-        });
-        
-        return foundByName ? updatedList : [...updatedList, updated];
-      });
-      
-      // Refetch to ensure we have the latest state from the server.
-      setTimeout(() => fetchItems(), 500);
-    } catch (error) {
-      console.error("Error updating quantity:", error);
-      show("Failed to update quantity.", { type: "error" });
-    }
-  };
-
-  const handleSetQuantity = async (item) => {
-    const newQty = Number(quantityChange.value);
-    if (isNaN(newQty) || newQty < 0) {
-      show("Please enter a valid quantity.", { type: "warning" });
-      return;
-    }
-
-    try {
-      const updated = await updateInventoryQuantity(
-        item._id || item.id,
-        newQty,
-        quantityChange.note || ""
-      );
-      
-      // Update the item in state
-      setItems((prev) => {
-        const itemId = item._id || item.id;
-        const name = (item.name || "").trim().toLowerCase();
-        const category = (item.category || "").trim();
-        
-        // First, try to update by ID
-        const hasById = prev.some(i => (i._id || i.id) === itemId);
-        if (hasById) {
-          return prev.map((i) =>
-            (i._id || i.id) === itemId ? { ...i, ...updated } : i
-          );
-        }
-        
-        // If not found by ID, try to find by name + category and replace
-        const updatedList = prev.map((i) => {
-          const iName = (i.name || "").trim().toLowerCase();
-          const iCategory = (i.category || "").trim();
-          if (iName === name && iCategory === category) {
-            return { ...updated, _id: updated._id || updated.id || i._id || i.id };
-          }
-          return i;
-        });
-        
-        return updatedList;
-      });
-      
-      setQuantityChange({ id: null, value: "", note: "" });
-      show("Quantity updated successfully.", { type: "success" });
-      
-      // Refetch to ensure we have the latest state from the server.
-      setTimeout(() => fetchItems(), 500);
-    } catch (error) {
-      console.error("Error setting quantity:", error);
-      show("Failed to update quantity.", { type: "error" });
-    }
-  };
-
-  const handleUpdateNote = async (itemId, note) => {
-    try {
-      const item = items.find((i) => (i._id || i.id) === itemId);
-      if (!item) return;
-      
-      const updated = await updateInventoryItem(item._id || item.id, {
-        notes: note.trim(),
-      });
-      setItems((prev) =>
-        prev.map((i) =>
-          (i._id || i.id) === (item._id || item.id)
-            ? { ...i, ...updated }
-            : i
-        )
-      );
-      setShowNoteModal(null);
-      setNoteText("");
-      show("Note updated successfully.", { type: "success" });
-    } catch (error) {
-      console.error("Error updating note:", error);
-      show("Failed to update note.", { type: "error" });
-    }
-  };
-
-  const openEditModal = (item) => {
-    setEditingItem(item);
-    setFormData({
-      name: item.name || "",
-      unit: item.unit || "",
-      category: item.category || "Barista",
-      quantity: item.quantity || 0,
-      notes: item.notes || "",
+        setEditor(null);
+        show("Inventory item saved.", { type: "success" });
+      } catch (error) {
+        setEditorError(error.response?.data?.error || "Couldn’t save the item. Try again.");
+      }
     });
-  };
+  }
 
-  const closeModals = () => {
-    setShowAddModal(false);
-    setEditingItem(null);
-    setFormData({ name: "", unit: "", category: "Barista", quantity: 0, notes: "" });
-    setQuantityChange({ id: null, value: "", note: "" });
-    setShowNoteModal(null);
-  };
+  function removeItem(item) {
+    const key = itemId(item);
+    return withPendingItem(key, async () => {
+      if (!await confirm({
+        title: "Delete item?",
+        message: `Remove ${item.name} from inventory?`,
+        confirmText: "Delete",
+      })) return;
+      try {
+        await deleteInventoryItem(key);
+        setItems((previous) => previous.filter((entry) => itemId(entry) !== key));
+        show("Inventory item deleted.", { type: "success" });
+      } catch (error) {
+        show(error.response?.data?.error || "Couldn’t delete the item. Try again.", { type: "error" });
+      }
+    });
+  }
+
+  function initializeDefaults() {
+    return withPendingItem("initialize", async () => {
+      if (!await confirm({
+        title: "Add default inventory?",
+        message: "Add the default Barista and Kitchen items with a starting quantity of zero?",
+        confirmText: "Add defaults",
+      })) return;
+      let added = 0;
+      try {
+        const current = await listInventoryItems();
+        const present = new Set(current.map(stockKey));
+        for (const item of DEFAULT_ITEMS) {
+          if (present.has(stockKey(item))) continue;
+          const saved = await createInventoryItem({ ...item, quantity: 0 });
+          setItems((previous) => sortItems([...previous, saved]));
+          present.add(stockKey(saved));
+          added += 1;
+        }
+        setSeedIncomplete(false);
+        show(`Added ${added} default items.`, { type: "success" });
+      } catch {
+        setSeedIncomplete(true);
+        show(`Added ${added} default items before the import stopped. Try again to add the remaining items.`, { type: "error" });
+      }
+      await fetchItems();
+    });
+  }
+
+  function openEditor(item, mode) {
+    setEditorError("");
+    setEditor({
+      mode,
+      id: itemId(item),
+      name: item.name ?? "",
+      unit: item.unit ?? "",
+      category: item.category ?? selectedCategory,
+      quantity: item.quantity ?? 0,
+      notes: item.notes ?? "",
+    });
+  }
+
+  const query = searchTerm.trim().toLowerCase();
+  const categoryItems = items.filter((item) => item.category === selectedCategory);
+  const outOfStock = categoryItems.filter((item) => Number(item.quantity ?? 0) === 0).length;
+  const filteredItems = categoryItems.filter((item) =>
+    (stockFilter === "all" || (Number(item.quantity ?? 0) === 0) === (stockFilter === "out")) &&
+    (!query || `${item.name} ${item.unit ?? ""}`.toLowerCase().includes(query)) &&
+    (!selectedDate || dateKey(updatedAt(item)) === selectedDate)
+  );
+  const initializing = savingItems.includes("initialize");
+  const showSeedAction = loadState === "ready" && (items.length === 0 || seedIncomplete);
+  const filtersActive = Boolean(query || selectedDate || stockFilter !== "all");
+  const clearFilters = () => { setSearchTerm(""); setSelectedDate(""); setStockFilter("all"); };
 
   return (
-    <div className="inventory-page">
-      <button className="back-btn" onClick={() => navigate("/")}>
-        <i className="fas fa-arrow-left" /> Back
-      </button>
+    <WorkspacePage title="Inventory" description="Count ingredients and keep Barista and Kitchen stock up to date."
+      className="inventory-page" actions={<button type="button" className="workspace-button primary"
+        onClick={() => openEditor({}, "add")} disabled={loadState !== "ready" || initializing}>
+        <FiPlus aria-hidden="true" /> Add item
+      </button>}>
+      {loadState === "ready" && <WorkspaceMetrics label={`${selectedCategory} stock summary`} items={[
+        [`${selectedCategory} items`, categoryItems.length],
+        ["In stock", categoryItems.length - outOfStock],
+        ["Out of stock", outOfStock],
+      ]} />}
 
-      <h1 className="inventory-heading">Inventory Management</h1>
-
-      {/* Category Tabs */}
-      <div className="inventory-tabs">
-        <button
-          className={`tab ${selectedCategory === "Barista" ? "active" : ""}`}
-          onClick={() => setSelectedCategory("Barista")}
-        >
-          Bahan Barista
-        </button>
-        <button
-          className={`tab ${selectedCategory === "Kitchen" ? "active" : ""}`}
-          onClick={() => setSelectedCategory("Kitchen")}
-        >
-          Bahan Kitchen
-        </button>
-      </div>
-
-      {/* Add Item Button */}
-      <div className="inventory-controls">
-        <div className="inventory-filter-group">
-          <label className="inventory-filter-label">Filter by date (optional)</label>
-          <div className="inventory-date-row">
-            <input
-              type="date"
-              className="inventory-date-input"
-              value={selectedDate}
-              max={new Date().toISOString().slice(0, 10)}
-              onChange={(e) => setSelectedDate(e.target.value || "")}
-              placeholder="View historical data"
-            />
-            {selectedDate && (
-              <button
-                type="button"
-                className="btn btn-ghost inventory-date-clear"
-                onClick={() => setSelectedDate("")}
-                title="Clear date filter to show all items"
-              >
-                Clear
+      <section className="inventory-panel" aria-label="Inventory items" aria-busy={loadState === "loading" || initializing}>
+        <div className="inventory-toolbar">
+          <div className="inventory-tabs" role="group" aria-label="Inventory category">
+            {CATEGORIES.map((category) => (
+              <button type="button" key={category} aria-pressed={selectedCategory === category} onClick={() => setSelectedCategory(category)}>
+                {category}
               </button>
-            )}
+            ))}
           </div>
-        </div>
-        <div className="inventory-filter-group">
-          <label className="inventory-filter-label">Lookup item</label>
-          <input
-            type="search"
-            className="inventory-search-input"
-            placeholder={`Search ${selectedCategory}`}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        <div className="inventory-actions">
-          <button
-            className="btn btn-primary"
-            onClick={() => {
-              setFormData({
-                name: "",
-                unit: "",
-                category: selectedCategory,
-                quantity: 0,
-                notes: "",
-              });
-              setShowAddModal(true);
-            }}
-          >
-            <i className="fas fa-plus" /> Add Item
-          </button>
-        </div>
-      </div>
-
-      {/* Items List */}
-      {loading ? (
-        <div className="inventory-loading">Loading inventory...</div>
-      ) : filteredItems.length === 0 ? (
-        <div className="inventory-empty">
-          <p>
-            {filtersActive
-              ? "No inventory matches your filters yet."
-              : `No items in ${selectedCategory} category.`}
-          </p>
-        </div>
-      ) : (
-        <div className="inventory-table-wrapper">
-          <table className="inventory-table">
-            <thead>
-              <tr>
-                <th>No</th>
-                <th>Bahan</th>
-                <th>Quantity</th>
-                <th>Unit</th>
-                <th>Notes</th>
-                <th>Last Updated</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredItems.map((item, index) => (
-                <tr key={item._id || item.id || `item-${index}`}>
-                  <td>{index + 1}</td>
-                  <td>
-                    <strong>{item.name}</strong>
-                  </td>
-                  <td>
-                    <div className="quantity-controls">
-                      <button
-                        className="qty-btn minus"
-                        onClick={() => handleQuantityChange(item, -1)}
-                        title="Decrease by 1"
-                      >
-                        −
-                      </button>
-                      <input
-                        type="number"
-                        className="qty-input"
-                        value={item.quantity || 0}
-                        min="0"
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setQuantityChange({
-                            id: item._id || item.id,
-                            value: val,
-                            note: "",
-                          });
-                        }}
-                        onBlur={() => {
-                          if (quantityChange.id === (item._id || item.id)) {
-                            handleSetQuantity(item);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.target.blur();
-                          }
-                        }}
-                      />
-                      <button
-                        className="qty-btn plus"
-                        onClick={() => handleQuantityChange(item, 1)}
-                        title="Increase by 1"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </td>
-                  <td>{item.unit || "pcs"}</td>
-                  <td>
-                    <button
-                      className="note-btn"
-                      onClick={() => {
-                        setNoteText(item.notes || "");
-                        setShowNoteModal(item._id || item.id);
-                      }}
-                      title={item.notes || "Add note"}
-                    >
-                      <i className="fas fa-sticky-note" />
-                      {item.notes && (
-                        <span className="note-indicator" title={item.notes}>
-                          !
-                        </span>
-                      )}
-                    </button>
-                  </td>
-                  <td>
-                    {(() => {
-                      const status = getUpdateStatus(item);
-                      const timestamp = item.updatedAt || item.createdAt;
-                      const fullDate = timestamp
-                        ? new Date(timestamp).toLocaleString("id-ID", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : null;
-                      
-                      return (
-                        <div className="last-updated-cell">
-                          <span className={`update-status-badge update-status-${status.status}`}>
-                            {status.text}
-                          </span>
-                          {fullDate && (
-                            <span className="update-full-date" title={fullDate}>
-                              {fullDate}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </td>
-                  <td>
-                    <div className="action-buttons">
-                      <button
-                        className="btn-icon edit"
-                        onClick={() => openEditModal(item)}
-                        title="Edit"
-                      >
-                        <i className="fas fa-edit" />
-                      </button>
-                      <button
-                        className="btn-icon delete"
-                        onClick={() => handleDeleteItem(item)}
-                        title="Delete"
-                      >
-                        <i className="fas fa-trash" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Add/Edit Modal */}
-      {(showAddModal || editingItem) && (
-        <div
-          className="paymodal"
-          role="dialog"
-          aria-modal="true"
-          onClick={closeModals}
-        >
-          <div
-            className="paymodal__dialog"
-            onClick={(e) => e.stopPropagation()}
-            role="document"
-          >
-            <header className="paymodal__head">
-              <h3>{editingItem ? "Edit Item" : "Add Item"}</h3>
-              <button
-                className="paymodal__close"
-                aria-label="Close"
-                onClick={closeModals}
-              >
-                ✕
-              </button>
-            </header>
-
-            <div className="paymodal__body">
-              <label className="register-label">Item Name *</label>
-              <input
-                type="text"
-                className="register-input"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="e.g., Le Minerale"
-                autoFocus
-              />
-
-              <label className="register-label">Unit</label>
-              <input
-                type="text"
-                className="register-input"
-                value={formData.unit}
-                onChange={(e) =>
-                  setFormData({ ...formData, unit: e.target.value })
-                }
-                placeholder="e.g., botol, kg, liter"
-              />
-
-              <label className="register-label">Category</label>
-              <select
-                className="register-input"
-                value={formData.category}
-                onChange={(e) =>
-                  setFormData({ ...formData, category: e.target.value })
-                }
-              >
-                <option value="Barista">Bahan Barista</option>
-                <option value="Kitchen">Bahan Kitchen</option>
+          <div className="inventory-filters">
+            <label>
+              Search items
+              <span className="inventory-search">
+                <FiSearch aria-hidden="true" />
+                <input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Name or unit" />
+              </span>
+            </label>
+            <label>
+              Last updated on
+              <input type="date" value={selectedDate} max={dateKey(new Date())} onChange={(event) => setSelectedDate(event.target.value)} />
+            </label>
+            <label>
+              Stock status
+              <select aria-label="Stock status" value={stockFilter} onChange={(event) => setStockFilter(event.target.value)}>
+                <option value="all">Any stock status</option>
+                <option value="in">In stock</option>
+                <option value="out">Out of stock</option>
               </select>
-
-              {!editingItem && (
-                <>
-                  <label className="register-label">Initial Quantity</label>
-                  <input
-                    type="number"
-                    className="register-input"
-                    value={formData.quantity}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        quantity: Number(e.target.value) || 0,
-                      })
-                    }
-                    min="0"
-                  />
-                </>
-              )}
-
-              <label className="register-label">Notes</label>
-              <textarea
-                className="register-input"
-                rows="3"
-                value={formData.notes}
-                onChange={(e) =>
-                  setFormData({ ...formData, notes: e.target.value })
-                }
-                placeholder="Additional notes about this item..."
-              />
-            </div>
-
-            <footer className="paymodal__actions">
-              <button
-                className="btn btn-primary"
-                onClick={editingItem ? handleEditItem : handleAddItem}
-              >
-                {editingItem ? "Update" : "Add"}
-              </button>
-              <button className="btn btn-ghost" onClick={closeModals}>
-                Cancel
-              </button>
-            </footer>
+            </label>
+            {filtersActive && <button className="inventory-button" type="button" onClick={clearFilters}>Clear filters</button>}
           </div>
+          {showSeedAction && (
+            <button className="inventory-button" type="button" disabled={initializing} onClick={initializeDefaults}>
+              {initializing ? "Adding default items…" : seedIncomplete ? "Retry adding default items" : "Add default items"}
+            </button>
+          )}
         </div>
-      )}
 
-      {/* Note Modal */}
-      {showNoteModal && (
-        <div
-          className="paymodal"
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setShowNoteModal(null)}
-        >
-          <div
-            className="paymodal__dialog"
-            onClick={(e) => e.stopPropagation()}
-            role="document"
-          >
-            <header className="paymodal__head">
-              <h3>
-                Notes -{" "}
-                {items.find((i) => (i._id || i.id) === showNoteModal)?.name}
-              </h3>
-              <button
-                className="paymodal__close"
-                aria-label="Close"
-                onClick={() => setShowNoteModal(null)}
-              >
-                ✕
-              </button>
-            </header>
-
-            <div className="paymodal__body">
-              <textarea
-                className="register-input"
-                rows="5"
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Add notes about this item..."
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setShowNoteModal(null);
-                    setNoteText("");
-                  }
-                }}
-              />
-            </div>
-
-            <footer className="paymodal__actions">
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  if (showNoteModal) {
-                    handleUpdateNote(showNoteModal, noteText);
-                  }
-                }}
-              >
-                Save Note
-              </button>
-              <button
-                className="btn btn-ghost"
-                onClick={() => {
-                  setShowNoteModal(null);
-                  setNoteText("");
-                }}
-              >
-                Cancel
-              </button>
-            </footer>
+        {loadState === "loading" && <p className="inventory-state" role="status">Loading inventory…</p>}
+        {loadState === "error" && (
+          <div className="inventory-state" role="alert">
+            <p>Couldn’t load inventory.</p>
+            <button className="inventory-button" type="button" onClick={fetchItems}>Try again</button>
           </div>
-        </div>
+        )}
+        {loadState === "ready" && (filteredItems.length ? (
+          <>
+            <p className="inventory-result-count" role="status">{filteredItems.length} {filteredItems.length === 1 ? "item" : "items"}</p>
+            <div className="inventory-table-wrapper">
+              <table className="inventory-table" aria-label={`${selectedCategory} inventory`}>
+                <thead><tr><th scope="col">Item</th><th scope="col">Quantity</th><th scope="col">Last updated</th><th scope="col">Actions</th></tr></thead>
+                <tbody>
+                  {filteredItems.map((item) => {
+                    const id = itemId(item);
+                    const saving = savingItems.includes(id) || initializing;
+                    const timestamp = updatedAt(item);
+                    return (
+                      <tr key={id}>
+                        <th scope="row"><strong>{item.name}</strong><span className="inventory-unit">{item.unit || "pcs"}</span>
+                          {Number(item.quantity ?? 0) === 0 && <span className="inventory-stock-badge">Out of stock</span>}</th>
+                        <td><InventoryQuantity item={item} saving={saving} onSave={(quantity) => saveQuantity(item, quantity)} /></td>
+                        <td>{Number.isNaN(timestamp.getTime()) ? "—" : <time dateTime={timestamp.toISOString()}>{dateFormat.format(timestamp)}</time>}</td>
+                        <td>
+                          <div className="inventory-row-actions">
+                            <button type="button" className="inventory-icon-button" disabled={saving} aria-label={`Notes for ${item.name}`} title={item.notes || "Add notes"} onClick={() => openEditor(item, "note")}>
+                              <FiFileText aria-hidden="true" />{item.notes && <span className="inventory-note-dot" />}
+                            </button>
+                            <button type="button" className="inventory-icon-button" disabled={saving} aria-label={`Edit ${item.name}`} title="Edit item" onClick={() => openEditor(item, "edit")}><FiEdit2 aria-hidden="true" /></button>
+                            <button type="button" className="inventory-icon-button danger" disabled={saving} aria-label={`Delete ${item.name}`} title="Delete item" onClick={() => removeItem(item)}><FiTrash2 aria-hidden="true" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <p className="inventory-state" role="status">{filtersActive ? "No items match your filters." : `No ${selectedCategory.toLowerCase()} items yet.`}</p>
+        ))}
+      </section>
+      {editor && (
+        <InventoryEditor
+          editor={editor}
+          onChange={setEditor}
+          onClose={() => setEditor(null)}
+          onSave={saveEditor}
+          saving={savingItems.includes(editor.id || "add")}
+          error={editorError}
+        />
       )}
-    </div>
+    </WorkspacePage>
   );
 }

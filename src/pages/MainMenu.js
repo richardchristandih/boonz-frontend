@@ -9,7 +9,8 @@ import React, {
 import { useNavigate } from "react-router-dom";
 import { buildKitchenTicket } from "../kitchenReceipt";
 import "./MainMenu.css";
-import richardImage from "./ProfilePic.png";
+import { FiArchive, FiChevronDown, FiCoffee, FiPlus, FiRefreshCw, FiSearch, FiShoppingBag, FiTag, FiX } from "react-icons/fi";
+import ReceiptPreview from "../components/ReceiptPreview";
 import Sidebar from "./Sidebar";
 import { buildReceipt } from "../receipt";
 import { printRaw, listPrinters } from "../utils/qzHelper";
@@ -28,16 +29,15 @@ import {
 import { sendOrderEmail, EMAIL_COOLDOWN_SEC } from "../services/orderEmail";
 import { fetchOrderCharges } from "../services/orderCharges";
 import { formatIDR } from "../utils/money";
-import AddCategoryModal from "../components/AddCategoryModal";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmDialog";
 
 /* ---------------- Constants ---------------- */
-const MOBILE_BP = 1024; // px
+const MOBILE_BP = 900; // px
 const RECEIPT_PRINTER_HINT = /RPP02N/i;
 
 // Category UX preferences
-const DEFAULT_CATEGORY = "Coffee";
+const DEFAULT_CATEGORY = "All";
 
 const productImages = require.context(
   "../images",
@@ -162,9 +162,16 @@ function extractBtAddress(val) {
   return (m && m[1]) || s;
 }
 
+function promoUnavailable(promo, subtotal, now = Date.now()) {
+  if (!promo?.active) return "Promotion is inactive.";
+  if (promo.startsAt && Date.parse(promo.startsAt) > now) return "Promotion hasn’t started.";
+  if (promo.endsAt && Date.parse(promo.endsAt) < now) return "Promotion has ended.";
+  if (subtotal < Number(promo.minSubtotal || 0)) return "Order subtotal is below the minimum.";
+  return "";
+}
+
 function computePromoDiscount(promo, subtotal) {
-  if (!promo || !promo.active) return 0;
-  if (promo.minSubtotal && subtotal < Number(promo.minSubtotal)) return 0;
+  if (promoUnavailable(promo, subtotal)) return 0;
   let d =
     promo.type === "percentage"
       ? subtotal * (Number(promo.value || 0) / 100)
@@ -175,11 +182,12 @@ function computePromoDiscount(promo, subtotal) {
 }
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(
-    typeof window !== "undefined" ? window.innerWidth < MOBILE_BP : false
+    typeof window !== "undefined" ? window.innerWidth <= MOBILE_BP : false
   );
   useEffect(() => {
     const mq = window.matchMedia(`(max-width:${MOBILE_BP}px)`);
     const h = (e) => setIsMobile(e.matches);
+    h(mq);
     mq.addEventListener("change", h);
     return () => mq.removeEventListener("change", h);
   }, []);
@@ -219,24 +227,10 @@ function buildOrderedChips(apiCats, prodCats) {
     const key = clean.toLowerCase();
     if (!map.has(key)) map.set(key, clean);
   };
-  (apiCats || []).forEach(add);
-  (prodCats || []).forEach(add);
-
-  if (map.size === 0) {
-    ["Coffee", "Drink", "Burger", "Beer", "Patisserie", "Matcha"].forEach(add);
-  }
-
-  const allNames = Array.from(map.values());
-  const primary = ["Coffee", "Burger"]
-    .filter((p) => includesCI(allNames, p))
-    .map((p) => allNames.find((n) => n.toLowerCase() === p.toLowerCase()));
-
-  const rest = allNames
-    .filter((n) => !includesCI(primary, n))
-    .sort((a, b) => a.localeCompare(b));
-
-  const ordered = [...primary, ...rest];
-  return ordered.length > 1 ? ["All", ...ordered] : ordered;
+  apiCats.forEach(add);
+  [...prodCats].sort((a, b) => a.localeCompare(b)).forEach(add);
+  map.delete("all");
+  return ["All", ...map.values()];
 }
 
 /* ---------------- Component ---------------- */
@@ -249,50 +243,65 @@ export default function MenuLayout() {
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [serviceEnabled, setServiceEnabled] = useState(false);
   const [taxRate, setTaxRate] = useState(0); // decimals, e.g. 0.10
-  const [serviceRate, setServiceRate] = useState(0); // decimals, e.g. 0.05
+  const [serviceRate, setServiceRate] = useState(0);
+  const [chargesState, setChargesState] = useState("loading");
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const s = await fetchOrderCharges();
-        setTaxEnabled(!!s.taxEnabled);
-        setServiceEnabled(!!s.serviceEnabled);
-        // already normalized to decimals by the service
-        setTaxRate(Number(s.taxRate) || 0);
-        setServiceRate(Number(s.serviceRate) || 0);
-      } catch (e) {
-        console.warn("Failed to load order charges:", e);
-        // keep defaults
-      }
-    })();
+  const reloadCharges = useCallback(async () => {
+    setChargesState("loading");
+    try {
+      const charges = await fetchOrderCharges();
+      setTaxEnabled(Boolean(charges.taxEnabled));
+      setServiceEnabled(Boolean(charges.serviceEnabled));
+      setTaxRate(Number(charges.taxRate) || 0);
+      setServiceRate(Number(charges.serviceRate) || 0);
+      setChargesState("ready");
+    } catch {
+      setChargesState("error");
+    }
   }, []);
+
+  useEffect(() => { reloadCharges(); }, [reloadCharges]);
 
   // categories from API (preferred)
   const [categories, setCategories] = useState([]); // [{_id, name}]
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORY);
-  const [addCatOpen, setAddCatOpen] = useState(false);
-
-  const initRef = useRef(true);
 
   // user
-  const storedUser = localStorage.getItem("user");
-  const user = storedUser ? JSON.parse(storedUser) : null;
+  const user = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  }, []);
+  const isAdmin = user?.role === "admin" || user?.isAdmin === true;
+  const initials = (user?.name || user?.email || "Boonz").trim().split(/\s+/)
+    .slice(0, 2).map((word) => word.charAt(0)).join("").toUpperCase();
 
-  // email receipt (customer optional during checkout)
-  const [wantEmailReceipt, setWantEmailReceipt] = useState(false);
-  const [customerEmail, setCustomerEmail] = useState(user?.email || "");
-  const [customerName, setCustomerName] = useState(user?.name || "");
+  const draftKey = user ? `boonz.register.draft:${user._id || user.id || user.email || user.name}` : "";
+  const initialDraft = useMemo(() => {
+    if (!draftKey) return {};
+    try {
+      return JSON.parse(sessionStorage.getItem(draftKey)) || {};
+    } catch {
+      return {};
+    }
+  }, [draftKey]);
+  const [customerEmail, setCustomerEmail] = useState(initialDraft.customerEmail || "");
+  const [customerName, setCustomerName] = useState(initialDraft.customerName || "");
 
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [productsError, setProductsError] = useState("");
 
-  const [cart, setCart] = useState([]);
-  const [orderType, setOrderType] = useState("Delivery");
+  const [cart, setCart] = useState(Array.isArray(initialDraft.cart) ? initialDraft.cart : []);
+  const [orderType, setOrderType] = useState(initialDraft.orderType || "Delivery");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [orderNumber, setOrderNumber] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitting = useRef(false);
   const [coffeeCustomize, setCoffeeCustomize] = useState({
     open: false,
     product: null,
@@ -300,40 +309,30 @@ export default function MenuLayout() {
   });
 
   /* ---- NEW: Post-payment print dialog state ---- */
-  const [printDialog, setPrintDialog] = useState({
-    open: false,
-    orderNumber: null,
-    kotText: "",
-    receiptText: "",
-    logoDataUrl: "",
-  });
+  const [printDialog, setPrintDialog] = useState(null);
   const [printBusy, setPrintBusy] = useState(""); // "", "kitchen", "receipt"
 
-  /* ---- Open Bill Feature ---- */
-  const [openBills, setOpenBills] = useState([]); // Array of unpaid orders
+  const [openBills, setOpenBills] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("openBills") || "[]");
+      return Array.isArray(stored) ? stored.filter((bill) => bill?.orderData) : [];
+    } catch {
+      return [];
+    }
+  });
   const [showOpenBills, setShowOpenBills] = useState(false);
-  const [editingOpenBill, setEditingOpenBill] = useState(null); // Currently editing open bill order number
+  const [resuming, setResuming] = useState(initialDraft.resuming || null);
+  const [online, setOnline] = useState(() => navigator.onLine);
 
-  // Load open bills from localStorage on mount
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("openBills");
-      if (stored) {
-        setOpenBills(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.warn("Failed to load open bills:", e);
-    }
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
   }, []);
-
-  // Save open bills to localStorage whenever it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem("openBills", JSON.stringify(openBills));
-    } catch (e) {
-      console.warn("Failed to save open bills:", e);
-    }
-  }, [openBills]);
 
   /* ---- Drink customization & toppings ---- */
   const TOPPING_PRICE_IDR = 4000;
@@ -723,7 +722,7 @@ export default function MenuLayout() {
   }, [customize, setCart]);
 
   /* ---- Email receipt (desktop box) ---- */
-  const [email, setEmail] = useState(user?.email || "");
+  const [email, setEmail] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailNotice, setEmailNotice] = useState("");
   const [emailError, setEmailError] = useState("");
@@ -771,7 +770,7 @@ export default function MenuLayout() {
 
   /* ---- Search ---- */
   const [searchTerm, setSearchTerm] = useState("");
-  const [showSearchBar, setShowSearchBar] = useState(false);
+  const searchInput = useRef(null);
 
   /* ---- Promotions / discount ---- */
   const [promos, setPromos] = useState([]);
@@ -779,11 +778,29 @@ export default function MenuLayout() {
   const [promosError, setPromosError] = useState("");
 
   const [showDiscountModal, setShowDiscountModal] = useState(false);
-  const [discountMode, setDiscountMode] = useState("promo");
-  const [selectedPromoId, setSelectedPromoId] = useState("");
-  const [discountValue, setDiscountValue] = useState("");
-  const [discountType, setDiscountType] = useState("flat");
-  const [discountNote, setDiscountNote] = useState("");
+  const discountBeforeEdit = useRef(null);
+  const [discountMode, setDiscountMode] = useState(initialDraft.discountMode || "promo");
+  const [selectedPromoId, setSelectedPromoId] = useState(initialDraft.selectedPromoId || "");
+  const [discountValue, setDiscountValue] = useState(initialDraft.discountValue || "");
+  const [discountType, setDiscountType] = useState(initialDraft.discountType || "flat");
+  const [discountNote, setDiscountNote] = useState(initialDraft.discountNote || "");
+
+  useEffect(() => {
+    if (!draftKey || showDiscountModal) return;
+    try {
+      if (cart.length) {
+        sessionStorage.setItem(draftKey, JSON.stringify({
+          cart, orderType, customerName, customerEmail, discountMode,
+          selectedPromoId, discountValue, discountType, discountNote, resuming,
+        }));
+      } else {
+        sessionStorage.removeItem(draftKey);
+      }
+    } catch {
+      // The active order remains available in memory when browser storage is unavailable.
+    }
+  }, [draftKey, showDiscountModal, cart, orderType, customerName, customerEmail,
+    discountMode, selectedPromoId, discountValue, discountType, discountNote, resuming]);
 
   /* ---- Avatar dropdown ---- */
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -817,7 +834,7 @@ export default function MenuLayout() {
     });
     if (!confirmed) return;
 
-    const keep = new Set(["token", "refreshToken", "user"]);
+    const keep = new Set(["token", "refreshToken", "user", "openBills"]);
     try {
       const toRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -852,39 +869,29 @@ export default function MenuLayout() {
     if (!user) navigate("/login");
   }, [user, navigate]);
 
-  /* ---- Load products once ---- */
-  useEffect(() => {
-    (async () => {
-      try {
-        setLoadingProducts(true);
-        const res = await api.get("/products");
-        const list = Array.isArray(res.data)
-          ? res.data
-          : res.data && Array.isArray(res.data.items)
-          ? res.data.items
-          : [];
-        setProducts(list);
-      } catch (err) {
-        console.error("Error fetching products:", err);
-        setProducts([]);
-      } finally {
-        setLoadingProducts(false);
-      }
-    })();
+  const reloadProducts = useCallback(async () => {
+    setLoadingProducts(true);
+    setProductsError("");
+    try {
+      const { data } = await api.get("/products");
+      const list = Array.isArray(data) ? data : data?.items;
+      if (!Array.isArray(list)) throw new Error("Unexpected catalog response");
+      setProducts(list);
+    } catch {
+      setProductsError("Couldn’t load the menu.");
+    } finally {
+      setLoadingProducts(false);
+    }
   }, []);
+
+  useEffect(() => {
+    reloadProducts();
+  }, [reloadProducts]);
 
   /* ---- Load categories on mount ---- */
   useEffect(() => {
     reloadCategories();
   }, [reloadCategories]);
-
-  /* ---- Fallback selected category ---- */
-  useEffect(() => {
-    if (!selectedCategory && products.length && categories.length === 0) {
-      const derived = deriveCategoryNames(products);
-      setSelectedCategory(derived[0] || DEFAULT_CATEGORY);
-    }
-  }, [categories.length, products, selectedCategory]);
 
   const fetchPromos = useCallback(async () => {
     try {
@@ -912,38 +919,21 @@ export default function MenuLayout() {
   const chipReady = dataReady && chipNames.length > 0;
 
   useEffect(() => {
-    if (!chipReady) return;
-    const prefer =
-      chipNames.find(
-        (n) => n.toLowerCase() === DEFAULT_CATEGORY.toLowerCase()
-      ) || chipNames[0];
-
-    if (initRef.current) {
-      if (!includesCI(chipNames, selectedCategory)) {
-        setSelectedCategory(prefer);
-      }
-      initRef.current = false;
-      return;
-    }
-    if (!includesCI(chipNames, selectedCategory)) {
-      setSelectedCategory(prefer);
-    }
+    if (chipReady && !includesCI(chipNames, selectedCategory)) setSelectedCategory("All");
   }, [chipReady, chipNames, selectedCategory]);
 
-  /* ---------- Product filtering ---------- */
-  const filteredProducts = useMemo(() => {
-    const term = (searchTerm || "").toLowerCase();
-    const list = Array.isArray(products) ? products : [];
-    return list.filter((p) => {
-      const category = (p?.category ?? "").trim();
-      const name = p?.name ?? "";
-      const categoryOk =
-        !selectedCategory || selectedCategory === "All"
-          ? true
-          : category.toLowerCase() === selectedCategory.toLowerCase();
-      return categoryOk && name.toLowerCase().includes(term);
-    });
-  }, [products, searchTerm, selectedCategory]);
+  useEffect(() => {
+    if (initialDraft.selectedPromoId) fetchPromos();
+  }, [initialDraft, fetchPromos]);
+
+  const query = searchTerm.trim().toLowerCase();
+  const filteredProducts = useMemo(() => products.filter((product) => {
+    const category = String(product.category || "").trim().toLowerCase();
+    if (!query) return selectedCategory === "All" || category === selectedCategory.toLowerCase();
+    return [product.name, product.sku, product.category].some(
+      (value) => String(value || "").toLowerCase().includes(query)
+    );
+  }), [products, query, selectedCategory]);
 
   const selectedPromo = useMemo(
     () => promos.find((p) => (p._id || p.id) === selectedPromoId) || null,
@@ -973,15 +963,12 @@ export default function MenuLayout() {
     return discountType === "percentage" ? sub * (parsed / 100) : parsed;
   }, [discountMode, discountType, discountValue, sub]);
 
-  const promoDiscount = useMemo(() => {
-    if (discountMode !== "promo") return 0;
-    return computePromoDiscount(selectedPromo, sub);
-  }, [discountMode, selectedPromo, sub]);
+  const promoDiscount = discountMode === "promo" ? computePromoDiscount(selectedPromo, sub) : 0;
 
   const discount = useMemo(
     () =>
-      Math.max(0, discountMode === "promo" ? promoDiscount : customDiscount),
-    [discountMode, promoDiscount, customDiscount]
+      Math.min(sub + tx + svc, Math.max(0, discountMode === "promo" ? promoDiscount : customDiscount)),
+    [sub, tx, svc, discountMode, promoDiscount, customDiscount]
   );
   const total = useMemo(
     () => Math.max(0, sub + tx + svc - discount),
@@ -1003,8 +990,6 @@ export default function MenuLayout() {
   const handleAddToCart = useCallback(
     (product) => {
       if (!product) return;
-
-      const category = (product.category || "").trim();
 
       // 1) Drinks -> customization modal
       if (isCoffee(product)) {
@@ -1077,535 +1062,172 @@ export default function MenuLayout() {
     []
   );
 
-  const handleRemoveItem = useCallback(
-    (id) => setCart((prev) => prev.filter((i) => i.id !== id)),
-    []
-  );
+  const itemCount = cart.reduce((count, item) => count + item.quantity, 0);
 
-  /* ---------- Customer Name Dialog State ---------- */
-  const [showCustomerNameDialog, setShowCustomerNameDialog] = useState(false);
-  const [checkoutCustomerName, setCheckoutCustomerName] = useState("");
-
-  /* ---------- Checkout ---------- */
-  const handleCheckout = useCallback(() => {
-    if (cart.length === 0) {
-      show("Your cart is empty!", { type: "info" });
-      return;
+  function addSearchResult(event) {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing || !query) return;
+    event.preventDefault();
+    const exactMatch = products.find((product) => String(product.sku || "").toLowerCase() === query);
+    const product = exactMatch || (filteredProducts.length === 1 ? filteredProducts[0] : null);
+    if (product) {
+      handleAddToCart(product);
+      setSearchTerm("");
     }
-    // Show customer name dialog first
-    setCheckoutCustomerName(customerName || user?.name || "");
-    setShowCustomerNameDialog(true);
-  }, [cart.length, customerName, user?.name]);
+  }
 
-  const handleCustomerNameConfirm = useCallback(() => {
-    setCustomerName(checkoutCustomerName);
-    setShowCustomerNameDialog(false);
-    setShowPaymentModal(true);
-  }, [checkoutCustomerName]);
-
-  const finishOrder = (newOrderNumber) => {
-    setShowPaymentModal(false);
-    setMobileCartOpen(false);
-    // Only clear cart if not editing an open bill
-    if (!editingOpenBill) {
-      setCart([]);
-      setSelectedPromoId("");
-      setDiscountMode("promo");
-      setDiscountValue("0");
-      setDiscountNote("");
-      setDiscountType("flat");
-    }
+  function resetCart() {
+    setCart([]);
+    setResuming(null);
+    setCustomerName("");
+    setCustomerEmail("");
+    setSelectedPromoId("");
+    setDiscountMode("promo");
+    setDiscountValue("");
+    setDiscountNote("");
+    setDiscountType("flat");
+    setOrderType("Delivery");
     setSelectedPaymentMethod("");
-    setEditingOpenBill(null);
-    show(`Order #${newOrderNumber} placed successfully!`, {
-      type: "success",
-      ttl: 5000,
-    });
-  };
+  }
 
-  const confirmPayment = useCallback(async () => {
-    if (!user) {
-      show("Your session expired. Please log in again.", { type: "error" });
-      navigate("/login");
+  function saveOpenBills(bills) {
+    try {
+      localStorage.setItem("openBills", JSON.stringify(bills));
+      setOpenBills(bills);
+      return true;
+    } catch {
+      show("Couldn’t save held orders on this device.", { type: "error" });
+      return false;
+    }
+  }
+
+  function holdOrder() {
+    if (!itemCount || submitting.current) return;
+    const orderNumber = resuming || `Draft-${Date.now()}`;
+    const draft = {
+      orderNumber,
+      createdAt: new Date().toISOString(),
+      customerName,
+      customerEmail,
+      orderData: {
+        products: cart.map((item) => ({
+          productId: item._id || item.id,
+          name: item.name,
+          quantity: item.quantity,
+          price: Number(item.price ?? 0),
+          note: item.note,
+          options: item.options,
+        })),
+        orderType,
+        discountMode,
+        discountType,
+        discountValue,
+        discountNote,
+        promoId: selectedPromoId,
+        discount,
+        totalAmount: total,
+      },
+    };
+    const bills = [...openBills.filter((bill) => bill.orderNumber !== orderNumber), draft];
+    if (!saveOpenBills(bills)) return;
+    resetCart();
+    setMobileCartOpen(false);
+    show("Order held on this device.", { type: "success" });
+  }
+
+  async function confirmPayment(event) {
+    event.preventDefault();
+    if (!user || !selectedPaymentMethod || !itemCount || !online || chargesState !== "ready" || submitting.current) return;
+    if (discountMode === "custom" && discount > 0 && (!isAdmin || !discountNote.trim())) {
+      show("An admin must add a reason for a manual discount.", { type: "error" });
       return;
     }
-    if (!selectedPaymentMethod) {
-      show("Please select a payment method!", { type: "error" });
+    const promoReason = selectedPromoId && discountMode === "promo"
+      ? promoUnavailable(selectedPromo, sub) : "";
+    if (promoReason) {
+      show(`${promoReason} Review the discount before recording payment.`, { type: "error" });
+      setShowPaymentModal(false);
+      await handleOpenDiscountModal();
       return;
     }
-    if (isSubmitting) return;
+
+    submitting.current = true;
     setIsSubmitting(true);
-
-    let finalDiscountNote = (discountNote || "").trim();
-    let promoMeta = null;
-    if (discountMode === "promo") {
-      if (selectedPromo) {
-        finalDiscountNote = selectedPromo.name;
-        promoMeta = {
-          promoId: selectedPromo._id || selectedPromo.id,
-          promoName: selectedPromo.name,
-        };
-      } else if (!finalDiscountNote) finalDiscountNote = "Promo";
-    } else if (discount === 0 && !finalDiscountNote) {
-      finalDiscountNote = "None";
-    } else if (discount > 0 && !finalDiscountNote) {
-      const parsed = parseFloat(discountValue) || 0;
-      finalDiscountNote =
-        discountType === "percentage"
-          ? `Custom ${parsed}% Discount`
-          : "Custom Flat Discount";
-    }
-
-    // Check if this is an open bill (unpaid)
-    const isOpenBill = selectedPaymentMethod === "Open Bill";
-
+    const finalDiscountNote = (discountMode === "promo" ? selectedPromo?.name : discountNote.trim())
+      || (discount > 0 ? "Custom discount" : "None");
     const orderData = {
       products: cart.map((item) => ({
-        productId: item._id || item.id || item.sku,
+        productId: item._id || item.id,
         name: item.name,
         quantity: item.quantity,
         price: Number(item.price ?? 0),
         note: normalizeNote(item.note) || undefined,
-        options: item.options || {}, // Preserve options for kitchen ticket
+        options: item.options || {},
       })),
-      subtotal: sub,
-      tax: tx,
-      serviceCharge: svc,
       discount,
       discountNote: finalDiscountNote,
-      totalAmount: total,
-      user: user?._id,
       orderType,
-      paymentMethod: isOpenBill ? "Open Bill" : selectedPaymentMethod,
-      discountMode,
-      ...(promoMeta || {}),
-
-      // Email customer (optional)
-      sendEmail: wantEmailReceipt && !!(customerEmail || "").trim(),
-      customerEmail: wantEmailReceipt
-        ? (customerEmail || "").trim()
-        : undefined,
-      // Always save customer name if provided (not just for email receipts)
-      customerName: (customerName || "").trim() || undefined,
-
-      // Optional logo for email template
-      logoUrl: appLogo,
+      paymentMethod: selectedPaymentMethod,
+      ...(discountMode === "promo" && selectedPromo ? { promoId: selectedPromo._id || selectedPromo.id } : {}),
+      sendEmail: Boolean(customerEmail.trim()),
+      customerEmail: customerEmail.trim() || undefined,
+      customerName: customerName.trim() || undefined,
     };
 
     try {
-      let newOrderNumber;
-
-      if (isOpenBill) {
-        // Check if we're updating an existing open bill
-        if (editingOpenBill) {
-          // Update existing open bill
-          const existingBill = openBills.find(
-            (b) => b.orderNumber === editingOpenBill
-          );
-          if (existingBill && existingBill.orderId) {
-            // Merge the old and new items
-            const existingProducts = existingBill.orderData.products || [];
-            const newProducts = orderData.products || [];
-
-            // Combine products (add quantities if same product, otherwise append)
-            const productMap = new Map();
-
-            // Add existing products
-            existingProducts.forEach((p) => {
-              const key = p.productId || p.name;
-              productMap.set(key, { ...p });
-            });
-
-            // Add/merge new products
-            newProducts.forEach((p) => {
-              const key = p.productId || p.name;
-              if (productMap.has(key)) {
-                // Same product - add quantities
-                const existing = productMap.get(key);
-                existing.quantity =
-                  (Number(existing.quantity) || 0) + (Number(p.quantity) || 0);
-              } else {
-                // New product
-                productMap.set(key, { ...p });
-              }
-            });
-
-            const mergedProducts = Array.from(productMap.values());
-            const mergedSubtotal = mergedProducts.reduce(
-              (sum, p) =>
-                sum + (Number(p.price) || 0) * (Number(p.quantity) || 0),
-              0
-            );
-            const mergedTax = taxEnabled ? mergedSubtotal * taxRate : 0;
-            const mergedService = serviceEnabled
-              ? mergedSubtotal * serviceRate
-              : 0;
-            const mergedTotal = Math.max(
-              0,
-              mergedSubtotal + mergedTax + mergedService - discount
-            );
-
-            const updatedOrderData = {
-              ...orderData,
-              products: mergedProducts,
-              subtotal: mergedSubtotal,
-              tax: mergedTax,
-              serviceCharge: mergedService,
-              totalAmount: mergedTotal,
-            };
-
-            // Update the existing order in backend
-            try {
-              await api.patch(`/orders/${existingBill.orderId}`, {
-                products: updatedOrderData.products,
-                subtotal: updatedOrderData.subtotal,
-                tax: updatedOrderData.tax,
-                serviceCharge: updatedOrderData.serviceCharge,
-                discount: updatedOrderData.discount,
-                totalAmount: updatedOrderData.totalAmount,
-                customerName: customerName || existingBill.customerName || "",
-              });
-            } catch (err) {
-              console.warn("Failed to update order in backend:", err);
-            }
-
-            setOpenBills((prev) =>
-              prev.map((bill) =>
-                bill.orderNumber === editingOpenBill
-                  ? {
-                      ...bill,
-                      orderData: updatedOrderData,
-                      customerName: customerName || bill.customerName || "",
-                      updatedAt: new Date().toISOString(),
-                    }
-                  : bill
-              )
-            );
-
-            newOrderNumber = editingOpenBill; // Keep the same order number
-            setEditingOpenBill(null);
-            show(`Order #${newOrderNumber} updated!`, {
-              type: "success",
-              ttl: 3000,
-            });
-          } else {
-            // Bill not found or no orderId, create new one
-            const response = await api.post("/orders", {
-              ...orderData,
-              paymentMethod: "Open Bill",
-              status: "pending",
-            });
-            newOrderNumber = response.data?.orderNumber;
-            const openBill = {
-              orderNumber: newOrderNumber,
-              orderData,
-              customerName: customerName || user?.name || "",
-              createdAt: new Date().toISOString(),
-              kotText: null,
-              receiptText: null,
-              logoDataUrl: null,
-              orderId: response.data._id,
-            };
-            setOpenBills((prev) => [...prev, openBill]);
-            show(`Order #${newOrderNumber} saved as open bill!`, {
-              type: "success",
-              ttl: 3000,
-            });
-          }
-        } else {
-          // Create new open bill - create order in backend to get proper order number
-          try {
-            const response = await api.post("/orders", {
-              ...orderData,
-              paymentMethod: "Open Bill", // Mark as open bill
-              status: "pending", // Keep as pending until paid
-            });
-            newOrderNumber = response.data?.orderNumber;
-            const openBill = {
-              orderNumber: newOrderNumber,
-              orderData,
-              customerName: customerName || user?.name || "",
-              createdAt: new Date().toISOString(),
-              kotText: null, // Will be generated when needed
-              receiptText: null,
-              logoDataUrl: null,
-              orderId: response.data._id, // Store order ID for future updates
-            };
-            setOpenBills((prev) => [...prev, openBill]);
-            show(`Order #${newOrderNumber} saved as open bill!`, {
-              type: "success",
-              ttl: 3000,
-            });
-          } catch (apiError) {
-            // If API call fails, fall back to local storage only
-            console.warn("Failed to create order in backend, saving locally only:", apiError);
-            // Generate a temporary order number (will be replaced when order is paid)
-            const tempOrderNumber = `TEMP-${Date.now()}`;
-            newOrderNumber = tempOrderNumber;
-            const openBill = {
-              orderNumber: newOrderNumber,
-              orderData,
-              customerName: customerName || user?.name || "",
-              createdAt: new Date().toISOString(),
-              kotText: null,
-              receiptText: null,
-              logoDataUrl: null,
-            };
-            setOpenBills((prev) => [...prev, openBill]);
-            show(`Order saved as open bill (local only).`, {
-              type: "warning",
-              ttl: 3000,
-            });
-          }
-        }
-      } else {
-        // Normal paid order - send to server
-        const response = await api.post("/orders", orderData);
-        newOrderNumber = response.data?.orderNumber;
-      }
-
+      const { data: saved } = await api.post("/orders", orderData);
+      const newOrderNumber = saved.orderNumber;
       setOrderNumber(newOrderNumber);
-
-      // Build printable strings but DO NOT print yet
-      const dateStr = new Date().toLocaleString();
-
-      // Always use customerName if provided, otherwise fall back to user name
-      const printedCustomerName =
-        (customerName || "").trim() || user?.name || "";
-
-      // Ensure items have all required fields for kitchen ticket
-      const kitchenItems = (orderData.products || []).map((it) => ({
-        name: it.name || "Item",
-        quantity: Number(it.quantity) || 0,
-        note: it.note || "",
-        options: it.options || {}, // Preserve options if they exist
+      setEmail(customerEmail.trim());
+      setEmailNotice(saved.emailSent ? `Receipt sent to ${customerEmail.trim()}.` : "");
+      setEmailCooldownUntil(saved.emailSent ? Date.now() + EMAIL_COOLDOWN_SEC * 1000 : 0);
+      setEmailError(orderData.sendEmail && !saved.emailSent ? "The order was recorded. The receipt email failed." : "");
+      const dateStr = new Date(saved.createdAt || Date.now()).toLocaleString();
+      const customer = { name: saved.customerName || orderData.customerName };
+      const items = orderData.products.map((item) => ({
+        ...item,
+        name: item.note ? `${item.name} [${item.note}]` : item.name,
       }));
-
-      // Debug: log if items are missing
-      if (kitchenItems.length === 0) {
-        console.warn("No items found for kitchen ticket!");
-      }
-
-      const kotText = buildKitchenTicket({
-        orderNumber: newOrderNumber || "N/A",
-        dateStr,
-        orderType: orderData.orderType,
-        items: kitchenItems,
-        customer: { name: printedCustomerName || user?.name },
-      });
-
-      // Debug: log kitchen ticket content (first 500 chars)
-      if (process.env.NODE_ENV === "development") {
-        console.log("Kitchen ticket preview:", kotText.substring(0, 500));
-        console.log("Kitchen items count:", kitchenItems.length);
-      }
-
-      const itemsForReceipt = orderData.products.map((it) => {
-        const n = normalizeNote(it.note);
-        return {
-          ...it,
-          name: n ? `${it.name} [${n}]` : it.name,
-        };
-      });
-
-      let receiptText = buildReceipt({
+      const document = {
+        shopName: "Boonz",
         address: "Jl. Mekar Utama No. 61, Bandung",
-        orderNumber: newOrderNumber || "N/A",
+        orderNumber: newOrderNumber,
         dateStr,
-        items: itemsForReceipt,
-        subtotal: orderData.subtotal,
-        tax: orderData.tax,
-        service: orderData.serviceCharge,
+        items,
+        subtotal: saved.subtotal ?? sub,
+        tax: saved.tax ?? tx,
+        service: saved.serviceCharge ?? svc,
         showTax: taxEnabled,
         showService: serviceEnabled,
-        discount: orderData.discount,
-        total: orderData.totalAmount,
-        payment: orderData.paymentMethod,
-        orderType: orderData.orderType,
-        customer: { name: printedCustomerName || user?.name },
+        discount: saved.discount ?? discount,
+        total: saved.totalAmount ?? total,
+        payment: saved.paymentMethod || selectedPaymentMethod,
+        orderType,
+        customer,
         discountNote: finalDiscountNote,
-      }).replace(/^[\s\r\n]+/, "");
-
-      const logoPref = localStorage.getItem("print.logo") || appLogo;
-      const logoDataUrl =
-        typeof logoPref === "string" && logoPref.startsWith("data:")
-          ? logoPref
-          : await toDataUrl(logoPref);
-
-      // For open bills, update the stored bill with receipt data
-      if (isOpenBill) {
-        setOpenBills((prev) =>
-          prev.map((bill) =>
-            bill.orderNumber === newOrderNumber
-              ? {
-                  ...bill,
-                  kotText,
-                  receiptText,
-                  logoDataUrl,
-                }
-              : bill
-          )
-        );
-        // Don't show print dialog for open bills - they can print later
-        // Clear editing state
-        setEditingOpenBill(null);
-        finishOrder(newOrderNumber);
-        return;
+      };
+      const logo = localStorage.getItem("print.logo") || appLogo;
+      if (resuming) {
+        const remaining = openBills.filter((bill) => bill.orderNumber !== resuming);
+        if (!saveOpenBills(remaining)) setOpenBills(remaining);
       }
-
-      // Close the payment modal and open a persistent print options dialog
+      resetCart();
       setShowPaymentModal(false);
+      setMobileCartOpen(false);
       setPrintDialog({
-        open: true,
-        orderNumber: newOrderNumber || "N/A",
-        kotText,
-        receiptText: receiptText + "\n\n",
-        logoDataUrl,
+        ...document,
+        logo,
+        kotText: buildKitchenTicket({ orderNumber: newOrderNumber, dateStr, orderType, items: orderData.products, customer }),
+        receiptText: buildReceipt(document) + "\n\n",
       });
+      show(`Order #${newOrderNumber} recorded.`, { type: "success" });
     } catch (error) {
-      console.error("Error placing order:", error);
-      show("There was an error placing your order.", { type: "error" });
+      const message = error.response?.data?.message || error.response?.data?.error;
+      show(typeof message === "string" && error.response.status < 500
+        ? message : "Couldn’t confirm the order. Check Orders before trying payment again.", { type: "error" });
     } finally {
+      submitting.current = false;
       setIsSubmitting(false);
     }
-  }, [
-    cart,
-    discount,
-    discountMode,
-    discountNote,
-    discountType,
-    discountValue,
-    orderType,
-    selectedPaymentMethod,
-    svc,
-    sub,
-    tx,
-    total,
-    user,
-    isSubmitting,
-    selectedPromo,
-    navigate,
-    wantEmailReceipt,
-    customerEmail,
-    customerName,
-    taxEnabled,
-    serviceEnabled,
-  ]);
-
-  /** Build a simple 58mm print HTML (system print) */
-  function buildReceiptHtml({
-    address,
-    orderNumber,
-    dateStr,
-    items,
-    subtotal,
-    tax,
-    service,
-    showTax,
-    showService,
-    discount,
-    total,
-    payment,
-    orderType,
-    customer,
-    discountNote,
-    logo,
-  }) {
-    const rows = (items || [])
-      .map((it) => {
-        const note = normalizeNote(it.note);
-        return `
-    <tr>
-      <td>${Number(it.quantity) || 0}x ${escapeHtml(it.name || "")}</td>
-      <td style="text-align:right">${formatIDR(Number(it.price || 0), {
-        withDecimals: true,
-      })}</td>
-    </tr>
-    ${
-      note
-        ? `<tr><td colspan="2"><em>Note: ${escapeHtml(note)}</em></td></tr>`
-        : ""
-    }
-  `;
-      })
-      .join("");
-
-    return `
-<!doctype html><html><head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  @page { size: 58mm auto; margin: 0; }
-  body { margin: 0; font-family: monospace; font-size: 12px; }
-  .wrap { padding: 8px; }
-  .c { text-align: center; }
-  .line { border-top: 1px dashed #000; margin: 6px 0; }
-  table { width: 100%; border-collapse: collapse; }
-  td { vertical-align: top; }
-  .totals td { padding: 2px 0; }
-  .bold { font-weight: 700; }
-</style>
-</head>
-<body onload="setTimeout(()=>window.print(),300)">
-  <div class="wrap">
-    ${
-      logo
-        ? `<div class="c"><img src="${logo}" style="height:60px;object-fit:contain" /></div>`
-        : ``
-    }
-    <div class="c">${escapeHtml(address || "")}</div>
-    <div class="line"></div>
-    <div>Order #${escapeHtml(orderNumber || "N/A")}</div>
-    <div>Type : ${escapeHtml(orderType || "")}</div>
-    <div>Time : ${escapeHtml(dateStr || "")}</div>
-    ${customer?.name ? `<div>Cust : ${escapeHtml(customer.name)}</div>` : ""}
-    <div class="line"></div>
-    <table>${rows}</table>
-    <div class="line"></div>
-    <table class="totals">
-      <tr><td>Subtotal</td><td style="text-align:right">${formatIDR(subtotal, {
-        withDecimals: true,
-      })}</td></tr>
-           ${
-             showTax && Number(tax) > 0
-               ? `<tr><td>Tax</td><td style="text-align:right">${formatIDR(
-                   tax,
-                   {
-                     withDecimals: true,
-                   }
-                 )}</td></tr>`
-               : ""
-           }
-      ${
-        showService && Number(service) > 0
-          ? `<tr><td>Service</td><td style="text-align:right">${formatIDR(
-              service,
-              {
-                withDecimals: true,
-              }
-            )}</td></tr>`
-          : ""
-      }
-      ${
-        Number(discount || 0) > 0
-          ? `<tr><td>Discount ${
-              discountNote ? `(${escapeHtml(discountNote)})` : ""
-            }</td><td style="text-align:right">-${formatIDR(discount, {
-              withDecimals: true,
-            })}</td></tr>`
-          : ""
-      }
-      <tr class="bold"><td>Total</td><td style="text-align:right">${formatIDR(
-        total,
-        { withDecimals: true }
-      )}</td></tr>
-      <tr><td>Payment</td><td style="text-align:right">${escapeHtml(
-        payment || ""
-      )}</td></tr>
-    </table>
-    <div class="line"></div>
-    <div class="c">Thank you!</div>
-  </div>
-</body></html>`;
   }
 
   /* ==========================
@@ -1689,10 +1311,12 @@ export default function MenuLayout() {
 
         const { receiptCopies } = getPrinterPrefs();
         for (let i = 0; i < receiptCopies; i++) {
-          const res = await androidPrintLogoAndText(logoDataUrl, receiptText, {
+          const logo = logoDataUrl?.startsWith("data:")
+            ? logoDataUrl : await toDataUrl(logoDataUrl || appLogo).catch(() => "");
+          const res = logo ? await androidPrintLogoAndText(logo, receiptText, {
             address: receiptTarget,
             nameLike: receiptTarget,
-          });
+          }) : null;
           if (!res?.text) {
             await androidPrintWithRetry(receiptText + "\n\n\n", {
               address: receiptTarget,
@@ -1743,19 +1367,6 @@ export default function MenuLayout() {
     } finally {
       setPrintBusy("");
     }
-  }
-
-  function closePostPrintDialog() {
-    const on = printDialog.orderNumber;
-    setPrintDialog({
-      open: false,
-      orderNumber: null,
-      kotText: "",
-      receiptText: "",
-      logoDataUrl: "",
-    });
-    // Finalize/cleanup only when the user closes the dialog
-    finishOrder(on || "N/A");
   }
 
   /* ---- Re-print Functions ---- */
@@ -1822,133 +1433,86 @@ export default function MenuLayout() {
     }
   }
 
-  const handleDeleteOpenBill = useCallback(async (bill) => {
-    const ok = await confirm({
-      title: "Delete open bill?",
-      message: `Are you sure you want to delete order #${bill.orderNumber}? This cannot be undone.`,
-      confirmText: "Delete",
-      cancelText: "Cancel",
-      danger: true,
-    });
-    
-    if (!ok) return;
-
+  async function handleDeleteOpenBill(bill) {
+    if (!await confirm({
+      title: "Discard held order?",
+      message: "This removes the saved order from this device.",
+      confirmText: "Discard",
+    })) return;
     try {
-      // If order exists in backend, cancel it
-      if (bill.orderId) {
-        try {
-          await api.patch(`/orders/${bill.orderId}`, { status: "cancelled" });
-        } catch (err) {
-          console.warn("Failed to cancel order in backend:", err);
-        }
+      if (bill.orderId) await api.patch(`/orders/${bill.orderId}`, { status: "cancelled" });
+      if (saveOpenBills(openBills.filter((entry) => entry.orderNumber !== bill.orderNumber))) {
+        if (resuming === bill.orderNumber) resetCart();
+        show("Held order discarded.", { type: "success" });
       }
-      
-      setOpenBills((prev) =>
-        prev.filter((b) => b.orderNumber !== bill.orderNumber)
-      );
-      if (editingOpenBill === bill.orderNumber) {
-        setEditingOpenBill(null);
-      }
-      show("Open bill deleted.", { type: "success" });
-    } catch (error) {
-      console.error("Error deleting open bill:", error);
-      show("Failed to delete open bill.", { type: "error" });
+    } catch {
+      show("Couldn’t cancel the saved order. Try again.", { type: "error" });
     }
-  }, [editingOpenBill, confirm]);
+  }
 
-  function handleLoadOpenBillToCart(bill) {
-    // Load the open bill's products back into the cart
-    const itemsToLoad = (bill.orderData.products || []).map(
-      (product, index) => {
-        // Reconstruct cart item from order product
-        // Use productId as base, but ensure unique ID for cart
-        const baseId = product.productId || product.name || `item-${index}`;
-        return {
-          _id: baseId,
-          id: `${baseId}-${Date.now()}-${index}`, // Ensure unique ID
-          name: product.name,
-          price: Number(product.price || 0),
-          quantity: Number(product.quantity || 0),
-          note: product.note || "",
-          options: product.options || {},
-        };
-      }
-    );
-
-    setCart(itemsToLoad);
+  async function handleLoadOpenBillToCart(bill) {
+    if (cart.length || bill.orderId) return;
+    const data = bill.orderData;
+    setCart((data.products || []).map((product, index) => ({
+      _id: product.productId,
+      id: `${bill.orderNumber}-${index}`,
+      name: product.name,
+      price: Number(product.price || 0),
+      quantity: Number(product.quantity || 0),
+      note: product.note || "",
+      options: product.options || {},
+    })));
     setCustomerName(bill.customerName || "");
-    setOrderType(bill.orderData.orderType || "Delivery");
-
-    // Set discount if exists
-    if (bill.orderData.discount > 0) {
-      setDiscountMode(bill.orderData.discountMode || "custom");
-      if (bill.orderData.discountMode === "promo") {
-        setSelectedPromoId(bill.orderData.promoId || "");
-      } else {
-        // Calculate discount value from discount amount
-        const discountValue = bill.orderData.discount;
-        setDiscountValue(String(discountValue));
-        setDiscountType("flat");
-      }
-      setDiscountNote(bill.orderData.discountNote || "");
-    }
-
-    // Mark this open bill as being edited
-    setEditingOpenBill(bill.orderNumber);
-
-    // Close the open bills modal
+    setCustomerEmail(bill.customerEmail || "");
+    setOrderType(data.orderType || "Delivery");
+    const mode = data.discountMode || (data.discount > 0 ? "custom" : "promo");
+    setDiscountMode(mode);
+    setSelectedPromoId(data.promoId || "");
+    setDiscountType(data.discountType || "flat");
+    setDiscountValue(data.discountValue ?? String(data.discount || ""));
+    setDiscountNote(data.discountNote || "");
+    setResuming(bill.orderNumber);
     setShowOpenBills(false);
-
-    show(`Loaded order #${bill.orderNumber} to cart. You can add more items.`, {
-      type: "success",
-      ttl: 3000,
-    });
+    if (data.promoId && !promos.length) await fetchPromos();
   }
 
   // discount modal controls
   const handleOpenDiscountModal = async () => {
+    discountBeforeEdit.current = { discountMode, selectedPromoId, discountType, discountValue, discountNote };
     setShowDiscountModal(true);
-    if (!promos.length && !promosLoading) await fetchPromos();
+    if (!promosLoading) await fetchPromos();
   };
-  const handleCloseDiscountModal = () => setShowDiscountModal(false);
-  const handleApplyDiscount = () => setShowDiscountModal(false);
+  function handleCloseDiscountModal() {
+    const previous = discountBeforeEdit.current;
+    setDiscountMode(previous.discountMode);
+    setSelectedPromoId(previous.selectedPromoId);
+    setDiscountType(previous.discountType);
+    setDiscountValue(previous.discountValue);
+    setDiscountNote(previous.discountNote);
+    setShowDiscountModal(false);
+  }
+  function handleApplyDiscount(event) {
+    event.preventDefault();
+    if (discountMode === "promo" && selectedPromoId && promoUnavailable(selectedPromo, sub)) return;
+    setShowDiscountModal(false);
+  }
 
   /* ==========================
      SOFT REFRESH
      ========================== */
-  const refreshData = useCallback(async () => {
-    try {
-      setLoadingProducts(true);
-      const [prodRes] = await Promise.all([
-        api.get("/products").catch(() => ({ data: [] })),
-        reloadCategories(),
-        fetchPromos(),
-      ]);
+  const refreshData = useCallback(() => {
+    return Promise.all([reloadProducts(), reloadCategories(), fetchPromos(), reloadCharges()]);
+  }, [reloadProducts, reloadCategories, fetchPromos, reloadCharges]);
 
-      const list = Array.isArray(prodRes.data)
-        ? prodRes.data
-        : prodRes.data && Array.isArray(prodRes.data.items)
-        ? prodRes.data.items
-        : [];
-
-      setProducts(list);
-    } catch (err) {
-      console.error("Soft refresh failed:", err);
-    } finally {
-      setLoadingProducts(false);
-    }
-  }, [reloadCategories, fetchPromos]);
-
-  // Shift+R refresh
   useEffect(() => {
-    const onKey = (e) => {
-      if (
-        e.shiftKey &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        e.key.toLowerCase() === "r"
-      ) {
-        e.preventDefault();
+    const onKey = (event) => {
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && key === "k" && searchInput.current) {
+        event.preventDefault();
+        searchInput.current.focus();
+      } else if (event.shiftKey && !event.metaKey && !event.ctrlKey && key === "r"
+        && !event.target.matches?.("input, textarea, select, [contenteditable]")) {
+        event.preventDefault();
         refreshData();
       }
     };
@@ -1956,826 +1520,305 @@ export default function MenuLayout() {
     return () => window.removeEventListener("keydown", onKey);
   }, [refreshData]);
 
-  const isRefreshing = loadingProducts || categoriesLoading || promosLoading;
+  const isRefreshing = loadingProducts || categoriesLoading || promosLoading || chargesState === "loading";
+
+  const serviceControls = (
+    <div className="cart-delivery" role="group" aria-label="Service type">
+      {["Delivery", "Dine in", "Take away"].map((type) => (
+        <button key={type} type="button" className={orderType === type ? "active" : ""}
+          aria-pressed={orderType === type} onClick={() => setOrderType(type)}>
+          {type === "Dine in" ? "Dine-in" : type === "Take away" ? "Takeaway" : type}
+        </button>
+      ))}
+    </div>
+  );
+  const cartItems = (
+    <div className="cart-items">
+      {cart.length ? cart.map((item) => (
+        <div key={item.id} className="cart-item">
+          <div className="cart-item-left">
+            <strong>{item.name}</strong>
+            {item.note && <p className="order-item-note">{item.note}</p>}
+            <button className="link-btn" type="button" onClick={() => openNoteModal(item)}
+              aria-label={`${item.note ? "Edit" : "Add"} note for ${item.name}`}>
+              {item.note ? "Edit note" : "Add note"}
+            </button>
+          </div>
+          <div className="cart-item-right">
+            <p>{formatIDR(Number(item.price ?? 0) * item.quantity)}</p>
+            <div className="stepper" role="group" aria-label={`${item.name} quantity`}>
+              <button type="button" className="stepper-btn" onClick={() => handleDecreaseQty(item.id)}
+                aria-label={`Decrease ${item.name} quantity`}>−</button>
+              <span className="stepper-qty">{item.quantity}</span>
+              <button type="button" className="stepper-btn" onClick={() => handleIncreaseQty(item.id)}
+                aria-label={`Increase ${item.name} quantity`}>+</button>
+            </div>
+          </div>
+        </div>
+      )) : (
+        <div className="order-empty">
+          <FiShoppingBag size={25} aria-hidden="true" />
+          <strong>No items yet</strong>
+          <p>Select a product to start an order.</p>
+        </div>
+      )}
+    </div>
+  );
+  const cartSummary = (
+    <div className="cart-summary">
+      {itemCount > 0 && (
+        <details className="order-breakdown">
+          <summary>Order breakdown <FiChevronDown aria-hidden="true" /></summary>
+          <div className="summary-row"><span>Subtotal</span><span>{formatIDR(sub)}</span></div>
+          {taxEnabled && <div className="summary-row"><span>Tax</span><span>{formatIDR(tx)}</span></div>}
+          {serviceEnabled && <div className="summary-row"><span>Service charge</span><span>{formatIDR(svc)}</span></div>}
+          {discount > 0 && <div className="summary-row"><span>{discountLabel}</span><span>−{formatIDR(discount)}</span></div>}
+        </details>
+      )}
+      {itemCount > 0 && (
+        <button className="discount-btn order-discount" type="button" onClick={handleOpenDiscountModal}>
+          <FiTag aria-hidden="true" /> {discount > 0 ? "Edit discount" : "Add discount"}
+        </button>
+      )}
+      <div className="summary-row total-row"><strong>Total</strong><strong>{formatIDR(total)}</strong></div>
+      {chargesState === "error" && <p className="register-charge-error" role="alert">
+        Couldn’t load order charges. <button type="button" className="link-btn" onClick={reloadCharges}>Retry</button>
+      </p>}
+      <div className="register-order-actions">
+        <button className="hold-order-btn" type="button" disabled={isSubmitting || !itemCount} onClick={holdOrder}>Hold</button>
+        <button className="checkout-btn" type="button" disabled={!online || isSubmitting || !itemCount || chargesState !== "ready"}
+          onClick={() => { setMobileCartOpen(false); setShowPaymentModal(true); }}>
+          Review payment
+        </button>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="layout-container">
+    <div className="layout-container boonz-register">
       <Sidebar
-        onAddProduct={() => navigate("/product-page")}
-        onAddCategory={() => navigate("/admin/categories")}
+        onAddProduct={() => navigate("/product-page?view=add")}
+        onAddCategory={() => navigate("/admin/categories?view=add")}
       />
 
       <main className="layout-main">
-        {/* Sticky top bar */}
-        <div className="layout-topbar">
-          {/* category chips */}
-          {chipReady ? (
-            <div className="chip-row" role="tablist" aria-label="Categories">
-              {chipNames.map((name) => (
-                <button
-                  key={name}
-                  role="tab"
-                  aria-selected={name === selectedCategory}
-                  className={`chip ${
-                    name === selectedCategory ? "active" : ""
-                  }`}
-                  onClick={() => setSelectedCategory(name)}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <ChipsSkeleton />
-          )}
-
-          {/* right controls */}
+        <header className="layout-topbar">
+          <div className="register-location"><span>Boonz</span><strong>Point of sale</strong></div>
           <div className="topbar-actions">
-            {openBills.length > 0 && (
-              <button
-                className="icon-btn"
-                aria-label="Open Bills"
-                title={`${openBills.length} Open Bill${
-                  openBills.length > 1 ? "s" : ""
-                }`}
-                onClick={() => setShowOpenBills(true)}
-                style={{ position: "relative" }}
-              >
-                <i className="fas fa-file-invoice" />
-                <span
-                  style={{
-                    position: "absolute",
-                    top: -4,
-                    right: -4,
-                    background: "#ef4444",
-                    color: "white",
-                    borderRadius: "50%",
-                    width: 18,
-                    height: 18,
-                    fontSize: 11,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: "bold",
-                  }}
-                >
-                  {openBills.length}
-                </span>
-              </button>
-            )}
-            <button
-              className="icon-btn"
-              aria-label="Refresh data"
-              title="Refresh (Shift+R)"
-              onClick={refreshData}
-              disabled={isRefreshing}
-            >
-              <i
-                className={`fas ${
-                  isRefreshing ? "fa-circle-notch fa-spin" : "fa-sync"
-                }`}
-              />
+            <span className={`register-connection ${online ? "" : "offline"}`} role="status">{online ? "Online" : "Offline"}</span>
+            <button className="icon-btn register-held-button" type="button"
+              aria-label={`Held orders (${openBills.length})`} onClick={() => setShowOpenBills(true)}>
+              <FiArchive size={18} aria-hidden="true" />
+              <span>Held orders</span>
+              {openBills.length > 0 && <b>{openBills.length}</b>}
             </button>
-
-            {!showSearchBar ? (
-              <button
-                className="icon-btn"
-                aria-label="Search"
-                onClick={() => setShowSearchBar(true)}
-              >
-                <i className="fas fa-search" />
-              </button>
-            ) : (
-              <div className="search-wrap">
-                <i className="fas fa-search search-icon" />
-                <input
-                  type="text"
-                  className="search-input"
-                  placeholder="Search products..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  autoFocus
-                />
-                <button
-                  className="icon-btn"
-                  aria-label="Close search"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setShowSearchBar(false);
-                  }}
-                >
-                  <i className="fas fa-times" />
-                </button>
-              </div>
-            )}
-
-            {/* avatar dropdown */}
+            <button className="icon-btn" type="button" aria-label="Refresh menu" title="Refresh menu"
+              onClick={refreshData} disabled={isRefreshing}>
+              <FiRefreshCw size={17} aria-hidden="true" />
+            </button>
             <div className="user-menu-wrap" ref={userMenuRef}>
-              <button
-                className="avatar-btn"
-                aria-label="Account"
-                onClick={() => setUserMenuOpen((o) => !o)}
-              >
-                <img src={richardImage} alt="User avatar" className="avatar" />
-                <i className="fas fa-chevron-down caret" />
-              </button>
-
+              <button type="button" className="avatar-btn" aria-label="Account" aria-expanded={userMenuOpen}
+                onClick={() => setUserMenuOpen((open) => !open)}>{initials}</button>
               {userMenuOpen && (
                 <div className="user-menu">
                   <div className="user-menu__head">
-                    <img
-                      src={richardImage}
-                      alt="User avatar"
-                      className="avatar lg"
-                    />
-                    <div className="user-text">
-                      <strong>{user?.name || "User"}</strong>
-                      <small>{user?.email || ""}</small>
-                    </div>
+                    <div className="user-text"><strong>{user?.name || "Account"}</strong><small>{user?.email}</small></div>
                   </div>
-                  <button
-                    className="user-menu__item danger"
-                    onClick={() => {
-                      setUserMenuOpen(false);
-                      handleHardReset();
-                    }}
-                    title="Clear local settings & reload"
-                  >
-                    <i className="fas fa-bolt"></i> Hard reset
-                  </button>
-                  <button
-                    className="user-menu__item danger"
-                    onClick={handleLogout}
-                  >
-                    <i className="fas fa-sign-out-alt" /> Logout
-                  </button>
+                  {isAdmin && <button className="user-menu__item" type="button" onClick={() => {
+                    setUserMenuOpen(false);
+                    handleHardReset();
+                  }}>Reset device preferences</button>}
+                  <button className="user-menu__item" type="button" onClick={handleLogout}>Sign out</button>
                 </div>
               )}
             </div>
           </div>
-        </div>
+        </header>
 
-        {/* Products */}
-        <div className="products-area">
-          <h2 className="visually-hidden">{selectedCategory || "All"} Menu</h2>
-          {loadingProducts ? (
-            <SkeletonGrid count={12} />
-          ) : filteredProducts.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-art">🍽️</div>
-              <h3>No products in “{selectedCategory || "All"}”</h3>
-              <p>Try another category or add new items to this menu.</p>
-              <button
-                className="empty-cta"
-                onClick={() => navigate("/product-page")}
-              >
-                Add Product
-              </button>
+        {!online && <p className="register-offline">You’re offline. Hold this order on this device or reconnect to record payment.</p>}
+        <div className="products-area" aria-busy={loadingProducts}>
+          <section className="register-masthead" aria-labelledby="register-menu">
+            <div><p>Boonz Hauz</p><h1 id="register-menu">Menu</h1></div>
+            <FiCoffee size={66} strokeWidth={1.25} aria-hidden="true" />
+          </section>
+
+          <div className="search-wrap">
+            <FiSearch size={18} aria-hidden="true" />
+            <input ref={searchInput} type="search" className="search-input"
+              aria-label="Search menu or scan SKU" placeholder="Search menu or scan SKU"
+              value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} onKeyDown={addSearchResult} />
+            {searchTerm && <button type="button" className="icon-btn" aria-label="Clear search" onClick={() => {
+              setSearchTerm("");
+              searchInput.current.focus();
+            }}><FiX size={17} aria-hidden="true" /></button>}
+          </div>
+
+          {chipReady ? (
+            <div className="chip-row" role="group" aria-label="Menu categories">
+              {chipNames.map((name) => (
+                <button key={name} type="button" className={`chip ${name === selectedCategory && !query ? "active" : ""}`}
+                  aria-pressed={name === selectedCategory && !query} onClick={() => {
+                    setSelectedCategory(name);
+                    setSearchTerm("");
+                  }}>{name === "All" ? "All items" : name}</button>
+              ))}
             </div>
-          ) : (
+          ) : <ChipsSkeleton />}
+
+          <div className="register-catalog-heading">
+            <h2>{query ? "Search results" : selectedCategory === "All" ? "All items" : selectedCategory}</h2>
+            {!loadingProducts && !productsError && <span role="status">{filteredProducts.length} {filteredProducts.length === 1 ? "item" : "items"}</span>}
+          </div>
+          {loadingProducts ? <SkeletonGrid count={8} /> : productsError ? (
+            <div className="empty-state" role="alert">
+              <h3>{productsError}</h3>
+              <button className="empty-cta" type="button" onClick={refreshData}>Try again</button>
+            </div>
+          ) : filteredProducts.length ? (
             <div className="product-grid">
-              {filteredProducts.map((prod) => {
-                const key =
-                  prod?._id ||
-                  prod?.id ||
-                  prod?.sku ||
-                  Math.random().toString(36);
-                const name = prod?.name || "Untitled";
-                const desc = prod?.description || "";
-                const priceNum = Number(prod?.price ?? 0);
-
-                return (
-                  <div key={key} className="product-card">
-                    <SafeImage
-                      className="product-image"
-                      src={getImageSrc(prod)}
-                      alt={name}
-                    />
-                    <h3 className="product-name">{name}</h3>
-                    <p className="product-desc">{desc}</p>
-                    <p className="product-price">
-                      {formatIDR(priceNum, { withDecimals: true })}
-                    </p>
-
-                    <button
-                      onClick={() => handleAddToCart(prod)}
-                      className="add-to-cart-btn"
-                    >
-                      Add to cart
-                    </button>
-                  </div>
-                );
+              {filteredProducts.map((product) => {
+                const image = getImageSrc(product);
+                return <button key={product._id || product.id || product.sku} type="button" className="product-card"
+                  onClick={() => handleAddToCart(product)}>
+                  <span className="register-product-image">
+                    {image ? <SafeImage className="product-image" src={image} alt="" loading="lazy" />
+                      : <FiShoppingBag className="register-product-placeholder" size={33} aria-hidden="true" />}
+                    <span className="register-product-add"><FiPlus size={18} aria-hidden="true" /></span>
+                  </span>
+                  <span className="register-product-info">
+                    <strong className="product-name">{product.name}</strong>
+                    <span className="register-product-meta">
+                      <span>{product.category}</span>
+                      <strong className="product-price">{formatIDR(product.price)}</strong>
+                    </span>
+                  </span>
+                </button>;
               })}
             </div>
+          ) : (
+            <div className="empty-state">
+              <h3>{query ? "No matching products" : "No products in this category"}</h3>
+              {query || selectedCategory !== "All" ? (
+                <button className="empty-cta" type="button" onClick={() => { setSearchTerm(""); setSelectedCategory("All"); }}>Show all items</button>
+              ) : isAdmin && <button className="empty-cta" type="button" onClick={() => navigate("/product-page?view=add")}>Add product</button>}
+            </div>
           )}
         </div>
 
-        {/* Floating Cart button (mobile only) */}
-        <button
-          className="fab-cart"
-          aria-label="Open cart"
-          onClick={() => setMobileCartOpen(true)}
-          disabled={cart.length === 0}
-        >
-          <i className="fas fa-shopping-cart" />
-          <span className="fab-cart__label">Cart</span>
-          {cart.length > 0 && (
-            <span className="fab-cart__badge">{cart.length}</span>
-          )}
+        <button className="fab-cart" type="button" aria-label={`View order, ${itemCount} ${itemCount === 1 ? "item" : "items"}, ${formatIDR(total)}`}
+          onClick={() => setMobileCartOpen(true)}>
+          <FiShoppingBag size={19} aria-hidden="true" />
+          <span className="fab-cart__label">View order</span>
+          <span className="fab-cart__badge">{itemCount} · {formatIDR(total)}</span>
         </button>
 
-        {/* Mobile Cart Sheet */}
-        {isMobile && (
-          <div className={`cart-sheet ${mobileCartOpen ? "open" : ""}`}>
-            <div
-              className="cart-sheet__backdrop"
-              onClick={() => setMobileCartOpen(false)}
-            />
-            <div className="cart-sheet__panel" role="dialog" aria-label="Cart">
-              <div className="cart-sheet__grab" />
-              <div className="cart-sheet__head">
-                <strong>Cart</strong>
-                <button
-                  className="cart-sheet__close"
-                  onClick={() => setMobileCartOpen(false)}
-                >
-                  <i className="fas fa-times" />
-                </button>
+        {isMobile && mobileCartOpen && (
+          <div className="cart-sheet open" onKeyDown={(event) => {
+            if (event.key === "Escape") setMobileCartOpen(false);
+          }}>
+            <div className="cart-sheet__backdrop" onClick={() => setMobileCartOpen(false)} />
+            <section className="cart-sheet__panel" role="dialog" aria-modal="true" aria-label="Current order">
+              <div className="cart-sheet__head"><h2>Current order</h2>
+                <button className="cart-sheet__close" type="button" aria-label="Close order" autoFocus onClick={() => setMobileCartOpen(false)}><FiX /></button>
               </div>
-
-              <div className="cart-delivery">
-                {["Delivery", "Dine in", "Take away"].map((t) => (
-                  <button
-                    key={t}
-                    className={orderType === t ? "active" : ""}
-                    onClick={() => setOrderType(t)}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-
-              <div className="cart-items">
-                {cart.map((item) => (
-                  <div key={item.id} className="cart-item">
-                    <div className="cart-item-left">
-                      <strong>{item.name}</strong>
-                      <br />
-                      <small>{(Number(item.quantity) || 0) * 200} ml</small>
-                      <div style={{ marginTop: 6 }}>
-                        <button
-                          className="link-btn"
-                          onClick={() => openNoteModal(item)}
-                          type="button"
-                          style={{ fontSize: 12 }}
-                        >
-                          {item.note ? "Edit note" : "Add note"}
-                        </button>
-                      </div>
-                      {item.note ? (
-                        <div
-                          style={{
-                            marginTop: 4,
-                            fontSize: 12,
-                            fontStyle: "italic",
-                            opacity: 0.8,
-                          }}
-                        >
-                          “{item.note}”
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div
-                      className="cart-item-right"
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        flexDirection: "column",
-                        alignItems: "flex-end",
-                        marginLeft: 8,
-                      }}
-                    >
-                      <p>
-                        {formatIDR(Number(item.price ?? 0), {
-                          withDecimals: true,
-                        })}
-                      </p>
-
-                      <div
-                        className="stepper"
-                        role="group"
-                        aria-label="Quantity"
-                      >
-                        <button
-                          type="button"
-                          className="stepper-btn"
-                          onClick={() => handleDecreaseQty(item.id)}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          aria-label="Decrease quantity"
-                        >
-                          –
-                        </button>
-                        <span className="stepper-qty" aria-live="polite">
-                          {item.quantity}
-                        </span>
-                        <button
-                          type="button"
-                          className="stepper-btn"
-                          onClick={() => handleIncreaseQty(item.id)}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          aria-label="Increase quantity"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="cart-summary">
-                <div className="summary-row">
-                  <span>Subtotal</span>
-                  <span>{formatIDR(sub, { withDecimals: true })}</span>
-                </div>
-                {taxEnabled && (
-                  <div className="summary-row">
-                    <span>Tax ({(taxRate * 100).toFixed(0)}%)</span>
-                    <span>{formatIDR(tx, { withDecimals: true })}</span>
-                  </div>
-                )}
-                {serviceEnabled && (
-                  <div className="summary-row">
-                    <span>
-                      Service Charge ({(serviceRate * 100).toFixed(0)}%)
-                    </span>
-                    <span>{formatIDR(svc, { withDecimals: true })}</span>
-                  </div>
-                )}
-                <div className="summary-row">
-                  <span>{discountLabel}</span>
-                  <span>-{formatIDR(discount, { withDecimals: true })}</span>
-                </div>
-                <div className="summary-row total-row">
-                  <strong>Total</strong>
-                  <strong>{formatIDR(total, { withDecimals: true })}</strong>
-                </div>
-
-                <button
-                  className="discount-btn"
-                  onClick={handleOpenDiscountModal}
-                >
-                  Add Discount
-                </button>
-                <button
-                  className="checkout-btn"
-                  onClick={() => {
-                    setMobileCartOpen(false);
-                    handleCheckout();
-                  }}
-                  disabled={isSubmitting || cart.length === 0}
-                >
-                  {isSubmitting ? "Processing..." : "Checkout"}
-                </button>
-              </div>
-            </div>
+              {serviceControls}
+              {cartItems}
+              {cartSummary}
+            </section>
           </div>
         )}
       </main>
 
-      {/* Cart (desktop) */}
-      <aside className="layout-cart">
-        <div className="cart-header">
-          <h3>Cart</h3>
-          <p className="cart-order-id">
-            {editingOpenBill ? (
-              <>
-                Editing: Order #{editingOpenBill}
-                <span style={{ fontSize: 12, color: "#3b82f6", marginLeft: 8 }}>
-                  (Add more items)
-                </span>
-              </>
-            ) : (
-              <>Order #{orderNumber ? orderNumber : "Pending"}</>
-            )}
-          </p>
-        </div>
-
-        <div className="cart-delivery">
-          {["Delivery", "Dine in", "Take away"].map((t) => (
-            <button
-              key={t}
-              className={orderType === t ? "active" : ""}
-              onClick={() => setOrderType(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-        <div className="cart-items">
-          {cart.map((item) => (
-            <div key={item.id} className="cart-item">
-              <div className="cart-item-left">
-                <strong>{item.name}</strong>
-                <br />
-                <div style={{ marginTop: 6 }}>
-                  <button
-                    className="link-btn"
-                    onClick={() => openNoteModal(item)}
-                    type="button"
-                    style={{ fontSize: 12 }}
-                  >
-                    {item.note ? "Edit note" : "Add note"}
-                  </button>
-                </div>
-                {item.note ? (
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 12,
-                      fontStyle: "italic",
-                      opacity: 0.8,
-                    }}
-                  >
-                    “{item.note}”
-                  </div>
-                ) : null}
-              </div>
-
-              <div
-                className="cart-item-right"
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  flexDirection: "column",
-                  alignItems: "flex-end",
-                  marginLeft: 8,
-                }}
-              >
-                <p>
-                  {formatIDR(Number(item.price ?? 0), { withDecimals: true })}
-                </p>
-
-                <div className="stepper" role="group" aria-label="Quantity">
-                  <button
-                    type="button"
-                    className="stepper-btn"
-                    onClick={() => handleDecreaseQty(item.id)}
-                    aria-label="Decrease quantity"
-                  >
-                    –
-                  </button>
-                  <span className="stepper-qty" aria-live="polite">
-                    {item.quantity}
-                  </span>
-                  <button
-                    type="button"
-                    className="stepper-btn"
-                    onClick={() => handleIncreaseQty(item.id)}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    aria-label="Increase quantity"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Summary */}
-        <div className="cart-summary">
-          <div className="summary-row">
-            <span>Subtotal</span>
-            <span>{formatIDR(sub)}</span>
-          </div>
-          {taxEnabled && (
-            <div className="summary-row">
-              <span>Tax ({(taxRate * 100).toFixed(0)}%)</span>
-              <span>{formatIDR(tx, { withDecimals: true })}</span>
-            </div>
-          )}
-          {serviceEnabled && (
-            <div className="summary-row">
-              <span>Service Charge ({(serviceRate * 100).toFixed(0)}%)</span>
-              <span>{formatIDR(svc, { withDecimals: true })}</span>
-            </div>
-          )}
-          <div className="summary-row">
-            <span>{discountLabel}</span>
-            <span>-{formatIDR(discount)}</span>
-          </div>
-          <div className="summary-row total-row">
-            <strong>Total</strong>
-            <strong>{formatIDR(total)}</strong>
-          </div>
-
-          <button className="discount-btn" onClick={handleOpenDiscountModal}>
-            Add Discount
-          </button>
-          <button
-            className="checkout-btn"
-            onClick={handleCheckout}
-            disabled={isSubmitting || cart.length === 0}
-          >
-            {isSubmitting ? "Processing..." : "Checkout"}
-          </button>
-        </div>
-
-        {/* Email Receipt (desktop) */}
-        <div className="email-receipt">
-          <h4>Email Receipt (Optional)</h4>
-          <div className="email-receipt__row">
-            <input
-              className="email-receipt__input"
-              type="email"
-              placeholder="customer@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <button
-              className="email-receipt__btn"
-              onClick={handleEmailReceipt}
-              disabled={!orderNumber || sendingEmail || emailCooldownLeft > 0}
-              title={
-                emailCooldownLeft > 0
-                  ? `Resend in ${emailCooldownLeft}s`
-                  : "Email receipt"
-              }
-            >
-              {sendingEmail
-                ? "Sending…"
-                : emailCooldownLeft > 0
-                ? `Resend in ${emailCooldownLeft}s`
-                : "Email Receipt"}
-            </button>
-          </div>
-
-          {emailNotice && <p className="email-receipt__note">{emailNotice}</p>}
-          {emailError && <p className="email-receipt__error">{emailError}</p>}
-        </div>
-      </aside>
-
-      {/* Customer Name Dialog */}
-      {showCustomerNameDialog && (
-        <div
-          className="paymodal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="customer-name-title"
-          onClick={() => setShowCustomerNameDialog(false)}
-        >
-          <div
-            className="paymodal__dialog"
-            onClick={(e) => e.stopPropagation()}
-            role="document"
-          >
-            <header className="paymodal__head">
-              <h3 id="customer-name-title">Customer Name</h3>
-              <button
-                className="paymodal__close"
-                aria-label="Close"
-                onClick={() => setShowCustomerNameDialog(false)}
-              >
-                ✕
-              </button>
-            </header>
-
-            <div className="paymodal__body">
-              <label
-                className="register-label"
-                style={{ display: "block", marginBottom: 6 }}
-              >
-                Enter customer name
-              </label>
-              <input
-                type="text"
-                className="register-input"
-                value={checkoutCustomerName}
-                onChange={(e) => setCheckoutCustomerName(e.target.value)}
-                placeholder="Customer name"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && checkoutCustomerName.trim()) {
-                    handleCustomerNameConfirm();
-                  }
-                }}
-              />
-            </div>
-
-            <footer className="paymodal__actions">
-              <button
-                className="btn btn-primary"
-                onClick={handleCustomerNameConfirm}
-                disabled={!checkoutCustomerName.trim()}
-              >
-                Continue to Payment
-              </button>
-              <button
-                className="btn btn-ghost"
-                onClick={() => setShowCustomerNameDialog(false)}
-              >
-                Cancel
-              </button>
-            </footer>
-          </div>
-        </div>
+      {!isMobile && (
+        <aside className="layout-cart" aria-label="Current order">
+          <header className="cart-header"><h2>Current order</h2><span aria-live="polite">{itemCount} {itemCount === 1 ? "item" : "items"}</span></header>
+          {serviceControls}
+          {cartItems}
+          {cartSummary}
+        </aside>
       )}
 
-      {/* Payment Modal */}
       {showPaymentModal && (
-        <div
-          className="paymodal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="paymodal-title"
+        <div className="paymodal" role="dialog" aria-modal="true" aria-labelledby="paymodal-title"
           onClick={() => !isSubmitting && setShowPaymentModal(false)}
-        >
-          <div
-            className="paymodal__dialog"
-            onClick={(e) => e.stopPropagation()}
-            role="document"
-          >
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !isSubmitting) setShowPaymentModal(false);
+          }}>
+          <form className="paymodal__dialog" onSubmit={confirmPayment} onClick={(event) => event.stopPropagation()}>
             <header className="paymodal__head">
-              <h3 id="paymodal-title">Select Payment Method</h3>
-              <button
-                className="paymodal__close"
-                aria-label="Close"
-                onClick={() => setShowPaymentModal(false)}
-                disabled={isSubmitting}
-              >
-                ✕
-              </button>
+              <h3 id="paymodal-title">Record payment</h3>
+              <button className="paymodal__close" type="button" aria-label="Close" disabled={isSubmitting}
+                autoFocus onClick={() => setShowPaymentModal(false)}><FiX /></button>
             </header>
-
             <div className="paymodal__body">
-              <ul
-                className="paylist"
-                role="listbox"
-                aria-label="Payment methods"
-              >
-                {[
-                  { k: "Credit Card", i: "💳" },
-                  { k: "Debit Card", i: "🏦" },
-                  { k: "QRIS", i: "🔳" },
-                  { k: "Go Pay", i: "🟦" },
-                  { k: "Grab Pay", i: "🟩" },
-                  { k: "Open Bill", i: "📋" },
-                ].map(({ k, i }) => {
-                  const selected = selectedPaymentMethod === k;
-                  return (
-                    <li key={k}>
-                      <button
-                        type="button"
-                        className={`payitem ${selected ? "is-selected" : ""}`}
-                        aria-pressed={selected}
-                        onClick={() => setSelectedPaymentMethod(k)}
-                      >
-                        <span className="payitem__icon" aria-hidden="true">
-                          {i}
-                        </span>
-                        <span className="payitem__label">{k}</span>
-                        {selected && <span className="payitem__check">✓</span>}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              <hr style={{ margin: "12px 0", borderTop: "1px solid #eee" }} />
-
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={wantEmailReceipt}
-                  onChange={(e) => setWantEmailReceipt(e.target.checked)}
-                />
-                Email receipt to customer
-              </label>
-
-              {wantEmailReceipt && (
-                <div style={{ marginTop: 10 }}>
-                  <label
-                    className="register-label"
-                    style={{ display: "block", marginBottom: 4 }}
-                  >
-                    Customer Email (optional)
-                  </label>
-                  <input
-                    type="email"
-                    value={customerEmail}
-                    onChange={(e) => setCustomerEmail(e.target.value)}
-                    placeholder="customer@example.com"
-                    className="register-input"
-                    autoComplete="email"
-                  />
-                  <label
-                    className="register-label"
-                    style={{ display: "block", marginTop: 10, marginBottom: 4 }}
-                  >
-                    Customer Name (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Customer name"
-                    className="register-input"
-                  />
+              <div className="payment-due"><span>Amount due</span><strong>{formatIDR(total)}</strong></div>
+              <p className="payment-help">Complete the payment on your terminal, then select its method below.</p>
+              <fieldset className="payment-fields" disabled={isSubmitting}>
+                <legend>Payment method</legend>
+                <div className="payment-methods">
+                  {["Credit Card", "Debit Card", "QRIS", "Go Pay", "Grab Pay"].map((method) => (
+                    <button key={method} type="button" className={`payitem ${selectedPaymentMethod === method ? "is-selected" : ""}`}
+                      aria-pressed={selectedPaymentMethod === method} onClick={() => setSelectedPaymentMethod(method)}>
+                      {method}
+                    </button>
+                  ))}
                 </div>
-              )}
+                <label>Customer name <span>(optional)</span>
+                  <input className="register-input" value={customerName}
+                    onChange={(event) => setCustomerName(event.target.value)} />
+                </label>
+                <label>Email receipt <span>(optional)</span>
+                  <input className="register-input" type="email" value={customerEmail} placeholder="customer@example.com"
+                    onChange={(event) => setCustomerEmail(event.target.value)} />
+                </label>
+              </fieldset>
             </div>
-
             <footer className="paymodal__actions">
-              <button
-                className="btn btn-primary"
-                onClick={confirmPayment}
-                disabled={isSubmitting || !selectedPaymentMethod}
-                title={
-                  !selectedPaymentMethod
-                    ? "Pick a method to continue"
-                    : "Confirm payment"
-                }
-              >
-                {isSubmitting ? "Confirming…" : "Confirm Payment"}
-              </button>
-              <button
-                className="btn btn-ghost"
-                onClick={() => setShowPaymentModal(false)}
-                disabled={isSubmitting}
-              >
-                Cancel
+              <button className="btn btn-ghost" type="button" disabled={isSubmitting} onClick={() => setShowPaymentModal(false)}>Cancel</button>
+              <button className="btn btn-primary" type="submit" disabled={isSubmitting || !selectedPaymentMethod || !online}>
+                {isSubmitting ? "Recording…" : "Record payment"}
               </button>
             </footer>
-          </div>
+          </form>
         </div>
       )}
 
-      {/* NEW: Post-Payment Print Options Modal */}
-      {printDialog.open && (
-        <div
-          className="paymodal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="post-print-title"
-          onClick={() => {}}
-        >
-          <div
-            className="paymodal__dialog"
-            role="document"
-            onClick={(e) => e.stopPropagation()}
-          >
+      {printDialog && (
+        <div className="paymodal" role="dialog" aria-modal="true" aria-labelledby="post-print-title"
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !printBusy) setPrintDialog(null);
+          }}>
+          <div className="paymodal__dialog">
             <header className="paymodal__head">
-              <h3 id="post-print-title">Print Options</h3>
-              {/* Intentionally no auto-close; user must click Close */}
+              <h3 id="post-print-title">Order #{printDialog.orderNumber} recorded</h3>
+              <button className="paymodal__close" type="button" aria-label="Close" disabled={!!printBusy}
+                autoFocus onClick={() => setPrintDialog(null)}><FiX /></button>
             </header>
-
-            <div className="paymodal__body">
-              <p style={{ marginTop: 0 }}>
-                Order <strong>#{printDialog.orderNumber}</strong> has been
-                created. Choose what to print:
-              </p>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => handlePrintKitchen(printDialog.kotText)}
-                  disabled={printBusy === "kitchen"}
-                  title="Print Kitchen Ticket"
-                >
-                  {printBusy === "kitchen" ? "Printing…" : "Print Kitchen"}
+            <div className="paymodal__body order-documents">
+              <div className="document-actions">
+                <button className="btn btn-primary" type="button" disabled={!!printBusy}
+                  onClick={() => handlePrintKitchen(printDialog.kotText)}>
+                  {printBusy === "kitchen" ? "Printing…" : "Print kitchen ticket"}
                 </button>
-
-                <button
-                  className="btn btn-primary"
-                  onClick={() =>
-                    handlePrintReceipt(
-                      printDialog.receiptText,
-                      printDialog.logoDataUrl
-                    )
-                  }
-                  disabled={printBusy === "receipt"}
-                  title="Print Customer Receipt"
-                >
-                  {printBusy === "receipt" ? "Printing…" : "Print Receipt"}
+                <button className="btn btn-ghost" type="button" disabled={!!printBusy}
+                  onClick={() => handlePrintReceipt(printDialog.receiptText, printDialog.logo)}>
+                  {printBusy === "receipt" ? "Printing…" : "Print receipt"}
                 </button>
               </div>
-
-              <p className="muted" style={{ marginTop: 12 }}>
-                You can print either or both. This window will remain open until
-                you close it.
-              </p>
+              <details><summary>Preview receipt</summary><ReceiptPreview data={printDialog} /></details>
+              <details>
+                <summary>Email receipt</summary>
+                <form className="order-receipt-email" onSubmit={(event) => { event.preventDefault(); handleEmailReceipt(); }}>
+                  <label>Email address <input className="register-input" type="email" required value={email}
+                    onChange={(event) => setEmail(event.target.value)} /></label>
+                  <button className="btn btn-ghost" type="submit" disabled={sendingEmail || emailCooldownLeft > 0}>
+                    {sendingEmail ? "Sending…" : emailCooldownLeft > 0 ? `Resend in ${emailCooldownLeft}s` : "Send receipt"}
+                  </button>
+                </form>
+              </details>
+              {emailNotice && <p role="status">{emailNotice}</p>}
+              {emailError && <p className="email-receipt__error" role="alert">{emailError}</p>}
             </div>
-
-            <footer className="paymodal__actions">
-              <button
-                className="btn btn-ghost"
-                onClick={closePostPrintDialog}
-                disabled={!!printBusy}
-              >
-                Close
-              </button>
-            </footer>
           </div>
         </div>
       )}
@@ -2838,9 +1881,10 @@ export default function MenuLayout() {
 
       {/* Discount Modal */}
       {showDiscountModal && (
-        <div className="discount-modal">
-          <div className="discount-modal-content">
-            <h3>Apply Discount</h3>
+        <div className="discount-modal" role="dialog" aria-modal="true" aria-labelledby="discount-title"
+          onKeyDown={(event) => { if (event.key === "Escape") handleCloseDiscountModal(); }}>
+          <form className="discount-modal-content" onSubmit={handleApplyDiscount}>
+            <h3 id="discount-title">Order discount</h3>
 
             <div className="radio-row">
               <label>
@@ -2858,17 +1902,18 @@ export default function MenuLayout() {
                   type="radio"
                   name="discountMode"
                   value="custom"
+                  disabled={!isAdmin}
                   checked={discountMode === "custom"}
                   onChange={() => setDiscountMode("custom")}
                 />
-                Custom
+                Manual (admin)
               </label>
             </div>
 
             {discountMode === "promo" ? (
               <div style={{ marginBottom: "1rem" }}>
-                <label>Choose Promotion</label>
-                <select
+                <label htmlFor="order-promotion">Choose promotion</label>
+                <select id="order-promotion" autoFocus
                   value={selectedPromoId}
                   onChange={(e) => setSelectedPromoId(e.target.value)}
                 >
@@ -2904,6 +1949,7 @@ export default function MenuLayout() {
 
                 {selectedPromo && (
                   <div className="preview">
+                    {promoUnavailable(selectedPromo, sub) && <p role="status">{promoUnavailable(selectedPromo, sub)}</p>}
                     {selectedPromo.description && (
                       <div>- {selectedPromo.description}</div>
                     )}
@@ -2958,9 +2004,13 @@ export default function MenuLayout() {
                   </label>
                 </div>
 
-                <label>Discount Value</label>
+                <label htmlFor="order-discount-value">Discount value</label>
                 <input
-                  type="text"
+                  id="order-discount-value"
+                  type="number"
+                  min="0"
+                  max={discountType === "percentage" ? 100 : undefined}
+                  step="0.01"
                   value={discountValue}
                   onChange={(e) => setDiscountValue(e.target.value)}
                   placeholder={
@@ -2970,12 +2020,14 @@ export default function MenuLayout() {
                   }
                 />
 
-                <label>Reason/Note</label>
+                <label htmlFor="order-discount-reason">Reason</label>
                 <textarea
+                  id="order-discount-reason"
+                  required={customDiscount > 0}
                   rows="3"
                   value={discountNote}
                   onChange={(e) => setDiscountNote(e.target.value)}
-                  placeholder="(Optional) Reason for discount..."
+                  placeholder="Reason for the discount"
                 />
 
                 <div className="preview">
@@ -2989,10 +2041,11 @@ export default function MenuLayout() {
             )}
 
             <div className="discount-modal-actions">
-              <button onClick={handleApplyDiscount}>Apply</button>
-              <button onClick={handleCloseDiscountModal}>Close</button>
+              <button type="submit" disabled={discountMode === "promo" && Boolean(selectedPromoId)
+                && (promosLoading || Boolean(promoUnavailable(selectedPromo, sub)))}>Apply</button>
+              <button type="button" onClick={handleCloseDiscountModal}>Cancel</button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
@@ -3461,192 +2514,45 @@ export default function MenuLayout() {
         </div>
       )}
 
-      {/* Add Category Modal */}
-      <AddCategoryModal
-        open={addCatOpen}
-        onClose={() => setAddCatOpen(false)}
-        onCreated={(newCat) => {
-          reloadCategories().then(() => {
-            if (newCat?.name) setSelectedCategory(newCat.name);
-          });
-        }}
-      />
-
-      {/* Open Bills Modal */}
       {showOpenBills && (
-        <div
-          className="paymodal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="open-bills-title"
+        <div className="paymodal" role="dialog" aria-modal="true" aria-labelledby="open-bills-title"
           onClick={() => setShowOpenBills(false)}
-        >
-          <div
-            className="paymodal__dialog"
-            style={{ maxWidth: "600px", maxHeight: "80vh", overflow: "auto" }}
-            onClick={(e) => e.stopPropagation()}
-            role="document"
-          >
+          onKeyDown={(event) => { if (event.key === "Escape") setShowOpenBills(false); }}>
+          <div className="paymodal__dialog" onClick={(event) => event.stopPropagation()}>
             <header className="paymodal__head">
-              <h3 id="open-bills-title">Open Bills ({openBills.length})</h3>
-              <button
-                className="paymodal__close"
-                aria-label="Close"
-                onClick={() => setShowOpenBills(false)}
-              >
-                ✕
-              </button>
+              <h3 id="open-bills-title">Held orders</h3>
+              <button className="paymodal__close" type="button" aria-label="Close" autoFocus
+                onClick={() => setShowOpenBills(false)}><FiX /></button>
             </header>
-
             <div className="paymodal__body">
-              {openBills.length === 0 ? (
-                <p
-                  style={{
-                    textAlign: "center",
-                    padding: "2rem",
-                    color: "#666",
-                  }}
-                >
-                  No open bills
-                </p>
-              ) : (
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
-                >
+              <p className="payment-help">Held orders are saved on this device.</p>
+              {cart.length > 0 && <p className="payment-help">Hold or finish the current order before resuming another.</p>}
+              {openBills.length ? (
+                <ul className="held-orders-list">
                   {openBills.map((bill) => (
-                    <div
-                      key={bill.orderNumber}
-                      style={{
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 8,
-                        padding: 16,
-                        background: "#f9fafb",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                          marginBottom: 8,
-                        }}
-                      >
-                        <div>
-                          <strong>Order #{bill.orderNumber}</strong>
-                          <div
-                            style={{
-                              fontSize: 14,
-                              color: "#666",
-                              marginTop: 4,
-                              fontWeight: 500,
-                            }}
-                          >
-                            Customer: {bill.customerName || "No name"}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: "#999",
-                              marginTop: 2,
-                            }}
-                          >
-                            {new Date(bill.createdAt).toLocaleString()}
-                            {bill.updatedAt && (
-                              <span
-                                style={{ marginLeft: 8, fontStyle: "italic" }}
-                              >
-                                (Updated:{" "}
-                                {new Date(bill.updatedAt).toLocaleString()})
-                              </span>
-                            )}
-                          </div>
-                          {editingOpenBill === bill.orderNumber && (
-                            <div
-                              style={{
-                                fontSize: 12,
-                                color: "#3b82f6",
-                                marginTop: 4,
-                                fontWeight: 500,
-                              }}
-                            >
-                              Currently editing...
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <strong style={{ fontSize: 18 }}>
-                            {formatIDR(bill.orderData.totalAmount, {
-                              withDecimals: true,
-                            })}
-                          </strong>
-                        </div>
+                    <li key={bill.orderNumber}>
+                      <div className="held-order-heading">
+                        <div><strong>{bill.customerName || bill.orderData.orderType || "Held order"}</strong>
+                          <small>{new Date(bill.createdAt).toLocaleString()}</small></div>
+                        <strong>{formatIDR(bill.orderData.totalAmount)}</strong>
                       </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          marginTop: 12,
-                        }}
-                      >
-                        <button
-                          className="btn btn-primary"
-                          style={{
-                            fontSize: 12,
-                            padding: "6px 12px",
-                            fontWeight: 600,
-                          }}
-                          onClick={() => handleLoadOpenBillToCart(bill)}
-                          disabled={
-                            !!editingOpenBill &&
-                            editingOpenBill !== bill.orderNumber
-                          }
-                          title="Load this order to cart and add more items"
-                        >
-                          {editingOpenBill === bill.orderNumber
-                            ? "Currently Editing"
-                            : "Add Items"}
-                        </button>
-                        <button
-                          className="btn btn-primary"
-                          style={{ fontSize: 12, padding: "6px 12px" }}
-                          onClick={() => handleReprintKitchen(bill)}
-                          disabled={printBusy === "kitchen"}
-                        >
-                          {printBusy === "kitchen" ? "Printing…" : "Print KOT"}
-                        </button>
-                        <button
-                          className="btn btn-primary"
-                          style={{ fontSize: 12, padding: "6px 12px" }}
-                          onClick={() => handleReprintReceipt(bill)}
-                          disabled={printBusy === "receipt"}
-                        >
-                          {printBusy === "receipt"
-                            ? "Printing…"
-                            : "Print Receipt"}
-                        </button>
-                        <button
-                          className="btn btn-ghost"
-                          style={{ fontSize: 12, padding: "6px 12px" }}
-                          onClick={() => handleDeleteOpenBill(bill)}
-                        >
-                          Delete
-                        </button>
+                      {bill.orderId ? (
+                        <div className="document-actions">
+                          <button className="btn btn-ghost" type="button" onClick={() => handleReprintKitchen(bill)} disabled={!!printBusy}>Print kitchen</button>
+                          <button className="btn btn-ghost" type="button" onClick={() => handleReprintReceipt(bill)} disabled={!!printBusy}>Print receipt</button>
+                        </div>
+                      ) : null}
+                      <div className="document-actions">
+                        {!bill.orderId && <button type="button" className="btn btn-primary" onClick={() => handleLoadOpenBillToCart(bill)}
+                          disabled={cart.length > 0}>Resume</button>}
+                        <button type="button" className="btn btn-ghost" disabled={resuming === bill.orderNumber && cart.length > 0}
+                          onClick={() => handleDeleteOpenBill(bill)}>Discard</button>
                       </div>
-                    </div>
+                    </li>
                   ))}
-                </div>
-              )}
+                </ul>
+              ) : <p>No held orders.</p>}
             </div>
-
-            <footer className="paymodal__actions">
-              <button
-                className="btn btn-ghost"
-                onClick={() => setShowOpenBills(false)}
-              >
-                Close
-              </button>
-            </footer>
           </div>
         </div>
       )}

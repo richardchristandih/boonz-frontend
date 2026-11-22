@@ -1,6 +1,8 @@
 // src/pages/Categories.jsx
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { FiPlus } from "react-icons/fi";
+import WorkspacePage from "../components/WorkspacePage";
 import { useToast } from "../components/ToastProvider";
 import { useConfirm } from "../components/ConfirmDialog";
 
@@ -8,22 +10,12 @@ import {
   listCategories,
   createCategory,
   renameCategory,
+  updateCategory,
   deleteCategory,
 } from "../services/categories";
 import "./Categories.css";
 
 /* ---------- Lightweight skeletons ---------- */
-function AddFormSkeleton() {
-  return (
-    <div className="card add-form" aria-hidden="true">
-      <label className="label">New Category</label>
-      <div className="row">
-        <span className="skel skel-input skel-anim" />
-        <span className="skel skel-btn skel-anim" />
-      </div>
-    </div>
-  );
-}
 function CatListSkeleton({ rows = 8 }) {
   return (
     <ul className="cat-list" aria-hidden="true">
@@ -93,6 +85,7 @@ function PromptDialog({
           <input
             type="text"
             className="register-input"
+            aria-label={title}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={onKeyDown}
@@ -113,21 +106,18 @@ function PromptDialog({
 }
 
 export default function CategoriesPage() {
-  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const adding = params.get("view") === "add";
   const { show } = useToast();
   const confirm = useConfirm();
-
-  // simple admin gate (same behavior as before)
-  const storedUser = localStorage.getItem("user");
-  const user = storedUser ? JSON.parse(storedUser) : null;
-  if (!user || user.role !== "admin") {
-    return <div className="page-container">Access denied. Admins only.</div>;
-  }
 
   const [cats, setCats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [newName, setNewName] = useState("");
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [positionCategory, setPositionCategory] = useState(null);
 
   // rename modal state
   const [renameModal, setRenameModal] = useState({
@@ -141,11 +131,7 @@ export default function CategoriesPage() {
       setLoading(true);
       setErr("");
       const data = await listCategories();
-      setCats(
-        (Array.isArray(data) ? data : []).sort((a, b) =>
-          (a?.name || "").localeCompare(b?.name || "")
-        )
-      );
+      setCats(data);
     } catch (e) {
       console.error(e);
       setErr("Failed to load categories.");
@@ -160,20 +146,28 @@ export default function CategoriesPage() {
 
   async function onAdd(e) {
     e.preventDefault();
-    const name = (newName || "").trim();
+    if (creating) return;
+    const name = newName.trim();
     if (!name) {
       show("Please enter a category name.", { type: "info" });
       return;
     }
+    if (cats.some((category) => category.name.toLowerCase() === name.toLowerCase())) {
+      show("A category with that name already exists.", { type: "error" });
+      return;
+    }
     try {
+      setCreating(true);
       await createCategory(name);
       setNewName("");
+      setQuery("");
       await refresh();
+      setParams({}, { replace: true });
       show("Category added.", { type: "success" });
     } catch (e) {
-      show(e?.response?.data?.message || "Failed to create category.", {
-        type: "error",
-      });
+      show(e?.response?.data?.message || "Failed to create category.", { type: "error" });
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -201,6 +195,22 @@ export default function CategoriesPage() {
     }
   }
 
+  async function onSetPosition(value) {
+    const order = Number(value);
+    if (!value.trim() || !Number.isSafeInteger(order) || order < 0) {
+      show("Enter a whole number of zero or more.", { type: "error" });
+      return;
+    }
+    try {
+      await updateCategory(positionCategory._id, { order });
+      setPositionCategory(null);
+      await refresh();
+      show("Category position saved.", { type: "success" });
+    } catch (error) {
+      show(error.response?.data?.message || "Couldn’t save the category position.", { type: "error" });
+    }
+  }
+
   async function onDelete(id) {
     const ok = await confirm({
       title: "Delete category?",
@@ -223,74 +233,59 @@ export default function CategoriesPage() {
     }
   }
 
-  const firstLoad = loading && cats.length === 0 && !err;
+  const matching = cats.filter((category) => category.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   return (
-    <div className="page-container">
-      <button className="back-btn" onClick={() => navigate(-1)}>
-        <i className="fas fa-arrow-left" /> Back
-      </button>
-
-      <h1 className="page-title">Categories</h1>
-
-      {firstLoad ? (
-        <AddFormSkeleton />
-      ) : (
-        <form className="card add-form" onSubmit={onAdd}>
-          <label className="label">New Category</label>
-          <div className="row">
-            <input
-              type="text"
-              className="input"
-              placeholder="e.g. Coffee"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-            />
-            <button className="btn btn-primary" type="submit">
-              Add
-            </button>
+    <WorkspacePage title={adding ? "Add category" : "Categories"}
+      description={adding ? "Give the category a name staff will recognize in the register." : "Organize the register menu and control which categories appear first."}
+      className="workspace-categories"
+      actions={adding ? <Link className="workspace-button" to="/admin/categories">View categories</Link> : <>
+        <Link className="workspace-button" to="/product-page">Products</Link>
+        <Link className="workspace-button primary" to="/admin/categories?view=add"><FiPlus aria-hidden="true" /> Add category</Link>
+      </>}>
+      {adding ? (
+        <form className="workspace-section category-create" onSubmit={onAdd}>
+          <div className="workspace-tools">
+            <label>Category name<input type="text" required value={newName} disabled={creating}
+              onChange={(event) => setNewName(event.target.value)} placeholder="e.g. Coffee" /></label>
+            <button className="workspace-button primary" type="submit" disabled={creating}>{creating ? "Adding…" : "Add category"}</button>
           </div>
         </form>
-      )}
-
-      <div className="card">
-        <div className="card__head">
-          <h2 className="card__title">All Categories</h2>
-        </div>
-        <div className="card__body">
-          {loading ? (
-            <CatListSkeleton rows={8} />
-          ) : err ? (
-            <p className="danger">{err}</p>
-          ) : cats.length === 0 ? (
-            <p className="muted">No categories yet.</p>
-          ) : (
+      ) : (
+        <section className="workspace-section" aria-label="Menu categories">
+          <div className="workspace-tools">
+            <label>Search categories<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Category name" /></label>
+          </div>
+          {loading ? <CatListSkeleton rows={5} /> : err ? (
+            <div role="alert"><p>{err}</p><button className="workspace-button" type="button" onClick={refresh}>Try again</button></div>
+          ) : matching.length ? <>
+            <p className="workspace-muted" role="status">{matching.length} of {cats.length} categories</p>
             <ul className="cat-list">
-              {cats.map((c) => (
-                <li key={c._id} className="cat-item">
-                  <span className="cat-name">{c.name}</span>
+              {matching.map((category) => (
+                <li key={category._id} className="cat-item">
+                  <span className="cat-name"><strong>{category.name}</strong><small className="category-position">Position {category.order ?? 0}</small></span>
                   <div className="cat-actions">
-                    <button
-                      className="btn sm"
-                      onClick={() => onRename(c._id, c.name)}
-                    >
-                      Rename
-                    </button>
-                    <button
-                      className="btn sm danger"
-                      onClick={() => onDelete(c._id)}
-                    >
-                      Delete
-                    </button>
+                    <button type="button" className="workspace-button" onClick={() => setPositionCategory(category)}
+                      aria-label={`Set position for ${category.name}`}>Position</button>
+                    <button type="button" className="workspace-button" onClick={() => onRename(category._id, category.name)}>Rename</button>
+                    <button type="button" className="workspace-button workspace-danger" onClick={() => onDelete(category._id)}>Delete</button>
                   </div>
                 </li>
               ))}
             </ul>
-          )}
-        </div>
-      </div>
+          </> : <p className="workspace-muted">{query ? "No categories match your search." : "No categories yet."}</p>}
+        </section>
+      )}
 
-      {/* Rename Prompt */}
+      {positionCategory && <PromptDialog
+        open
+        title={`Set position for ${positionCategory.name}`}
+        message="Lower numbers appear first in the register menu."
+        defaultValue={String(positionCategory.order ?? 0)}
+        onConfirm={onSetPosition}
+        onCancel={() => setPositionCategory(null)}
+      />}
+
       <PromptDialog
         open={renameModal.open}
         title="Rename Category"
@@ -299,6 +294,6 @@ export default function CategoriesPage() {
         onConfirm={handleConfirmRename}
         onCancel={() => setRenameModal({ open: false, id: null, oldName: "" })}
       />
-    </div>
+    </WorkspacePage>
   );
 }

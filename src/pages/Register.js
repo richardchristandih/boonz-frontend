@@ -128,22 +128,23 @@ export default function Register() {
   };
 
   return (
-    <div className="register-container">
+    <div className="register-container boonz-auth">
       <div className="register-card">
         {/* Back button inside card top-left */}
         <button
           className="back-btn back-btn--inside"
-          onClick={() => navigate("/")}
+          aria-label="Back to sign in"
+          onClick={() => navigate("/login")}
         >
           <i className="fas fa-arrow-left" />
         </button>
 
-        <h2 className="register-title">Register</h2>
+        <h1 className="register-title">Create an account</h1>
         <p className="register-subtitle">
           Create your account. Admins require a one-time PIN.
         </p>
 
-        {error && <p className="register-error">{error}</p>}
+        {error && <p className="register-error" role="alert">{error}</p>}
         {notice && (
           <p
             className="register-error"

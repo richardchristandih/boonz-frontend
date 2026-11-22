@@ -1,6 +1,6 @@
 // src/pages/Login.jsx
 import React, { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import api from "../services/api";
 import "./Login.css";
 import logo from "../images/login-logo.png";
@@ -8,6 +8,7 @@ import logo from "../images/login-logo.png";
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -35,21 +36,22 @@ function Login() {
       navigate(from, { replace: true });
     } catch (err) {
       console.error(err?.response?.data || err.message);
-      setError("Login failed. Check your credentials.");
+      const rejected = [400, 401, 403].includes(err.response?.status);
+      setError(rejected ? "Email or password is incorrect." : "Couldn’t connect to Boonz. Try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="login-container">
+    <div className="login-container boonz-auth">
       <div className="login-card">
         {/* replaced the text heading with your logo */}
         <img src={logo} alt="Boonz" className="login-logo" />
 
-        <p className="login-subtitle">Sign in to your account</p>
+        <h1 className="login-title">Sign in</h1>
 
-        {error && <p className="login-error">{error}</p>}
+        {error && <p className="login-error" role="alert">{error}</p>}
 
         <form onSubmit={handleSubmit} className="login-form">
           <label htmlFor="email" className="login-label">
@@ -69,9 +71,10 @@ function Login() {
           <label htmlFor="password" className="login-label">
             Password
           </label>
+          <div className="boonz-password-row">
           <input
             id="password"
-            type="password"
+            type={showPassword ? "text" : "password"}
             className="login-input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -79,6 +82,8 @@ function Login() {
             disabled={isLoading}
             autoComplete="current-password"
           />
+          <button type="button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? "Hide" : "Show"} password</button>
+          </div>
 
           <button
             type="submit"
@@ -93,13 +98,13 @@ function Login() {
                 Logging in...
               </>
             ) : (
-              "Login"
+              "Sign in"
             )}
           </button>
         </form>
 
         <p className="login-footer">
-          Don't have an account? <a href="/register">Register here</a>
+          Need an account? <Link to="/register">Register</Link>
         </p>
       </div>
     </div>

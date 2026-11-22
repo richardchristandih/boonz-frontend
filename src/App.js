@@ -15,6 +15,7 @@ import Orders from "./pages/Orders";
 import Dashboard from "./pages/Dashboard";
 import ProductPage from "./pages/ProductPage";
 import PrinterTest from "./components/PrinterTest";
+
 import Settings from "./pages/Settings";
 import Inventory from "./pages/Inventory";
 
@@ -25,12 +26,17 @@ import CategoriesPage from "./pages/Categories";
 import { ToastProvider } from "./components/ToastProvider";
 import { ConfirmProvider } from "./components/ConfirmDialog";
 
-/** Tiny guard to protect admin routes */
-function RequireAdmin({ children }) {
-  const user = JSON.parse(localStorage.getItem("user") || "null");
+function RequireSession({ admin = false, children }) {
+  let user;
+  try {
+    user = JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    user = null;
+  }
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== "admin" && user.isAdmin !== true)
+  if (admin && user.role !== "admin" && user.isAdmin !== true) {
     return <Navigate to="/" replace />;
+  }
   return children;
 }
 
@@ -38,15 +44,15 @@ function App() {
   return (
     <ToastProvider>
       <ConfirmProvider>
-        <Router>
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             {/* Public/App routes */}
             <Route path="/" element={<MainMenu />} />
-            <Route path="/orders" element={<Orders />} />
-            <Route path="/product-page" element={<ProductPage />} />
-            <Route path="/printer-test" element={<PrinterTest />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/orders" element={<RequireSession><Orders /></RequireSession>} />
+            <Route path="/product-page" element={<RequireSession admin><ProductPage /></RequireSession>} />
+            <Route path="/printer-test" element={<RequireSession><PrinterTest /></RequireSession>} />
+            <Route path="/settings" element={<RequireSession><Settings /></RequireSession>} />
+            <Route path="/inventory" element={<RequireSession><Inventory /></RequireSession>} />
             <Route path="/menu" element={<PublicMenu />} />
 
             {/* Auth routes */}
@@ -57,17 +63,17 @@ function App() {
             <Route
               path="/dashboard"
               element={
-                <RequireAdmin>
+                <RequireSession admin>
                   <Dashboard />
-                </RequireAdmin>
+                </RequireSession>
               }
             />
             <Route
               path="/admin/categories"
               element={
-                <RequireAdmin>
+                <RequireSession admin>
                   <CategoriesPage />
-                </RequireAdmin>
+                </RequireSession>
               }
             />
 

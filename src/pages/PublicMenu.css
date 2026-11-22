@@ -176,3 +176,13 @@ body{
 @media (prefers-reduced-motion:reduce){
   *{ animation:none!important; transition:none!important; }
 }
+
+.public-menu-page { min-height: 100dvh; }
+.public-menu-main { max-width: 1180px; margin: 0 auto; padding: clamp(14px, 4vw, 38px); }
+.public-menu-wordmark { display: block; width: 96px; margin-bottom: 8px; }
+.public-menu-tools { display: flex; align-items: start; gap: 8px; }
+.public-menu-tools .search-wrap { flex: 1; }
+.public-menu-tools > .icon-btn { min-height: 48px; }
+.public-menu-page .public-menu-card { min-height: 0; padding: 0; overflow: hidden; border: 1px solid var(--boonz-border); box-shadow: none; }
+.public-menu-page .public-menu-card:hover { box-shadow: none; }
+.public-menu-card .public-item-description { margin: 0 0 3px; color: var(--boonz-muted); font-size: 13px; overflow-wrap: anywhere; }

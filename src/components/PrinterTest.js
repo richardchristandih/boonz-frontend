@@ -1,5 +1,8 @@
 // src/components/PrinterTest.js
-import React from 'react';
+import React, { useState } from "react";
+import { Link } from "react-router-dom";
+import { FiPrinter } from "react-icons/fi";
+import WorkspacePage from "./WorkspacePage";
 
 // Example arrays of potential services/characteristics. Adjust as needed.
 const possibleServices = [0x18F0, 0xFFF0, 0xFEE7];
@@ -18,6 +21,7 @@ async function connectPrinter() {
   // Try each combination of service/characteristic
   for (let serviceUUID of possibleServices) {
     for (let characteristicUUID of possibleCharacteristics) {
+      let deviceSelected = false;
       try {
         console.log(`Attempting service=0x${serviceUUID.toString(16)}, characteristic=0x${characteristicUUID.toString(16)}`);
 
@@ -26,6 +30,7 @@ async function connectPrinter() {
           filters: [{ services: [serviceUUID] }]
         });
 
+        deviceSelected = true;
         const server = await device.gatt.connect();
         console.log('Connected to GATT server');
 
@@ -53,21 +58,43 @@ async function connectPrinter() {
         // If we got here with no errors, we can assume success and break out
         return; // Stop trying other combinations
       } catch (error) {
+        if (!deviceSelected && error?.name === "NotFoundError") throw error;
         console.warn(`Failed with service=0x${serviceUUID.toString(16)}, characteristic=0x${characteristicUUID.toString(16)}:`, error);
         // Move on to the next combination
       }
     }
   }
-  console.error("All combinations failed. Printer might not be BLE, or requires different UUIDs.");
+  throw new Error("Couldn’t send a test to the selected Bluetooth printer.");
 }
 
 export default function PrinterTest() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const supported = Boolean(navigator.bluetooth);
+
+  async function testPrinter() {
+    setBusy(true);
+    setResult(null);
+    try {
+      await connectPrinter();
+      setResult({ message: "Test sent. Check the printer for output." });
+    } catch (error) {
+      setResult({ error: true, message: error.name === "NotFoundError" ? "No printer selected." : error.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <div style={{ padding: '20px' }}>
-      <h2>Printer Test (Multiple Attempts)</h2>
-      <button onClick={connectPrinter} style={{ padding: '10px 20px', fontSize: '16px' }}>
-        Test Bluetooth Printer
-      </button>
-    </div>
+    <WorkspacePage title="Bluetooth printer test" description="Send a sample ticket to a nearby Bluetooth printer."
+      actions={<Link className="workspace-button" to="/settings?section=printers">Printer settings</Link>}>
+      <section className="workspace-section">
+        <button className="workspace-button primary" type="button" disabled={!supported || busy} onClick={testPrinter}>
+          <FiPrinter aria-hidden="true" /> {busy ? "Testing…" : "Choose and test printer"}
+        </button>
+        {!supported && <p className="workspace-muted">This browser doesn’t support direct Bluetooth printing. Use the printer routing options in Settings.</p>}
+        {result && <p role={result.error ? "alert" : "status"}>{result.message}</p>}
+      </section>
+    </WorkspacePage>
   );
 }

@@ -16,3 +16,22 @@
   --brand-600: color-mix(in oklab, var(--brand) 86%, black);
   --brand-700: color-mix(in oklab, var(--brand) 78%, black);
 }
+
+:root {
+  --boonz-font: "Avenir Next", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --boonz-ink: #25312c;
+  --boonz-muted: #53645a;
+  --boonz-paper: #f4f7f2;
+  --boonz-cream: #fffaf0;
+  --boonz-wash: #e8f0e7;
+  --boonz-border: #d1dfd2;
+  --boonz-control-border: #839789;
+  --boonz-rail: #d1dfd2;
+  --boonz-accent: #79b4b0;
+  --boonz-accent-hover: #a8d1cd;
+  --boonz-teal-ink: #265751;
+  --boonz-orange: #fb7e00;
+  --boonz-orange-ink: #8b3d04;
+  --boonz-yellow: #ffcc3f;
+  --boonz-green: #9fc089;
+}

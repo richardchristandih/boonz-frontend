@@ -1,6 +1,7 @@
 // src/pages/Settings.jsx
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import WorkspacePage from "../components/WorkspacePage";
 import "./Settings.css";
 import { fetchOrderCharges, saveOrderCharges } from "../services/orderCharges";
 
@@ -171,6 +172,11 @@ export default function Settings() {
   const isAdmin =
     (user?.role && String(user.role).toLowerCase() === "admin") ||
     user?.isAdmin === true;
+
+  const [params, setParams] = useSearchParams();
+  const sections = [["account", "Account"], ["printers", "Printers"],
+    ...(isAdmin ? [["receipts", "Receipts & branding"], ["charges", "Checkout charges"], ["promotions", "Promotions"]] : [])];
+  const tab = sections.find(([value]) => value === params.get("section"))?.[0] || "account";
 
   /* ----------------------- Profile (change name) -------------------- */
   const [profileName, setProfileName] = useState(user?.name || "");
@@ -460,6 +466,11 @@ export default function Settings() {
   const [pValue, setPValue] = useState("");
   const [pDesc, setPDesc] = useState("");
   const [pActive, setPActive] = useState(true);
+  const [pStartsAt, setPStartsAt] = useState("");
+  const [pEndsAt, setPEndsAt] = useState("");
+  const [pMinSubtotal, setPMinSubtotal] = useState("");
+  const [pMaxDiscount, setPMaxDiscount] = useState("");
+  const [pSaving, setPSaving] = useState(false);
 
   async function fetchPromos() {
     try {
@@ -483,19 +494,34 @@ export default function Settings() {
     if (isAdmin) fetchPromos();
   }, [isAdmin]);
 
-  async function addPromo() {
+  async function addPromo(event) {
+    event.preventDefault();
+    if (pSaving) return;
     const val = Number(pValue);
     if (!pName.trim() || !(val > 0)) {
       show("Please fill promo name and value.", { type: "error" });
       return;
     }
+    if (pType === "percentage" && val > 100) {
+      show("A percentage discount can be at most 100%.", { type: "error" });
+      return;
+    }
+    if (pStartsAt && pEndsAt && pStartsAt >= pEndsAt) {
+      show("The end time must be after the start time.", { type: "error" });
+      return;
+    }
     try {
+      setPSaving(true);
       const { data } = await api.post("/promotions", {
         name: pName.trim(),
         type: pType,
         value: val,
         description: pDesc.trim(),
         active: pActive,
+        minSubtotal: Number(pMinSubtotal || 0),
+        ...(pMaxDiscount ? { maxDiscount: Number(pMaxDiscount) } : {}),
+        ...(pStartsAt ? { startsAt: new Date(pStartsAt).toISOString() } : {}),
+        ...(pEndsAt ? { endsAt: new Date(pEndsAt).toISOString() } : {}),
       });
       setPromos((p) => [data, ...p]);
       setPName("");
@@ -503,9 +529,15 @@ export default function Settings() {
       setPDesc("");
       setPType("percentage");
       setPActive(true);
+      setPStartsAt("");
+      setPEndsAt("");
+      setPMinSubtotal("");
+      setPMaxDiscount("");
       show("Promotion added.", { type: "success" });
     } catch (e) {
       show("Add promotion failed.", { type: "error" });
+    } finally {
+      setPSaving(false);
     }
   }
 
@@ -611,18 +643,19 @@ export default function Settings() {
 
   /* ---------------------------- RENDER ------------------------------ */
   return (
-    <div className="page-container">
-      <button className="back-btn" onClick={() => navigate("/")}>
-        <i className="fas fa-arrow-left" /> Back
-      </button>
-      <h1 className="page-title">Settings</h1>
+    <WorkspacePage title="Settings" description="Manage your account, printers, receipts, and checkout settings."
+      className="workspace-settings">
+      <div className="workspace-switcher" role="group" aria-label="Settings sections">
+        {sections.map(([value, label]) => <button type="button" key={value} aria-pressed={tab === value}
+          onClick={() => setParams({ section: value })}>{label}</button>)}
+      </div>
 
       <div className="settings-grid">
         {/* PROFILE + ACCOUNT (combined) */}
-        <section className="card">
-          <h2>Profile &amp; Account</h2>
-          <label>Display name</label>
-          <input
+        <section className="card workspace-section" hidden={tab !== "account"}>
+          <h2>Profile</h2>
+          <label htmlFor="settings-name">Display name</label>
+          <input id="settings-name"
             className="input-hero"
             value={profileName}
             onChange={(e) => setProfileName(e.target.value)}
@@ -640,8 +673,9 @@ export default function Settings() {
         </section>
 
         {/* PRINTERS — Refresh + Routing + Test */}
-        <section className="card">
-          <h2>Printers — Refresh, Routing &amp; Test</h2>
+        <section className="card workspace-section" hidden={tab !== "printers"}>
+          <h2>Printer routing</h2>
+          <Link className="workspace-button" to="/printer-test">Bluetooth diagnostics</Link>
           <p className="muted">Manage Android Bluetooth or QZ printers.</p>
 
           <SplitButtonMenu
@@ -660,8 +694,8 @@ export default function Settings() {
 
           <div className="form-grid-2" style={{ marginTop: 14 }}>
             <div>
-              <label>Receipt Printer</label>
-              <select
+              <label htmlFor="settings-receipt-printer">Receipt Printer</label>
+              <select id="settings-receipt-printer"
                 value={receiptPrinter}
                 onChange={(e) => setReceiptPrinter(e.target.value)}
               >
@@ -672,8 +706,8 @@ export default function Settings() {
                   </option>
                 ))}
               </select>
-              <label style={{ marginTop: 8 }}>Receipt Copies</label>
-              <input
+              <label htmlFor="settings-receipt-copies" style={{ marginTop: 8 }}>Receipt Copies</label>
+              <input id="settings-receipt-copies"
                 type="number"
                 min={1}
                 value={receiptCopies}
@@ -684,8 +718,8 @@ export default function Settings() {
             </div>
 
             <div>
-              <label>Kitchen Printer</label>
-              <select
+              <label htmlFor="settings-kitchen-printer">Kitchen Printer</label>
+              <select id="settings-kitchen-printer"
                 value={kitchenPrinter}
                 onChange={(e) => setKitchenPrinter(e.target.value)}
               >
@@ -696,8 +730,8 @@ export default function Settings() {
                   </option>
                 ))}
               </select>
-              <label style={{ marginTop: 8 }}>Kitchen Copies</label>
-              <input
+              <label htmlFor="settings-kitchen-copies" style={{ marginTop: 8 }}>Kitchen Copies</label>
+              <input id="settings-kitchen-copies"
                 type="number"
                 min={1}
                 value={kitchenCopies}
@@ -718,8 +752,8 @@ export default function Settings() {
         {/* ADMIN ONLY */}
         {isAdmin && (
           <>
-            <section className="card">
-              <h2>Ticket Appearance</h2>
+            <section className="card workspace-section" hidden={tab !== "receipts"}>
+              <h2>Paper, density, and logo</h2>
               <div className="form-grid-2">
                 <div>
                   <label>Paper Width</label>
@@ -776,23 +810,23 @@ export default function Settings() {
               </div>
             </section>
 
-            <section className="card">
+            <section className="card workspace-section" hidden={tab !== "receipts"}>
               <h2>Receipt Template</h2>
-              <label>Shop Name</label>
-              <input
+              <label htmlFor="settings-shop-name">Shop Name</label>
+              <input id="settings-shop-name"
                 className="input-hero"
                 value={shopName}
                 onChange={(e) => setShopName(e.target.value)}
               />
-              <label style={{ marginTop: 8 }}>Address</label>
-              <textarea
+              <label htmlFor="settings-address" style={{ marginTop: 8 }}>Address</label>
+              <textarea id="settings-address"
                 className="textarea--enhanced"
                 rows={2}
                 value={shopAddr}
                 onChange={(e) => setShopAddr(e.target.value)}
               />
-              <label style={{ marginTop: 8 }}>Footer Message</label>
-              <input
+              <label htmlFor="settings-footer" style={{ marginTop: 8 }}>Footer Message</label>
+              <input id="settings-footer"
                 className="input-hero"
                 type="text"
                 value={footerMsg}
@@ -813,7 +847,7 @@ export default function Settings() {
               </div>
             </section>
 
-            <section className="card">
+            <section className="card workspace-section" hidden={tab !== "charges"}>
               <h2>Tax &amp; Service Charge</h2>
               <p className="muted">Configure order charges and rates.</p>
               <div className="form-grid-2">
@@ -862,67 +896,25 @@ export default function Settings() {
               {chargesMsg && <p className="note">{chargesMsg}</p>}
             </section>
 
-            <section className="card">
+            <section className="card workspace-section" hidden={tab !== "promotions"}>
               <h2>Promotions</h2>
               <p className="muted">Create and manage discount promotions.</p>
-              <div className="form-grid-2">
-                <div>
-                  <div>
-                    <label>Name</label>
-                    <input
-                      className="input-hero"
-                      type="text"
-                      value={pName}
-                      onChange={(e) => setPName(e.target.value)}
-                    />
-
-                    <label style={{ marginTop: 8 }}>Type</label>
-                    <select
-                      className="input-hero"
-                      value={pType}
-                      onChange={(e) => setPType(e.target.value)}
-                    >
-                      <option value="percentage">Percentage</option>
-                      <option value="flat">Flat (Rp)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label>Value</label>
-                    <input
-                      className="input-hero"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={pValue}
-                      onChange={(e) => setPValue(e.target.value)}
-                    />
-                  </div>
-
-                  <label style={{ marginTop: 8 }}>Active?</label>
-                  <select
-                    value={String(pActive)}
-                    onChange={(e) => setPActive(e.target.value === "true")}
-                  >
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
-                </div>
-              </div>
-
-              <label style={{ marginTop: 8 }}>Description</label>
-              <input
-                className="input-hero"
-                type="text"
-                value={pDesc}
-                onChange={(e) => setPDesc(e.target.value)}
-              />
-
-              <div className="actions">
-                <button className="btn" onClick={addPromo}>
-                  Add Promotion
-                </button>
-              </div>
+              <form className="settings-promo-form" onSubmit={addPromo}>
+                <fieldset disabled={pSaving} className="form-grid-2">
+                  <label>Name<input className="input-hero" required value={pName} onChange={(event) => setPName(event.target.value)} /></label>
+                  <label>Type<select className="input-hero" value={pType} onChange={(event) => setPType(event.target.value)}>
+                    <option value="percentage">Percentage</option><option value="flat">Fixed amount (Rp)</option>
+                  </select></label>
+                  <label>Value<input className="input-hero" type="number" required min="0.01" max={pType === "percentage" ? 100 : undefined} step="0.01" value={pValue} onChange={(event) => setPValue(event.target.value)} /></label>
+                  <label>Minimum subtotal (Rp)<input className="input-hero" type="number" min="0" step="0.01" value={pMinSubtotal} onChange={(event) => setPMinSubtotal(event.target.value)} /></label>
+                  <label>Maximum discount (Rp)<input className="input-hero" type="number" min="0.01" step="0.01" value={pMaxDiscount} onChange={(event) => setPMaxDiscount(event.target.value)} /></label>
+                  <label>Starts at (device time)<input className="input-hero" type="datetime-local" value={pStartsAt} onChange={(event) => setPStartsAt(event.target.value)} /></label>
+                  <label>Ends at (device time)<input className="input-hero" type="datetime-local" value={pEndsAt} onChange={(event) => setPEndsAt(event.target.value)} /></label>
+                  <label>Description<input className="input-hero" value={pDesc} onChange={(event) => setPDesc(event.target.value)} /></label>
+                </fieldset>
+                <label className="settings-promo-enabled"><input type="checkbox" checked={pActive} disabled={pSaving} onChange={(event) => setPActive(event.target.checked)} /> Enabled</label>
+                <div className="actions"><button className="btn" type="submit" disabled={pSaving}>{pSaving ? "Adding…" : "Add promotion"}</button></div>
+              </form>
               {pLoading ? (
                 <p className="note">Loading…</p>
               ) : pError ? (
@@ -951,6 +943,10 @@ export default function Settings() {
                               : formatIDR(p.value)}{" "}
                             {p.description}
                           </div>
+                          {p.startsAt && <div className="muted">Starts {new Date(p.startsAt).toLocaleString()}</div>}
+                          {p.endsAt && <div className="muted">Ends {new Date(p.endsAt).toLocaleString()}</div>}
+                          {Boolean(p.minSubtotal) && <div className="muted">Minimum {formatIDR(p.minSubtotal)}</div>}
+                          {Boolean(p.maxDiscount) && <div className="muted">Discount cap {formatIDR(p.maxDiscount)}</div>}
                         </div>
                         <div style={{ display: "inline-flex", gap: 6 }}>
                           <button
@@ -1030,6 +1026,6 @@ export default function Settings() {
           </div>
         </div>
       )}
-    </div>
+    </WorkspacePage>
   );
 }

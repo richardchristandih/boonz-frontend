@@ -1,6 +1,7 @@
 // src/pages/Orders.js
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { FiRefreshCw, FiFileText } from "react-icons/fi";
+import WorkspacePage, { WorkspaceMetrics } from "../components/WorkspacePage";
 import api from "../services/api";
 import "./Orders.css";
 import { useToast } from "../components/ToastProvider";
@@ -18,18 +19,12 @@ import {
 import appLogo from "../images/logo.jpg";
 
 /* ========= Helpers ========= */
-const timeRangeMapping = {
-  today: 0, // special case handled below (start of today)
-  day1: 1,
-  day2: 2,
-  day3: 3,
-  day4: 4,
-  day5: 5,
-  day6: 6,
-  week: 7,
-  month: 30,
-  year: 365,
-};
+const PAGE_SIZE = 24;
+const orderStatuses = [["pending", "Active"], ["done", "Completed"], ["cancelled", "Cancelled"], ["refunded", "Refunded"]];
+
+function localDayKey(date) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
 
 function fmtRp(n) {
   const v = Number(n || 0);
@@ -121,34 +116,34 @@ function SkeletonOrdersList({ count = 6 }) {
 
 /* ========= Component ========= */
 export default function Orders() {
-  const navigate = useNavigate();
   const { show } = useToast();
   const confirm = useConfirm();
 
   const [orders, setOrders] = useState([]);
-  const [timeRangeLabel, setTimeRangeLabel] = useState("today"); // DEFAULT: today
+  const [timeRangeLabel, setTimeRangeLabel] = useState("today");
   const [loading, setLoading] = useState(true);
   const [fetchErr, setFetchErr] = useState("");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState("");
+  const [limit, setLimit] = useState(PAGE_SIZE);
   const [printBusy, setPrintBusy] = useState(""); // "", "kitchen", "receipt"
   const [showSettlement, setShowSettlement] = useState(false);
   const [settlementDateRange, setSettlementDateRange] = useState({
-    from: new Date().toISOString().split("T")[0],
-    to: new Date().toISOString().split("T")[0],
+    from: localDayKey(new Date()),
+    to: localDayKey(new Date()),
   });
 
-  // --- Detect role (admin vs user) ---
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
+  const [isAdmin] = useState(() => {
     try {
-      const raw = localStorage.getItem("user");
-      const u = raw ? JSON.parse(raw) : null;
-      setIsAdmin(u?.role === "admin" || u?.isAdmin === true);
+      const user = JSON.parse(localStorage.getItem("user") || "null");
+      return user?.role === "admin" || user?.isAdmin === true;
     } catch {
-      setIsAdmin(false);
+      return false;
     }
-  }, []);
+  });
 
   useEffect(() => {
     fetchOrders();
@@ -171,96 +166,52 @@ export default function Orders() {
     }
   }
 
-  const handleTimeRangeChange = (e) => setTimeRangeLabel(e.target.value);
-
+  const payments = useMemo(() => [...new Set(orders.map((order) => order.paymentMethod).filter(Boolean))].sort(), [orders]);
   const filteredOrders = useMemo(() => {
-    if (!orders.length) return [];
-
-    // If both custom dates are set, use them instead of the dropdown
-    if (customFrom && customTo) {
-      const fromDate = new Date(customFrom);
-      const toDate = new Date(customTo);
-      // include full "to" day by setting time to end of day
-      toDate.setHours(23, 59, 59, 999);
-      return orders.filter((o) => {
-        const created = new Date(o.createdAt);
-        return created >= fromDate && created <= toDate;
-      });
-    }
-
-    // otherwise use predefined time range logic
-    if (!timeRangeLabel) return orders;
-
     const now = new Date();
-    if (timeRangeLabel === "today") {
-      // Use local timezone to ensure correct day boundary
-      const startOfToday = new Date();
-      startOfToday.setHours(0, 0, 0, 0);
-      const endOfToday = new Date(startOfToday);
-      endOfToday.setHours(23, 59, 59, 999);
-      
-      return orders.filter((o) => {
-        const created = new Date(o.createdAt);
-        // Ensure we're comparing dates in the same timezone
-        return created >= startOfToday && created <= endOfToday;
-      });
-    }
-
-    const days = timeRangeMapping[timeRangeLabel];
-    if (!Number.isFinite(days)) return orders;
-
+    const today = localDayKey(now);
     const from = new Date(now);
-    from.setDate(from.getDate() - days);
-    return orders.filter((o) => new Date(o.createdAt) >= from);
-  }, [orders, timeRangeLabel, customFrom, customTo]);
+    from.setDate(from.getDate() - (Number(timeRangeLabel) - 1));
+    const fromDay = localDayKey(from);
+    const term = query.trim().toLowerCase().replace(/^#/, "");
+    return orders.filter((order) => {
+      const status = order.status || "pending";
+      if (!isAdmin && status !== "pending") return false;
+      if (isAdmin && statusFilter && status !== statusFilter) return false;
+      if (isAdmin && paymentFilter && order.paymentMethod !== paymentFilter) return false;
+      if (isAdmin) {
+        const day = localDayKey(new Date(order.createdAt));
+        if (customFrom || customTo) {
+          if ((customFrom && day < customFrom) || (customTo && day > customTo)) return false;
+        } else if (timeRangeLabel === "today" && day !== today) return false;
+        else if (timeRangeLabel && timeRangeLabel !== "today" && (day < fromDay || day > today)) return false;
+      }
+      return !term || [order.orderNumber, order.customerName, ...(order.products || []).map((item) => item.name)]
+        .some((value) => String(value ?? "").toLowerCase().includes(term));
+    }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [orders, isAdmin, timeRangeLabel, customFrom, customTo, query, statusFilter, paymentFilter]);
 
-  // ✅ Summary stats for filtered list (exclude cancelled and refunded orders)
-  const validOrders = filteredOrders.filter(
-    (order) =>
-      order.status !== "cancelled" && order.status !== "refunded"
-  );
-  
+  const validOrders = filteredOrders.filter((order) => !["cancelled", "refunded"].includes(order.status) && order.paymentMethod !== "Open Bill");
+  const sum = (key) => validOrders.reduce((total, order) => total + (Number(order[key]) || 0), 0);
+  const totalRevenue = sum("totalAmount");
   const totalTransactions = validOrders.length;
-  const cancelledCount = filteredOrders.filter(
-    (order) => order.status === "cancelled"
-  ).length;
-  const refundedCount = filteredOrders.filter(
-    (order) => order.status === "refunded"
-  ).length;
-  
-  // Detailed revenue breakdown (only for valid orders - exclude cancelled/refunded)
-  const totalSubtotal = validOrders.reduce(
-    (acc, order) => acc + (Number(order.subtotal) || 0),
-    0
-  );
-  const totalTax = validOrders.reduce(
-    (acc, order) => acc + (Number(order.tax) || 0),
-    0
-  );
-  const totalService = validOrders.reduce(
-    (acc, order) => acc + (Number(order.serviceCharge) || 0),
-    0
-  );
-  const totalDiscount = validOrders.reduce(
-    (acc, order) => acc + (Number(order.discount) || 0),
-    0
-  );
-  // Net revenue = Subtotal + Tax + Service - Discount
-  // Using totalAmount from orders (which should already be calculated correctly)
-  const totalRevenue = validOrders.reduce(
-    (acc, order) => acc + (Number(order.totalAmount) || 0),
-    0
-  );
-  
-  // Calculate average order value
-  const averageOrder = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
+
+  function clearFilters() {
+    setQuery("");
+    setStatusFilter("");
+    setPaymentFilter("");
+    setTimeRangeLabel("today");
+    setCustomFrom("");
+    setCustomTo("");
+    setLimit(PAGE_SIZE);
+  }
 
   // Settlement calculations
   const settlementOrders = useMemo(() => {
     if (!showSettlement) return [];
-    const from = new Date(settlementDateRange.from);
+    const from = new Date(`${settlementDateRange.from}T00:00:00`);
     from.setHours(0, 0, 0, 0);
-    const to = new Date(settlementDateRange.to);
+    const to = new Date(`${settlementDateRange.to}T00:00:00`);
     to.setHours(23, 59, 59, 999);
     
     return orders.filter((order) => {
@@ -654,184 +605,68 @@ export default function Orders() {
   }
 
   return (
-    <div className="orders-page">
-      {/* Back button (consistent with other pages) */}
-      <button className="back-btn" onClick={() => navigate("/")}>
-        <i className="fas fa-arrow-left" /> Back
-      </button>
-
-      <h1 className="orders-heading">Orders</h1>
-
-      {/* Filter + Summary Row */}
-      <div className="orders-toolbar">
-        <div className="orders-filter">
-          <label htmlFor="time-range">Filter by Time Range:</label>
-          <select
-            id="time-range"
-            value={timeRangeLabel}
-            onChange={handleTimeRangeChange}
-          >
-            <option value="today">Today</option>
-            <option value="">All time</option>
-            <option value="day1">Last 1 day</option>
-            <option value="day2">Last 2 days</option>
-            <option value="day3">Last 3 days</option>
-            <option value="day4">Last 4 days</option>
-            <option value="day5">Last 5 days</option>
-            <option value="day6">Last 6 days</option>
-            <option value="week">Last 7 days (1 week)</option>
-            <option value="month">Last 30 days (1 month)</option>
-            <option value="year">Last 365 days (1 year)</option>
-          </select>
-
-          {/* Custom range picker */}
-          <div className="custom-range">
-            <label>Or pick range:</label>
-            <input
-              type="date"
-              value={customFrom}
-              onChange={(e) => setCustomFrom(e.target.value)}
-            />
-            <span>to</span>
-            <input
-              type="date"
-              value={customTo}
-              onChange={(e) => setCustomTo(e.target.value)}
-            />
-            {(customFrom || customTo) && (
-              <button
-                className="btn small"
-                onClick={() => {
-                  setCustomFrom("");
-                  setCustomTo("");
-                }}
-              >
-                Clear
-              </button>
-            )}
-          </div>
+    <WorkspacePage title={isAdmin ? "Orders" : "Active orders"}
+      description={isAdmin ? "Find transactions and review payment, preparation, or settlement details." : "Review orders waiting for preparation."}
+      className="orders-page workspace-orders"
+      actions={<><button type="button" className="workspace-button" onClick={fetchOrders} disabled={loading}><FiRefreshCw aria-hidden="true" /> Refresh</button>
+        {isAdmin && <button type="button" className="workspace-button primary" onClick={() => setShowSettlement(true)} disabled={loading || Boolean(fetchErr)}><FiFileText aria-hidden="true" /> Settlement report</button>}</>}>
+      <section className="workspace-section orders-controls" aria-label="Order filters">
+        <div className="workspace-tools">
+          <label>Find an order<input type="search" placeholder="Order #, customer, or item" value={query} onChange={(event) => { setQuery(event.target.value); setLimit(PAGE_SIZE); }} /></label>
+          {isAdmin && <>
+            <label>Period<select aria-label="Period" value={timeRangeLabel} onChange={(event) => { setTimeRangeLabel(event.target.value); setCustomFrom(""); setCustomTo(""); setLimit(PAGE_SIZE); }}>
+              <option value="today">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="365">Last 365 days</option><option value="">All time</option>
+            </select></label>
+            <label>Status<select aria-label="Status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setLimit(PAGE_SIZE); }}>
+              <option value="">Any status</option>{orderStatuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select></label>
+            <label>Payment method<select aria-label="Payment method" value={paymentFilter} onChange={(event) => { setPaymentFilter(event.target.value); setLimit(PAGE_SIZE); }}>
+              <option value="">Any payment method</option>{payments.map((method) => <option key={method}>{method}</option>)}
+            </select></label>
+          </>}
+          <button type="button" className="workspace-button" onClick={clearFilters}>Reset filters</button>
         </div>
-
-        <div className="orders-summary">
-          <div className="summary-item">
-            <strong>Valid Transactions:</strong> {loading ? "…" : totalTransactions}
+        {isAdmin && <details className="orders-detail-panel">
+          <summary>Custom date range{(customFrom || customTo) && " · applied"}</summary>
+          <div className="workspace-tools">
+            <label>From<input type="date" value={customFrom} max={customTo || undefined} onChange={(event) => { setCustomFrom(event.target.value); setLimit(PAGE_SIZE); }} /></label>
+            <label>To<input type="date" value={customTo} min={customFrom || undefined} onChange={(event) => { setCustomTo(event.target.value); setLimit(PAGE_SIZE); }} /></label>
           </div>
-          {cancelledCount > 0 && (
-            <div className="summary-item" style={{ color: "#b71c1c" }}>
-              <strong>Cancelled:</strong> {cancelledCount}
-            </div>
-          )}
-          {refundedCount > 0 && (
-            <div className="summary-item" style={{ color: "#f57c00" }}>
-              <strong>Refunded:</strong> {refundedCount}
-            </div>
-          )}
-          {/* 👇 Hide Revenue for non-admin users */}
-          {isAdmin && (
-            <>
-              <div className="summary-item">
-                <strong>Total Revenue:</strong> {loading ? "…" : fmtRp(totalRevenue)}
-              </div>
-              <button
-                className="summary-item btn"
-                onClick={() => setShowSettlement(true)}
-                style={{
-                  background: "#3b82f6",
-                  color: "white",
-                  border: "none",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                }}
-              >
-                <i className="fas fa-file-invoice" /> Settlement Report
-              </button>
-              <details style={{ marginTop: 8, cursor: "pointer" }}>
-                <summary style={{ fontWeight: 600, color: "#666" }}>
-                  Revenue Details
-                </summary>
-                <div
-                  style={{
-                    marginTop: 8,
-                    padding: 12,
-                    background: "#f9fafb",
-                    borderRadius: 6,
-                    fontSize: 14,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span>Subtotal:</span>
-                    <strong>{fmtRp(totalSubtotal)}</strong>
-                  </div>
-                  {totalTax > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span>Tax:</span>
-                      <strong>{fmtRp(totalTax)}</strong>
-                    </div>
-                  )}
-                  {totalService > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span>Service Charge:</span>
-                      <strong>{fmtRp(totalService)}</strong>
-                    </div>
-                  )}
-                  {totalDiscount > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, color: "#b71c1c" }}>
-                      <span>Total Discount:</span>
-                      <strong>-{fmtRp(totalDiscount)}</strong>
-                    </div>
-                  )}
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginTop: 8,
-                      paddingTop: 8,
-                      borderTop: "1px solid #e5e7eb",
-                      fontWeight: 600,
-                      fontSize: 16,
-                    }}
-                  >
-                    <span>Net Revenue:</span>
-                    <strong style={{ color: "#059669" }}>{fmtRp(totalRevenue)}</strong>
-                  </div>
-                  {totalTransactions > 0 && (
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginTop: 8,
-                        paddingTop: 8,
-                        borderTop: "1px solid #e5e7eb",
-                        fontSize: 14,
-                        color: "#666",
-                      }}
-                    >
-                      <span>Average per Order:</span>
-                      <strong>{fmtRp(averageOrder)}</strong>
-                    </div>
-                  )}
-                </div>
-              </details>
-            </>
-          )}
-        </div>
-      </div>
+        </details>}
+      </section>
+      {isAdmin && !loading && !fetchErr && <>
+        <WorkspaceMetrics label="Filtered order totals" items={[
+          ["Recorded sales", fmtRp(totalRevenue)], ["Valid orders", totalTransactions],
+          ["Average order", fmtRp(totalTransactions ? totalRevenue / totalTransactions : 0)],
+          ["Cancelled or refunded", filteredOrders.filter((order) => ["cancelled", "refunded"].includes(order.status)).length],
+        ]} />
+        <details className="workspace-section orders-detail-panel">
+          <summary>Sales breakdown</summary>
+          <dl className="order-financial-details">
+            {[["Subtotal", "subtotal"], ["Tax", "tax"], ["Service charge", "serviceCharge"], ["Discounts", "discount"]].map(([label, key]) =>
+              <div key={key}><dt>{label}</dt><dd>{fmtRp(sum(key))}</dd></div>)}
+          </dl>
+        </details>
+      </>}
+      {!loading && !fetchErr && <p className="workspace-muted" role="status">{filteredOrders.length} {filteredOrders.length === 1 ? "matching order" : "matching orders"}</p>}
 
       {/* Error */}
-      {fetchErr && <div className="orders-error">{fetchErr}</div>}
+      {fetchErr && <div className="orders-error" role="alert">
+        <p>{fetchErr}</p><button type="button" className="btn" onClick={fetchOrders}>Try again</button>
+      </div>}
 
       {/* List */}
       <div className="orders-list">
         {loading ? (
           <SkeletonOrdersList count={6} />
-        ) : filteredOrders.length === 0 ? (
+        ) : fetchErr ? null : filteredOrders.length === 0 ? (
           <div className="orders-empty">
             <div className="empty-art">📦</div>
-            <h3>No orders for this range</h3>
-            <p>Try expanding the time range or check back later.</p>
+            <h3>{isAdmin ? "No orders for this range" : "No active orders"}</h3>
+            {isAdmin && <p>Try expanding the time range.</p>}
           </div>
         ) : (
-          filteredOrders.map((order) => {
+          filteredOrders.slice(0, limit).map((order) => {
             const hasDiscount = Number(order.discount) > 0;
             const status = String(order.status || "pending").toLowerCase();
 
@@ -843,11 +678,12 @@ export default function Orders() {
                       Order #{order.orderNumber}
                     </span>
                     <span className={`badge status-${status}`}>
-                      {status.toUpperCase()}
+                      {orderStatuses.find(([value]) => value === status)?.[1] || status}
                     </span>
                   </div>
                   <div className="order-meta">
-                    <span>ID: {order._id}</span>
+                    {isAdmin && <>
+                    {order.customerName && <span>{order.customerName}</span>}
                     <span>
                       Subtotal: {fmtRp(order.subtotal || 0)}
                     </span>
@@ -871,18 +707,19 @@ export default function Orders() {
                     <span style={{ fontWeight: 700, color: "#059669" }}>
                       Total: {fmtRp(order.totalAmount || 0)}
                     </span>
+                    </>}
                     <span>
                       Created: {new Date(order.createdAt).toLocaleString()}
                     </span>
                     {order.orderType && <span>Type: {order.orderType}</span>}
-                    {order.paymentMethod && (
+                    {isAdmin && order.paymentMethod && (
                       <span>Payment: {order.paymentMethod}</span>
                     )}
                   </div>
                 </div>
 
-                <div className="products-wrap">
-                  <h4 className="products-heading">Products</h4>
+                <details className="products-wrap" open={!isAdmin || status === "pending"}>
+                  <summary className="products-heading">{order.products?.length || 0} order lines</summary>
                   {order.products?.length ? (
                     <div className="products-list">
                       {order.products.map((product, index) => (
@@ -892,15 +729,16 @@ export default function Orders() {
                             <div className="product-sub">
                               Qty: {product.quantity}
                             </div>
+                            {product.note && <div className="product-sub">{product.note}</div>}
                           </div>
-                          <div className="pi-right">{fmtRp(product.price)}</div>
+                          {isAdmin && <div className="pi-right">{fmtRp(product.price)}</div>}
                         </div>
                       ))}
                     </div>
                   ) : (
                     <p className="muted">No products found in this order.</p>
                   )}
-                </div>
+                </details>
 
                 <div className="order-actions">
                   {/* PENDING actions */}
@@ -932,6 +770,12 @@ export default function Orders() {
                         </button>
                       )}
                     </>
+                  )}
+
+                  {status === "pending" && (
+                    <button className="btn primary" onClick={() => handleReprintKitchen(order)} disabled={!!printBusy}>
+                      {printBusy === "kitchen" ? "Printing…" : "Print kitchen ticket"}
+                    </button>
                   )}
 
                   {/* DONE actions */}
@@ -969,6 +813,8 @@ export default function Orders() {
           })
         )}
       </div>
+
+      {filteredOrders.length > limit && <button type="button" className="workspace-button" onClick={() => setLimit((value) => value + PAGE_SIZE)}>Show more orders</button>}
 
       {/* Settlement Modal */}
       {showSettlement && (
@@ -1317,6 +1163,6 @@ export default function Orders() {
           </div>
         </div>
       )}
-    </div>
+    </WorkspacePage>
   );
 }

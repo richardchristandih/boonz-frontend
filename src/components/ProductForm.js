@@ -198,133 +198,146 @@ export default function ProductForm({ onSuccess, showTitle = false }) {
           </div>
         )}
 
-        <label htmlFor="pf-name">Name:</label>
-        <input
-          id="pf-name"
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          placeholder="Americano"
-        />
+        <fieldset>
+          <legend>Product details</legend>
+          <div className="product-field-grid">
+            <div>
+              <label htmlFor="pf-name">Product name</label>
+              <input
+                id="pf-name"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                placeholder="Americano"
+              />
+            </div>
+            <div>
+              <label htmlFor="pf-sku">SKU / barcode</label>
+              <input
+                id="pf-sku"
+                type="text"
+                value={sku}
+                onChange={(e) => setSku(e.target.value)}
+                required
+                placeholder="AMR-001"
+                autoCapitalize="characters"
+              />
+            </div>
+            <div>
+              <label htmlFor="pf-price">Price (Rp)</label>
+              <input
+                id="pf-price"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                required
+                placeholder="20000"
+              />
+            </div>
+            <div>
+              <label htmlFor="pf-qty">Starting quantity</label>
+              <input
+                id="pf-qty"
+                type="number"
+                inputMode="numeric"
+                step="1"
+                min="0"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                required
+                placeholder="100"
+              />
+            </div>
+            <div>
+              <div className="cat-label-row">
+                <label htmlFor="pf-cat" style={{ marginBottom: 0 }}>
+                  Category:
+                </label>
+                <button
+                  type="button"
+                  className="pf-refresh-btn"
+                  onClick={loadCategories}
+                  disabled={catsLoading}
+                  aria-label="Reload categories"
+                  title="Reload categories"
+                >
+                  <RefreshIcon spinning={catsLoading} />
+                  {catsLoading ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
 
-        <label htmlFor="pf-sku">SKU:</label>
-        <input
-          id="pf-sku"
-          type="text"
-          value={sku}
-          onChange={(e) => setSku(e.target.value)}
-          required
-          placeholder="AMR-001"
-          autoCapitalize="characters"
-        />
-
-        <label htmlFor="pf-price">Price:</label>
-        <input
-          id="pf-price"
-          type="number"
-          inputMode="decimal"
-          step="0.01"
-          min="0"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          required
-          placeholder="20000"
-        />
-
-        <label htmlFor="pf-qty">Quantity:</label>
-        <input
-          id="pf-qty"
-          type="number"
-          inputMode="numeric"
-          step="1"
-          min="0"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-          required
-          placeholder="100"
-        />
-
-        <label htmlFor="pf-desc">Description:</label>
-        <textarea
-          id="pf-desc"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="(Optional) Short description..."
-        />
-
-        <label>Image</label>
-        {imageUrl && (
-          <img
-            src={imageUrl}
-            alt="preview"
-            className={`image-preview${imgReady ? " is-ready" : ""}`}
-            onLoad={handleImgLoad}
-            onError={handleImgError}
-            style={{ display: imgReady ? "block" : "none" }}
+              <select
+                id="pf-cat"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                required
+              >
+                {catOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Description and image</legend>
+          <label htmlFor="pf-desc">Description (optional)</label>
+          <textarea
+            id="pf-desc"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="(Optional) Short description..."
           />
-        )}
-
-        <div className="file-row">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
-            aria-label="Choose image to upload"
-          />
-          {uploading && (
-            <span className="muted" aria-live="polite">
-              Uploading...
-            </span>
+          <label htmlFor="pf-upload">Upload image</label>
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              alt="preview"
+              className={`image-preview${imgReady ? " is-ready" : ""}`}
+              onLoad={handleImgLoad}
+              onError={handleImgError}
+              style={{ display: imgReady ? "block" : "none" }}
+            />
           )}
-        </div>
 
-        <label htmlFor="pf-img">Or paste Image URL:</label>
-        <input
-          id="pf-img"
-          type="url"
-          value={imageUrl}
-          onChange={(e) => setImageUrl(e.target.value)}
-          placeholder="https://example.com/image.jpg (optional)"
-        />
+          <div className="file-row">
+            <input
+              id="pf-upload"
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              aria-label="Choose image to upload"
+            />
+            {uploading && (
+              <span className="muted" aria-live="polite">
+                Uploading...
+              </span>
+            )}
+          </div>
 
-        <div className="cat-label-row">
-          <label htmlFor="pf-cat" style={{ marginBottom: 0 }}>
-            Category:
-          </label>
-          <button
-            type="button"
-            className="pf-refresh-btn"
-            onClick={loadCategories}
-            disabled={catsLoading}
-            aria-label="Reload categories"
-            title="Reload categories"
-          >
-            <RefreshIcon spinning={catsLoading} />
-            {catsLoading ? "Refreshing…" : "Refresh"}
-          </button>
-        </div>
-
-        <select
-          id="pf-cat"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          required
-        >
-          {catOptions.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
+          <label htmlFor="pf-img">Or use an image URL</label>
+          <input
+            id="pf-img"
+            type="url"
+            value={imageUrl}
+            onChange={(e) => setImageUrl(e.target.value)}
+            placeholder="https://example.com/image.jpg (optional)"
+          />
+        </fieldset>
 
         <button
           type="submit"
           className="create-button"
           disabled={saving || uploading}
         >
-          {saving ? "Creating..." : "Create"}
+          {saving ? "Adding…" : "Add product"}
         </button>
       </form>
     </div>

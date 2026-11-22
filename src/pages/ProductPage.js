@@ -1,47 +1,36 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { FiPlus } from "react-icons/fi";
 import ProductList from "../components/ProductList";
 import ProductForm from "../components/ProductForm";
+import WorkspacePage from "../components/WorkspacePage";
+import { useToast } from "../components/ToastProvider";
 import "./ProductPage.css";
 
 export default function ProductPage() {
-  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const [refreshKey, setRefreshKey] = useState(0);
+  const { show } = useToast();
+  const adding = params.get("view") === "add";
 
   return (
-    <div className="product-page">
-      <header className="product-page__header">
-        <button className="back-btn" onClick={() => navigate("/")}>
-          <i className="fas fa-arrow-left" /> Back
-        </button>
-
-        <div className="product-page__titles">
-          <h1 className="product-page__title">Products</h1>
-        </div>
-      </header>
-
-      <main className="product-page__grid">
-        <section className="card card--stretch">
-          <div className="card__head">
-            <h2 className="card__title">Product List</h2>
-          </div>
-          <div className="card__body">
-            <ProductList key={refreshKey} showTitle={false} scroll />
-          </div>
-        </section>
-
-        <aside className="card card--sticky">
-          <div className="card__head">
-            <h2 className="card__title">Add Product</h2>
-          </div>
-          <div className="card__body">
-            <ProductForm
-              showTitle={false}
-              onSuccess={() => setRefreshKey((k) => k + 1)}
-            />
-          </div>
-        </aside>
-      </main>
-    </div>
+    <WorkspacePage title={adding ? "Add product" : "Products"}
+      description={adding ? "Enter product details, price, category, and an optional image." : "Search, sort, and edit items in the Boonz menu."}
+      className="workspace-products"
+      actions={adding ? <Link className="workspace-button" to="/product-page">View products</Link> : <>
+        <Link className="workspace-button" to="/admin/categories">Categories</Link>
+        <Link className="workspace-button primary" to="/product-page?view=add"><FiPlus aria-hidden="true" /> Add product</Link>
+      </>}>
+      <section className="workspace-section" aria-label="Product catalog" hidden={adding}>
+        <ProductList key={refreshKey} />
+      </section>
+      {adding && <section className="workspace-section" aria-label="New product">
+        <ProductForm onSuccess={() => {
+          setRefreshKey((key) => key + 1);
+          setParams({}, { replace: true });
+          show("Product added.", { type: "success" });
+        }} />
+      </section>}
+    </WorkspacePage>
   );
 }

@@ -2,10 +2,10 @@ import React, {
   useEffect,
   useMemo,
   useState,
-  useRef,
   useCallback,
 } from "react";
-import "./PublicMenu.css"; // reuse your existing styles
+import "./PublicMenu.css";
+import { FiRefreshCw, FiSearch, FiShoppingBag, FiX } from "react-icons/fi";
 import SafeImage from "../components/SafeImage";
 import api from "../services/api";
 import { normalizeImageUrl } from "../utils/driveUrl";
@@ -14,8 +14,7 @@ import { formatIDR } from "../utils/money";
 import appLogo from "../images/login-logo.png"; // your brand logo
 
 /* ---------------- Constants ---------------- */
-const MOBILE_BP = 1024;
-const DEFAULT_CATEGORY = "Coffee";
+const DEFAULT_CATEGORY = "All";
 
 const productImages = require.context(
   "../images",
@@ -89,18 +88,6 @@ function getImageSrc(product) {
     return normalized;
   }
 }
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== "undefined" ? window.innerWidth < MOBILE_BP : false
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width:${MOBILE_BP}px)`);
-    const h = (e) => setIsMobile(e.matches);
-    mq.addEventListener("change", h);
-    return () => mq.removeEventListener("change", h);
-  }, []);
-  return isMobile;
-}
 function deriveCategoryNames(products = []) {
   const set = new Set();
   products.forEach((p) => {
@@ -119,59 +106,37 @@ function buildOrderedChips(apiCats, prodCats) {
     const key = clean.toLowerCase();
     if (!map.has(key)) map.set(key, clean);
   };
-  (apiCats || []).forEach(add);
-  (prodCats || []).forEach(add);
-
-  if (map.size === 0) {
-    ["Coffee", "Drink", "Burger", "Beer", "Patisserie", "Matcha"].forEach(add);
-  }
-
-  const allNames = Array.from(map.values());
-  const primary = ["Coffee", "Burger"]
-    .filter((p) => includesCI(allNames, p))
-    .map((p) => allNames.find((n) => n.toLowerCase() === p.toLowerCase()));
-
-  const rest = allNames
-    .filter((n) => !includesCI(primary, n))
-    .sort((a, b) => a.localeCompare(b));
-
-  const ordered = [...primary, ...rest];
-  return ordered.length > 1 ? ["All", ...ordered] : ordered;
+  apiCats.forEach(add);
+  [...prodCats].sort((a, b) => a.localeCompare(b)).forEach(add);
+  map.delete("all");
+  return ["All", ...map.values()];
 }
 
 /* ---------------- Component ---------------- */
 export default function PublicMenu() {
-  const isMobile = useIsMobile();
-  const initRef = useRef(true);
-
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [categories, setCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORY);
-  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
-  // fetch products
-  useEffect(() => {
-    (async () => {
-      try {
-        setLoadingProducts(true);
-        const res = await api.get("/products");
-        const list = Array.isArray(res.data)
-          ? res.data
-          : res.data && Array.isArray(res.data.items)
-          ? res.data.items
-          : [];
-        setProducts(list);
-      } catch (err) {
-        console.error("Error fetching products:", err);
-        setProducts([]);
-      } finally {
-        setLoadingProducts(false);
-      }
-    })();
+  const reloadProducts = useCallback(async () => {
+    setLoadingProducts(true);
+    setLoadError("");
+    try {
+      const { data } = await api.get("/products");
+      const list = Array.isArray(data) ? data : data?.items;
+      if (!Array.isArray(list)) throw new Error("Unexpected catalog response");
+      setProducts(list);
+    } catch {
+      setLoadError("Couldn’t load the menu.");
+    } finally {
+      setLoadingProducts(false);
+    }
   }, []);
+  useEffect(() => { reloadProducts(); }, [reloadProducts]);
 
   const reloadCategories = useCallback(async () => {
     try {
@@ -198,185 +163,70 @@ export default function PublicMenu() {
   const chipReady = dataReady && chipNames.length > 0;
 
   useEffect(() => {
-    if (!chipReady) return;
-    const prefer =
-      chipNames.find(
-        (n) => n.toLowerCase() === DEFAULT_CATEGORY.toLowerCase()
-      ) || chipNames[0];
-    if (initRef.current) {
-      if (!includesCI(chipNames, selectedCategory)) {
-        setSelectedCategory(prefer);
-      }
-      initRef.current = false;
-      return;
-    }
-    if (!includesCI(chipNames, selectedCategory)) {
-      setSelectedCategory(prefer);
-    }
+    if (chipReady && !includesCI(chipNames, selectedCategory)) setSelectedCategory("All");
   }, [chipReady, chipNames, selectedCategory]);
 
-  const filteredProducts = useMemo(() => {
-    const term = (searchTerm || "").toLowerCase();
-    const list = Array.isArray(products) ? products : [];
-    return list.filter((p) => {
-      const category = (p?.category ?? "").trim();
-      const name = p?.name ?? "";
-      const categoryOk =
-        !selectedCategory || selectedCategory === "All"
-          ? true
-          : category.toLowerCase() === selectedCategory.toLowerCase();
-      return categoryOk && name.toLowerCase().includes(term);
-    });
-  }, [products, searchTerm, selectedCategory]);
+  const term = searchTerm.trim().toLowerCase();
+  const filteredProducts = useMemo(() => products.filter((product) => {
+    const category = (product.category || "").trim().toLowerCase();
+    if (term) return [product.name, category, product.description].some((value) => String(value || "").toLowerCase().includes(term));
+    return selectedCategory === "All" || category === selectedCategory.toLowerCase();
+  }), [products, term, selectedCategory]);
 
-  const refreshData = useCallback(async () => {
-    try {
-      setLoadingProducts(true);
-      const [prodRes] = await Promise.all([
-        api.get("/products").catch(() => ({ data: [] })),
-        reloadCategories(),
-      ]);
-      const list = Array.isArray(prodRes.data)
-        ? prodRes.data
-        : prodRes.data && Array.isArray(prodRes.data.items)
-        ? prodRes.data.items
-        : [];
-      setProducts(list);
-    } catch (err) {
-      console.error("Soft refresh failed:", err);
-    } finally {
-      setLoadingProducts(false);
-    }
-  }, [reloadCategories]);
+  const refreshData = () => Promise.all([reloadProducts(), reloadCategories()]);
 
   const isRefreshing = loadingProducts || categoriesLoading;
 
   return (
-    <div className="layout-container">
-      <main className="layout-main">
-        {/* Brand Header */}
-        <header className="public-header" role="banner">
-          <a href="/menu" aria-label="Home">
-            <img src={appLogo} alt="Your Brand Logo" className="public-logo" />
-          </a>
-          {/* optional title */}
-          {/* <div className="public-title">
-            <strong>Your Café</strong>
-            <small>Menu</small>
-          </div> */}
+    <div className="boonz-register public-menu-page">
+      <main className="public-menu-main">
+        <header className="register-masthead">
+          <div><img src={appLogo} alt="Boonz" className="public-menu-wordmark" /><h1>Menu</h1></div>
         </header>
-
-        {/* Top bar (chips + search) */}
-        <div className="layout-topbar">
-          {chipReady ? (
-            <div className="chip-row" role="tablist" aria-label="Categories">
-              {chipNames.map((name) => (
-                <button
-                  key={name}
-                  role="tab"
-                  aria-selected={name === selectedCategory}
-                  className={`chip ${
-                    name === selectedCategory ? "active" : ""
-                  }`}
-                  onClick={() => setSelectedCategory(name)}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <ChipsSkeleton />
-          )}
-
-          {/* right controls */}
-          <div className="topbar-actions">
-            <button
-              className="icon-btn"
-              aria-label="Search"
-              onClick={() => setShowSearchBar((s) => !s)}
-            >
-              <i className="fas fa-search" />
-            </button>
-
-            {showSearchBar && (
-              <div className="search-wrap">
-                <i className="fas fa-search search-icon" />
-                <input
-                  type="text"
-                  className="search-input"
-                  placeholder="Search products..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  autoFocus
-                />
-                <button
-                  className="icon-btn"
-                  aria-label="Close search"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setShowSearchBar(false);
-                  }}
-                >
-                  <i className="fas fa-times" />
-                </button>
-              </div>
-            )}
-
-            <button
-              className="icon-btn"
-              aria-label="Refresh data"
-              title="Refresh"
-              onClick={refreshData}
-              disabled={isRefreshing}
-            >
-              <i
-                className={`fas ${
-                  isRefreshing ? "fa-circle-notch fa-spin" : "fa-sync"
-                }`}
-              />
-            </button>
+        <div className="public-menu-tools">
+          <div className="search-wrap">
+            <FiSearch size={18} aria-hidden="true" />
+            <input type="search" className="search-input" aria-label="Search the menu" placeholder="Search the menu"
+              value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
+            {searchTerm && <button type="button" className="icon-btn" aria-label="Clear search" onClick={() => setSearchTerm("")}><FiX aria-hidden="true" /></button>}
           </div>
+          <button type="button" className="icon-btn" aria-label="Refresh menu" onClick={refreshData} disabled={isRefreshing}><FiRefreshCw aria-hidden="true" /></button>
         </div>
-
-        {/* Products */}
-        <div className="products-area">
-          {loadingProducts ? (
-            <SkeletonGrid count={12} />
-          ) : filteredProducts.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-art">🍽️</div>
-              <h3>No products in “{selectedCategory || "All"}”</h3>
-              <p>Try another category or use search above.</p>
-            </div>
-          ) : (
-            <div className="product-grid">
-              {filteredProducts.map((prod) => {
-                const key =
-                  prod?._id ||
-                  prod?.id ||
-                  prod?.sku ||
-                  Math.random().toString(36);
-                const name = prod?.name || "Untitled";
-                const desc = prod?.description || "";
-                const priceNum = Number(prod?.price ?? 0);
-                return (
-                  <div key={key} className="product-card">
-                    <SafeImage
-                      className="product-image"
-                      src={getImageSrc(prod)}
-                      alt={name}
-                    />
-                    <h3 className="product-name">{name}</h3>
-                    <p className="product-desc">{desc}</p>
-                    <p className="product-price">
-                      {formatIDR(priceNum, { withDecimals: true })}
-                    </p>
+        {chipReady ? (
+          <div className="chip-row" role="group" aria-label="Menu categories">
+            {chipNames.map((name) => <button key={name} type="button"
+              aria-pressed={name === selectedCategory && !term} className={`chip ${name === selectedCategory && !term ? "active" : ""}`}
+              onClick={() => { setSelectedCategory(name); setSearchTerm(""); }}>{name === "All" ? "All items" : name}</button>)}
+          </div>
+        ) : <ChipsSkeleton />}
+        <div className="register-catalog-heading"><h2>{term ? "Search results" : selectedCategory === "All" ? "All items" : selectedCategory}</h2>
+          {!loadingProducts && !loadError && <span role="status">{filteredProducts.length} items</span>}</div>
+        {loadingProducts ? <SkeletonGrid count={8} /> : loadError ? (
+          <div className="empty-state" role="alert"><h3>{loadError}</h3><button type="button" className="empty-cta" onClick={refreshData}>Try again</button></div>
+        ) : filteredProducts.length ? (
+          <div className="product-grid">
+            {filteredProducts.map((product) => {
+              const image = getImageSrc(product);
+              return (
+                <article key={product._id || product.id || product.sku || product.name} className="product-card public-menu-card">
+                  <div className="register-product-image">
+                    {image ? <SafeImage className="product-image" src={image} alt="" loading="lazy" />
+                      : <FiShoppingBag size={35} className="register-product-placeholder" aria-hidden="true" />}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                  <div className="register-product-info">
+                    <h3 className="product-name">{product.name}</h3>
+                    {product.description && <p className="public-item-description">{product.description}</p>}
+                    <div className="register-product-meta"><span>{product.category}</span><strong className="product-price">{formatIDR(product.price)}</strong></div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-state"><h3>No menu items found</h3>
+            <button type="button" className="empty-cta" onClick={() => { setSearchTerm(""); setSelectedCategory("All"); }}>Show all items</button>
+          </div>
+        )}
       </main>
     </div>
   );

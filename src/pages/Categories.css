@@ -111,3 +111,9 @@
 .skel-btn{ width:96px; height:44px; }
 .skel-line{ height:16px; width:200px; }
 .skel-chip{ width:72px; height:32px; border-radius:8px; }
+
+.category-position { display: block; margin-top: 4px; color: var(--boonz-muted); font-weight: 400; }
+.workspace-categories .cat-item { background: var(--boonz-paper); border-color: var(--boonz-border); gap: 12px; flex-wrap: wrap; }
+.workspace-categories .cat-actions { flex-wrap: wrap; }
+.workspace-categories .workspace-danger { color: #8f2c21; }
+.workspace-categories .category-create .workspace-tools { margin-bottom: 0; }

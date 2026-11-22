@@ -5,6 +5,7 @@ import "./styles.css"; // optional
 import App from "./App";
 import "./styles/layout.css";
 import "./styles/theme.css";
+import "./styles/workspace.css";
 import "./components/ToastProvider.css";
 import "./components/ConfirmDialog";
 

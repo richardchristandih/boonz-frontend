@@ -7,6 +7,7 @@ import React, {
   useRef,
 } from "react";
 import { NavLink } from "react-router-dom";
+import { FiGrid, FiPackage } from "react-icons/fi";
 import "./Sidebar.css";
 import appLogo from "../images/login-logo.png"; // mobile / top-bar logo
 import appLogoSideBar from "../images/boonz-logo.png"; // desktop / sidebar logo
@@ -156,7 +157,7 @@ export default function Sidebar({
     try {
       const raw = localStorage.getItem("user");
       const u = raw ? JSON.parse(raw) : null;
-      return u?.role === "admin";
+      return u?.role === "admin" || u?.isAdmin === true;
     } catch {
       return false;
     }
@@ -186,6 +187,7 @@ export default function Sidebar({
   }, []);
 
   useEffect(() => {
+    if (!window.matchMedia) return;
     const mq = window.matchMedia(`(max-width:${MOBILE_BP}px)`);
     const handle = (e) => setIsMobile(e.matches);
     handle(mq);
@@ -232,7 +234,7 @@ export default function Sidebar({
       <div className="sidebar-top">
         {!isCollapsed && (
           <NavLink
-            to="/dashboard"
+            to="/"
             className={`sidebar-logo ${logoLoaded ? "is-loaded" : ""}`}
             aria-label="Boonz Home"
           >
@@ -273,27 +275,34 @@ export default function Sidebar({
 
       {/* Nav */}
       <nav className="sidebar-nav" aria-label="Primary">
+        <NavLink to="/" end className="nav-link" aria-label="Point of sale">
+          <LayoutGrid />
+          <span>Point of sale</span>
+        </NavLink>
         {/* Dashboard is ADMIN ONLY */}
         {isAdmin && (
           <NavLink
             to="/dashboard"
+            aria-label="Sales dashboard"
             className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
           >
             <Tachometer />
-            <span>Dashboard</span>
+            <span>Sales dashboard</span>
           </NavLink>
         )}
 
         <NavLink
           to="/orders"
+          aria-label={isAdmin ? "Orders" : "Active orders"}
           className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
         >
           <Bag />
-          <span>Orders</span>
+          <span>{isAdmin ? "Orders" : "Active orders"}</span>
         </NavLink>
 
         <NavLink
           to="/inventory"
+          aria-label="Inventory"
           className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
         >
           <Package />
@@ -302,14 +311,24 @@ export default function Sidebar({
 
         <NavLink
           to="/settings"
+          aria-label="Settings"
           className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
         >
           <Cog />
           <span>Settings</span>
         </NavLink>
 
+        {isAdmin && <>
+          <NavLink to="/product-page" className="nav-link" aria-label="Products">
+            <FiPackage size={18} aria-hidden="true" /><span>Products</span>
+          </NavLink>
+          <NavLink to="/admin/categories" className="nav-link" aria-label="Categories">
+            <FiGrid size={18} aria-hidden="true" /><span>Categories</span>
+          </NavLink>
+        </>}
+
         {/* Mobile quick actions */}
-        {isMobile && (
+        {isMobile && isAdmin && (
           <>
             <button
               type="button"
@@ -337,7 +356,7 @@ export default function Sidebar({
       </nav>
 
       {/* Desktop primary actions */}
-      {!isMobile && (
+      {!isMobile && isAdmin && (
         <div className="sidebar-actions-stack">
           <button
             className="sb-btn sb-btn-primary add-product-btn"

@@ -190,3 +190,16 @@
   padding: 32px 32px 80px; 
   box-sizing: border-box;
 }
+.workspace-products .product-list-container, .workspace-products .product-form-container { max-width: none; width: 100%; padding: 0; border: 0; box-shadow: none; }
+.workspace-products .product-filters { justify-content: start; margin-bottom: 6px; }
+.workspace-products .product-row-meta { flex-basis: 100%; color: var(--boonz-muted); font-size: 13px; }
+.workspace-products .product-form fieldset { border: 1px solid var(--boonz-border); border-radius: 12px; padding: 14px; margin: 0 0 14px; min-width: 0; }
+.workspace-products .product-form legend { padding: 0 6px; font-weight: 750; }
+.workspace-products .product-form .product-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; }
+.workspace-products .product-form .product-field-grid > div { min-width: 0; }
+.workspace-products .product-form :is(input, textarea, select) { width: 100%; }
+.workspace-products .product-form .create-button { width: auto; padding: 8px 18px; }
+@media (max-width: 640px) {
+  .workspace-products .product-info { flex-wrap: wrap; align-items: start; gap: 8px; }
+  .workspace-products .product-actions { flex-wrap: wrap; }
+}

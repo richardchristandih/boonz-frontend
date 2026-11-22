@@ -312,3 +312,12 @@
   .orders-toolbar { gap: 10px; }
   .orders-summary { width: 100%; }
 }
+
+.workspace-orders .orders-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 12px; margin-bottom: 12px; align-items: start; }
+.workspace-orders .order-card { margin: 0; min-width: 0; padding: 14px; }
+.workspace-orders .orders-controls .workspace-tools { margin-bottom: 0; }
+.workspace-orders :is(.orders-detail-panel, .products-wrap) summary { min-height: 44px; align-content: center; font-weight: 700; cursor: pointer; color: var(--boonz-teal-ink); }
+.workspace-orders .order-financial-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 0; }
+.workspace-orders .order-financial-details dd { margin: 3px 0 0; font-weight: 700; }
+.boonz-workspace .workspace-orders .status-pending { background: #ffe9b1; color: var(--boonz-orange-ink); }
+.boonz-workspace .workspace-orders .status-done { background: var(--boonz-rail); color: var(--boonz-teal-ink); }
