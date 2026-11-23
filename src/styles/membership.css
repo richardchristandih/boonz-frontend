@@ -53,3 +53,17 @@
 .member-checkout-results .member-button { display: grid; justify-items: start; width: 100%; overflow-wrap: anywhere; text-align: left; }
 .member-checkout-results span { color: var(--boonz-muted); font-size: 12px; }
 .checkout-member-step .payment-due { margin-top: 12px; }
+
+.checkout-rewards { margin-top: 14px; }
+.checkout-reward-list {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+  gap: 7px; padding: 0; margin: 0; list-style: none;
+}
+.checkout-reward-list .member-button {
+  display: grid; justify-items: start; width: 100%; height: 100%; gap: 3px; text-align: left; overflow-wrap: anywhere;
+}
+.checkout-reward-list .member-button span { font-size: 12px; }
+.checkout-reward-list .member-button span:last-child { color: var(--boonz-teal-ink); }
+.checkout-reward-list .member-button:disabled { opacity: 1; background: var(--boonz-wash); color: var(--boonz-muted); }
+.checkout-reward-list .member-button:disabled span:last-child { color: inherit; }
+.checkout-reward-list .member-button[aria-pressed="true"] { background: var(--boonz-cream); border-color: var(--boonz-teal-ink); }

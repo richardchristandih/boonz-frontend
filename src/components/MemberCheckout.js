@@ -71,7 +71,8 @@ export default function MemberCheckout({
   }
 
   const { program, error: programError } = programState;
-  const rewards = program?.rewards.filter((reward) => reward.active) || [];
+  const rewards = program?.rewards.filter((reward) => reward.active)
+    .sort((a, b) => a.points - b.points || a.name.localeCompare(b.name)) || [];
   const pointsValue = program?.redemptionValue;
   const totalCents = Math.round(total * 100);
   const maxDiscount = pointsValue ? Math.max(0, Math.min(
@@ -131,22 +132,30 @@ export default function MemberCheckout({
                     <span className="member-muted">Up to {maxDiscount.toLocaleString()} points · {formatIDR(pointsValue)} per point</span>
                   </label>
                 )}
-                {mode === "reward" && (rewards.length > 0 ? (
-                  <label className="member-field">Redeem a reward
-                    <select className="register-input" value={benefit?.kind === "reward" ? benefit.productId : ""} disabled={busy}
-                      onChange={(event) => {
-                        const reward = rewards.find((item) => item.productId === event.target.value);
-                        setBenefit(reward ? { ...reward, kind: "reward" } : null);
-                      }}>
-                      <option value="">Choose a reward</option>
-                      {rewards.map((reward) => (
-                        <option key={reward.productId} value={reward.productId} disabled={reward.points > member.points}>
-                          {reward.name} · {reward.points.toLocaleString()} points{reward.points > member.points ? " (insufficient points)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : <p className="member-muted">No rewards are currently available.</p>)}
+                <section className="checkout-rewards" aria-labelledby="checkout-rewards-title">
+                  <h4 id="checkout-rewards-title">Redeem a reward</h4>
+                  {rewards.length ? (
+                    <ul className="checkout-reward-list">
+                      {rewards.map((reward) => {
+                        const shortfall = Math.max(0, reward.points - member.points);
+                        const selected = mode === "reward" && chosenReward?.productId === reward.productId;
+                        return (
+                          <li key={reward.productId}>
+                            <button className="member-button" type="button" disabled={busy || shortfall > 0}
+                              aria-pressed={selected} onClick={() => {
+                                setMode("reward");
+                                setBenefit({ ...reward, kind: "reward" });
+                              }}>
+                              <strong>{reward.name}</strong>
+                              <span>{reward.points.toLocaleString()} points</span>
+                              <span>{shortfall > 0 ? `Need ${shortfall.toLocaleString()} more` : selected ? "Selected" : "Available to redeem"}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : <p className="member-muted">No rewards are currently available.</p>}
+                </section>
                 {hasItems && <div className="payment-due"><span>Amount due</span><strong>{formatIDR(due)}</strong></div>}
                 <p className="member-muted">{estimate.toLocaleString()} points expected on this transaction.</p>
               </>

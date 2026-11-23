@@ -103,11 +103,13 @@ test("cashier can search by name, inspect membership, and choose an affordable r
   expect(props.setMember).toHaveBeenCalledWith(member);
 
   rerender(<MemberCheckout {...props} member={member} benefit={null} />);
-  fireEvent.click(await screen.findByRole("radio", { name: "Redeem an item" }));
-  const select = screen.getByLabelText("Redeem a reward");
-  expect(screen.getByRole("option", { name: /Cheesecake/ })).toBeDisabled();
-  fireEvent.change(select, { target: { value: "coffee" } });
+  const list = await screen.findByRole("region", { name: "Redeem a reward" });
+  expect(within(list).getByRole("button", { name: /Cheesecake.*Need 1 more/ })).toBeDisabled();
+  const affordable = within(list).getByRole("button", { name: /Americano.*Available to redeem/ });
+  expect(affordable).toBeEnabled();
+  fireEvent.click(affordable);
   expect(props.setBenefit).toHaveBeenLastCalledWith({ ...reward, kind: "reward" });
+  expect(screen.getByRole("radio", { name: "Redeem an item" })).toBeChecked();
   expect(screen.getByText("ari@example.test · +6281234567890")).toBeInTheDocument();
 });
 
