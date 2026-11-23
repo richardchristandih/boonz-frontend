@@ -7,7 +7,7 @@ import React, {
   useRef,
 } from "react";
 import { NavLink } from "react-router-dom";
-import { FiGrid, FiPackage } from "react-icons/fi";
+import { FiUsers, FiGrid, FiPackage } from "react-icons/fi";
 import "./Sidebar.css";
 import appLogo from "../images/login-logo.png"; // mobile / top-bar logo
 import appLogoSideBar from "../images/boonz-logo.png"; // desktop / sidebar logo
@@ -309,6 +309,9 @@ export default function Sidebar({
           <span>Inventory</span>
         </NavLink>
 
+        <NavLink to="/members" className="nav-link" aria-label="Membership">
+          <FiUsers size={18} aria-hidden="true" /><span>Membership</span>
+        </NavLink>
         <NavLink
           to="/settings"
           aria-label="Settings"

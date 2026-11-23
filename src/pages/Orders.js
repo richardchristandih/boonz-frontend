@@ -588,7 +588,7 @@ export default function Orders() {
         payment: order.paymentMethod,
         orderType: order.orderType,
         customer: { name: order.customerName || "" },
-        discountNote: order.discountNote || "",
+        membership: order.membership,
       }).replace(/^[\s\r\n]+/, "");
 
       const logoPref = localStorage.getItem("print.logo") || appLogo;

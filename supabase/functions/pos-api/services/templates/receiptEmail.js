@@ -20,7 +20,8 @@ function esc(v) {
   return String(v ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export const renderReceiptEmail = function renderReceiptEmail(order, opts = {}) {
@@ -74,6 +75,15 @@ export const renderReceiptEmail = function renderReceiptEmail(order, opts = {}) 
   const tax = Number(order?.tax || 0);
   const serviceCharge = Number(order?.serviceCharge || 0);
   const totalAmount = Number(order?.totalAmount || 0);
+
+  const membership = order?.membership;
+  const reversed = ["cancelled", "refunded"].includes(order?.status);
+  const membershipRows = membership ? `
+        <tr><td>Boonz points earned</td><td class="tar">${esc(membership.earned)}</td></tr>
+        ${membership.redeemed ? `<tr><td>Points redeemed</td><td class="tar">${esc(membership.redeemed)}</td></tr>` : ""}
+        <tr><td>Points balance after checkout</td><td class="tar">${esc(membership.balance)}</td></tr>
+        ${reversed ? `<tr><td colspan="2">This order was ${esc(order.status)} and its points were reversed.</td></tr>` : ""}
+      ` : "";
 
   return `
 <!doctype html>
@@ -134,6 +144,7 @@ export const renderReceiptEmail = function renderReceiptEmail(order, opts = {}) 
           totalAmount,
           { withDecimals: IDR_DECIMALS }
         )}</td></tr>
+        ${membershipRows}
         <tr><td>Payment</td><td class="tar">${esc(
           order?.paymentMethod || "-"
         )}</td></tr>

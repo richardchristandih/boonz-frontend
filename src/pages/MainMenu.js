@@ -10,12 +10,14 @@ import { useNavigate } from "react-router-dom";
 import { buildKitchenTicket } from "../kitchenReceipt";
 import "./MainMenu.css";
 import { FiArchive, FiChevronDown, FiCoffee, FiPlus, FiRefreshCw, FiSearch, FiShoppingBag, FiTag, FiX } from "react-icons/fi";
+import MemberCheckout from "../components/MemberCheckout";
 import ReceiptPreview from "../components/ReceiptPreview";
 import Sidebar from "./Sidebar";
 import { buildReceipt } from "../receipt";
 import { printRaw, listPrinters } from "../utils/qzHelper";
 import SafeImage from "../components/SafeImage";
 import api from "../services/api";
+import { membershipAccess } from "../services/membership";
 import appLogo from "../images/logo.jpg";
 import { normalizeImageUrl } from "../utils/driveUrl";
 import { listCategories } from "../services/categories";
@@ -297,7 +299,30 @@ export default function MenuLayout() {
 
   const [cart, setCart] = useState(Array.isArray(initialDraft.cart) ? initialDraft.cart : []);
   const [orderType, setOrderType] = useState(initialDraft.orderType || "Delivery");
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const checkoutKey = draftKey ? `${draftKey}:checkout` : "";
+  const [pendingCheckout, setPendingCheckout] = useState(() => {
+    if (!checkoutKey) return null;
+    try { return JSON.parse(sessionStorage.getItem(checkoutKey)) || null; }
+    catch { return null; }
+  });
+  const [showPaymentModal, setShowPaymentModal] = useState(Boolean(pendingCheckout));
+  const [canUseMembership, setCanUseMembership] = useState(false);
+  useEffect(() => {
+    if (!user) return undefined;
+    const controller = new AbortController();
+    const refreshAccess = () => membershipAccess({ signal: controller.signal })
+      .then(setCanUseMembership)
+      .catch(() => {});
+    refreshAccess();
+    window.addEventListener("focus", refreshAccess);
+    return () => {
+      controller.abort();
+      window.removeEventListener("focus", refreshAccess);
+    };
+  }, [user]);
+  const [checkoutMember, setCheckoutMember] = useState(null);
+  const [checkoutReward, setCheckoutReward] = useState(null);
+  const [memberBusy, setMemberBusy] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [receiptOrderId, setReceiptOrderId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1075,7 +1100,20 @@ export default function MenuLayout() {
     }
   }
 
+  function storePendingCheckout(payload) {
+    setPendingCheckout(payload);
+    if (!checkoutKey) return;
+    try {
+      if (payload) sessionStorage.setItem(checkoutKey, JSON.stringify(payload));
+      else sessionStorage.removeItem(checkoutKey);
+    } catch {
+      // Retry remains available until the current tab is closed.
+    }
+  }
+
   function resetCart() {
+    setCheckoutMember(null);
+    setCheckoutReward(null);
     setCart([]);
     setResuming(null);
     setCustomerName("");
@@ -1134,56 +1172,73 @@ export default function MenuLayout() {
     show("Order held on this device.", { type: "success" });
   }
 
+  const rewardOnly = !itemCount && !!checkoutReward;
+  const canSubmitPayment = online && !isSubmitting && !memberBusy && Boolean(
+    pendingCheckout || (chargesState === "ready" && (rewardOnly || (itemCount && selectedPaymentMethod)))
+  );
+
   async function confirmPayment(event) {
     event.preventDefault();
-    if (!user || !selectedPaymentMethod || !itemCount || !online || chargesState !== "ready" || submitting.current) return;
-    if (discountMode === "custom" && discount > 0 && (!isAdmin || !discountNote.trim())) {
-      show("An admin must add a reason for a manual discount.", { type: "error" });
-      return;
-    }
-    const promoReason = selectedPromoId && discountMode === "promo"
-      ? promoUnavailable(selectedPromo, sub) : "";
-    if (promoReason) {
-      show(`${promoReason} Review the discount before recording payment.`, { type: "error" });
-      setShowPaymentModal(false);
-      await handleOpenDiscountModal();
-      return;
-    }
+    if (!user || !canSubmitPayment || submitting.current) return;
 
+    let orderData = pendingCheckout;
+    if (!orderData) {
+      if (discountMode === "custom" && discount > 0 && (!isAdmin || !discountNote.trim())) {
+        show("An admin must add a reason for a manual discount.", { type: "error" });
+        return;
+      }
+      const promoReason = itemCount && selectedPromoId && discountMode === "promo"
+        ? promoUnavailable(selectedPromo, sub) : "";
+      if (promoReason) {
+        show(`${promoReason} Review the discount before recording payment.`, { type: "error" });
+        setShowPaymentModal(false);
+        await handleOpenDiscountModal();
+        return;
+      }
+      const finalDiscountNote = (itemCount && (discountMode === "promo" ? selectedPromo?.name : discountNote.trim()))
+        || (discount > 0 ? "Custom discount" : "None");
+      orderData = {
+        checkoutId: window.crypto.randomUUID(),
+        products: cart.map((item) => ({
+          productId: item._id || item.id,
+          name: item.name,
+          quantity: item.quantity,
+          price: Number(item.price ?? 0),
+          note: normalizeNote(item.note) || undefined,
+          options: item.options || {},
+        })),
+        discount,
+        discountNote: finalDiscountNote,
+        orderType,
+        paymentMethod: rewardOnly ? "Points" : selectedPaymentMethod,
+        ...(itemCount && discountMode === "promo" && selectedPromo ? { promoId: selectedPromo._id || selectedPromo.id } : {}),
+        ...(checkoutMember ? {
+          memberId: checkoutMember.id,
+          ...(checkoutReward ? { rewardProductId: checkoutReward.productId, rewardPoints: checkoutReward.points } : {}),
+        } : {
+          sendEmail: Boolean(customerEmail.trim()),
+          customerEmail: customerEmail.trim() || undefined,
+          customerName: customerName.trim() || undefined,
+        }),
+      };
+      storePendingCheckout(orderData);
+    }
     submitting.current = true;
     setIsSubmitting(true);
-    const finalDiscountNote = (discountMode === "promo" ? selectedPromo?.name : discountNote.trim())
-      || (discount > 0 ? "Custom discount" : "None");
-    const orderData = {
-      products: cart.map((item) => ({
-        productId: item._id || item.id,
-        name: item.name,
-        quantity: item.quantity,
-        price: Number(item.price ?? 0),
-        note: normalizeNote(item.note) || undefined,
-        options: item.options || {},
-      })),
-      discount,
-      discountNote: finalDiscountNote,
-      orderType,
-      paymentMethod: selectedPaymentMethod,
-      ...(discountMode === "promo" && selectedPromo ? { promoId: selectedPromo._id || selectedPromo.id } : {}),
-      sendEmail: Boolean(customerEmail.trim()),
-      customerEmail: customerEmail.trim() || undefined,
-      customerName: customerName.trim() || undefined,
-    };
 
     try {
       const { data: saved } = await api.post("/orders", orderData);
       const newOrderNumber = saved.orderNumber;
       setReceiptOrderId(saved._id || saved.id || newOrderNumber);
-      setEmail(customerEmail.trim());
-      setEmailNotice(saved.emailSent ? `Receipt sent to ${customerEmail.trim()}.` : "");
+      const receiptEmail = saved.customerEmail || "";
+      setEmail(receiptEmail);
+      setEmailNotice(saved.emailSent ? `Receipt sent to ${receiptEmail}.` : "");
       setEmailCooldownUntil(saved.emailSent ? Date.now() + EMAIL_COOLDOWN_SEC * 1000 : 0);
-      setEmailError(orderData.sendEmail && !saved.emailSent ? "The order was recorded. The receipt email failed." : "");
+      setEmailError(receiptEmail && !saved.emailSent ? "The order was recorded. You can resend the receipt below." : "");
       const dateStr = new Date(saved.createdAt || Date.now()).toLocaleString();
       const customer = { name: saved.customerName || orderData.customerName };
-      const items = orderData.products.map((item) => ({
+      const savedProducts = saved.products || orderData.products;
+      const items = savedProducts.map((item) => ({
         ...item,
         name: item.note ? `${item.name} [${item.note}]` : item.name,
       }));
@@ -1201,29 +1256,34 @@ export default function MenuLayout() {
         discount: saved.discount ?? discount,
         total: saved.totalAmount ?? total,
         payment: saved.paymentMethod || selectedPaymentMethod,
-        orderType,
+        orderType: saved.orderType || orderData.orderType,
         customer,
-        discountNote: finalDiscountNote,
+        membership: saved.membership,
+        discountNote: saved.discountNote || orderData.discountNote,
       };
       const logo = localStorage.getItem("print.logo") || appLogo;
       if (resuming) {
         const remaining = openBills.filter((bill) => bill.orderNumber !== resuming);
         if (!saveOpenBills(remaining)) setOpenBills(remaining);
       }
+      storePendingCheckout(null);
       resetCart();
       setShowPaymentModal(false);
       setMobileCartOpen(false);
       setPrintDialog({
         ...document,
         logo,
-        kotText: buildKitchenTicket({ orderNumber: newOrderNumber, dateStr, orderType, items: orderData.products, customer }),
+        kotText: buildKitchenTicket({ orderNumber: newOrderNumber, dateStr, orderType: document.orderType, items: savedProducts, customer }),
         receiptText: buildReceipt(document) + "\n\n",
       });
       show(`Order #${newOrderNumber} recorded.`, { type: "success" });
     } catch (error) {
+      const status = error.response?.status;
       const message = error.response?.data?.message || error.response?.data?.error;
-      show(typeof message === "string" && error.response.status < 500
-        ? message : "Couldn’t confirm the order. Check Orders before trying payment again.", { type: "error" });
+      const rejected = status >= 400 && status < 500 && status !== 408 && status !== 429;
+      if (rejected) storePendingCheckout(null);
+      show(rejected ? message || "The order was rejected. Review the payment details."
+        : "The result is uncertain. Retry this same order to check whether it was saved.", { type: "error" });
     } finally {
       submitting.current = false;
       setIsSubmitting(false);
@@ -1586,9 +1646,9 @@ export default function MenuLayout() {
       </p>}
       <div className="register-order-actions">
         <button className="hold-order-btn" type="button" disabled={isSubmitting || !itemCount} onClick={holdOrder}>Hold</button>
-        <button className="checkout-btn" type="button" disabled={!online || isSubmitting || !itemCount || chargesState !== "ready"}
+        <button className="checkout-btn" type="button" disabled={!online || isSubmitting || (!itemCount && !canUseMembership) || chargesState !== "ready"}
           onClick={() => { setMobileCartOpen(false); setShowPaymentModal(true); }}>
-          Review payment
+          {itemCount || !canUseMembership ? "Review payment" : "Redeem reward"}
         </button>
       </div>
     </div>
@@ -1740,46 +1800,62 @@ export default function MenuLayout() {
 
       {showPaymentModal && (
         <div className="paymodal" role="dialog" aria-modal="true" aria-labelledby="paymodal-title"
-          onClick={() => !isSubmitting && setShowPaymentModal(false)}
+          onClick={() => !isSubmitting && !pendingCheckout && !memberBusy && setShowPaymentModal(false)}
           onKeyDown={(event) => {
-            if (event.key === "Escape" && !isSubmitting) setShowPaymentModal(false);
+            if (event.key === "Escape" && !isSubmitting && !pendingCheckout && !memberBusy) setShowPaymentModal(false);
           }}>
-          <form className="paymodal__dialog" onSubmit={confirmPayment} onClick={(event) => event.stopPropagation()}>
+          <div className="paymodal__dialog" onClick={(event) => event.stopPropagation()}>
             <header className="paymodal__head">
-              <h3 id="paymodal-title">Record payment</h3>
-              <button className="paymodal__close" type="button" aria-label="Close" disabled={isSubmitting}
+              <h3 id="paymodal-title">{itemCount ? "Record payment" : "Member redemption"}</h3>
+              <button className="paymodal__close" type="button" aria-label="Close" disabled={isSubmitting || !!pendingCheckout || memberBusy}
                 autoFocus onClick={() => setShowPaymentModal(false)}><FiX /></button>
             </header>
             <div className="paymodal__body">
-              <div className="payment-due"><span>Amount due</span><strong>{formatIDR(total)}</strong></div>
-              <p className="payment-help">Complete the payment on your terminal, then select its method below.</p>
-              <fieldset className="payment-fields" disabled={isSubmitting}>
-                <legend>Payment method</legend>
-                <div className="payment-methods">
-                  {["Credit Card", "Debit Card", "QRIS", "Go Pay", "Grab Pay"].map((method) => (
-                    <button key={method} type="button" className={`payitem ${selectedPaymentMethod === method ? "is-selected" : ""}`}
-                      aria-pressed={selectedPaymentMethod === method} onClick={() => setSelectedPaymentMethod(method)}>
-                      {method}
-                    </button>
-                  ))}
-                </div>
-                <label>Customer name <span>(optional)</span>
-                  <input className="register-input" value={customerName}
-                    onChange={(event) => setCustomerName(event.target.value)} />
-                </label>
-                <label>Email receipt <span>(optional)</span>
-                  <input className="register-input" type="email" value={customerEmail} placeholder="customer@example.com"
-                    onChange={(event) => setCustomerEmail(event.target.value)} />
-                </label>
-              </fieldset>
+              {pendingCheckout ? (
+                <p role="status">{isSubmitting ? "Confirming this transaction…" : "Retry the same transaction to check its result."}</p>
+              ) : (
+                <>
+                  <div className="payment-due"><span>Amount due</span><strong>{formatIDR(total)}</strong></div>
+                  {canUseMembership && <MemberCheckout member={checkoutMember} setMember={setCheckoutMember}
+                    reward={checkoutReward} setReward={setCheckoutReward}
+                    total={total} disabled={isSubmitting} onBusyChange={setMemberBusy} rewardOnly={!itemCount} />}
+                  {itemCount > 0 && (
+                    <>
+                      <p className="payment-help">Complete the payment on your terminal, then select its method below.</p>
+                      <fieldset className="payment-fields" disabled={isSubmitting || memberBusy}>
+                        <legend>Payment method</legend>
+                        <div className="payment-methods">
+                          {["Credit Card", "Debit Card", "QRIS", "Go Pay", "Grab Pay"].map((method) => (
+                            <button key={method} type="button" className={`payitem ${selectedPaymentMethod === method ? "is-selected" : ""}`}
+                              aria-pressed={selectedPaymentMethod === method} onClick={() => setSelectedPaymentMethod(method)}>
+                              {method}
+                            </button>
+                          ))}
+                        </div>
+                        {!checkoutMember && <>
+                          <label>Customer name <span>(optional)</span>
+                            <input className="register-input" form="pos-payment" value={customerName}
+                              onChange={(event) => setCustomerName(event.target.value)} />
+                          </label>
+                          <label>Email receipt <span>(optional)</span>
+                            <input className="register-input" form="pos-payment" type="email" value={customerEmail} placeholder="customer@example.com"
+                              onChange={(event) => setCustomerEmail(event.target.value)} />
+                          </label>
+                        </>}
+                      </fieldset>
+                    </>
+                  )}
+                </>
+              )}
             </div>
-            <footer className="paymodal__actions">
-              <button className="btn btn-ghost" type="button" disabled={isSubmitting} onClick={() => setShowPaymentModal(false)}>Cancel</button>
-              <button className="btn btn-primary" type="submit" disabled={isSubmitting || !selectedPaymentMethod || !online}>
-                {isSubmitting ? "Recording…" : "Record payment"}
+            <form className="paymodal__actions" id="pos-payment" onSubmit={confirmPayment}>
+              <button className="btn btn-ghost" type="button" disabled={isSubmitting || !!pendingCheckout || memberBusy}
+                onClick={() => setShowPaymentModal(false)}>Cancel</button>
+              <button className="btn btn-primary" type="submit" disabled={!canSubmitPayment}>
+                {isSubmitting ? "Recording…" : pendingCheckout ? "Retry transaction" : rewardOnly ? "Redeem reward" : "Record payment"}
               </button>
-            </footer>
-          </form>
+            </form>
+          </div>
         </div>
       )}
 
@@ -1795,6 +1871,13 @@ export default function MenuLayout() {
                 autoFocus onClick={() => setPrintDialog(null)}><FiX /></button>
             </header>
             <div className="paymodal__body order-documents">
+              {printDialog.membership && <p className="member-muted" role="status">
+                {printDialog.membership.earned.toLocaleString()} points earned
+                {printDialog.membership.redeemed > 0 && ` · ${printDialog.membership.redeemed.toLocaleString()} redeemed`}
+                {` · ${printDialog.membership.balance.toLocaleString()} points after this order`}
+              </p>}
+              {emailNotice && <p className="member-muted" role="status">{emailNotice}</p>}
+              {emailError && <p className="member-error" role="alert">{emailError}</p>}
               <div className="document-actions">
                 <button className="btn btn-primary" type="button" disabled={!!printBusy}
                   onClick={() => handlePrintKitchen(printDialog.kotText)}>
@@ -1809,15 +1892,13 @@ export default function MenuLayout() {
               <details>
                 <summary>Email receipt</summary>
                 <form className="order-receipt-email" onSubmit={(event) => { event.preventDefault(); handleEmailReceipt(); }}>
-                  <label>Email address <input className="register-input" type="email" required value={email}
+                  <label>Email address <input className="register-input" type="email" required value={email} readOnly={!!printDialog.membership}
                     onChange={(event) => setEmail(event.target.value)} /></label>
                   <button className="btn btn-ghost" type="submit" disabled={sendingEmail || emailCooldownLeft > 0}>
                     {sendingEmail ? "Sending…" : emailCooldownLeft > 0 ? `Resend in ${emailCooldownLeft}s` : "Send receipt"}
                   </button>
                 </form>
               </details>
-              {emailNotice && <p role="status">{emailNotice}</p>}
-              {emailError && <p className="email-receipt__error" role="alert">{emailError}</p>}
             </div>
           </div>
         </div>

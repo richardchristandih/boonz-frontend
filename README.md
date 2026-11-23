@@ -72,6 +72,13 @@ flow.
    available during verification. Once the Supabase POS accepts new orders,
    reconcile any new records before switching traffic back.
 
+## Boonz membership
+
+- Admins configure earning and product rewards under **Membership → Points and rewards**. The default is 1 point per full Rp10.000 paid. Only rewards configured and enabled by an admin appear at checkout.
+- Under **Membership → Cashier access**, admins approve existing cashier accounts that should handle member information. Members provide their name, email, and phone number at enrollment.
+- At checkout, select **Add a member**, then look up their email or phone number. Choose an available reward if requested. Use **Redeem reward** with an empty cart for a rewards-only order.
+- Member receipts are emailed automatically and show earned points, redeemed points, and the balance after checkout. A cancellation or refund reverses that order’s points. If the member has already spent the earned points, future earnings first make up the shortfall.
+
 ## Available Scripts
 
 In the project directory, you can run:

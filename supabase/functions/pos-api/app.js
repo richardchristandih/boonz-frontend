@@ -7,6 +7,7 @@ import authRoutes from "./routes/auth.js";
 import categoryRoutes from "./routes/categories.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import inventoryRoutes from "./routes/inventory.js";
+import memberRoutes from "./routes/members.js";
 import orderRoutes from "./routes/orders.js";
 import productRoutes from "./routes/products.js";
 import promotionRoutes from "./routes/promotions.js";
@@ -38,6 +39,7 @@ api.get("/health", async (_req, res, next) => {
 api.use("/auth", authRoutes);
 api.use("/categories", categoryRoutes);
 api.use("/inventory", inventoryRoutes);
+api.use("/members", memberRoutes);
 api.use("/orders", orderRoutes);
 api.use("/products", productRoutes);
 api.use("/promotions", promotionRoutes);

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 import api from "./services/api";
+import MemberCheckout from "./components/MemberCheckout";
 
 jest.mock("./pages/MainMenu", () => () => "Register");
 jest.mock("./pages/PublicMenu", () => () => "Public menu");
@@ -74,4 +75,42 @@ test("sales rankings and payment totals exclude refunded orders", async () => {
   expect(screen.getByText("QRIS")).toBeInTheDocument();
   expect(screen.queryByText("Credit Card")).not.toBeInTheDocument();
   expect(screen.queryByText("Refunded cake")).not.toBeInTheDocument();
+});
+
+
+test("cashier can look up a member and choose an affordable reward", async () => {
+  const member = { id: "member-1", name: "Ari", email: "ari@example.test", points: 4 };
+  const reward = { productId: "coffee", name: "Americano", points: 3, active: true };
+  api.post.mockResolvedValue({ data: member });
+  api.get.mockResolvedValue({ data: { rupiahPerPoint: 10000, rewards: [
+    reward,
+    { productId: "cake", name: "Cheesecake", points: 5, active: true },
+  ] } });
+  const setMember = jest.fn();
+  const setReward = jest.fn();
+  const onBusyChange = jest.fn();
+  const props = { setMember, setReward, onBusyChange, rewardOnly: true, total: 0 };
+  const { rerender } = render(<MemberCheckout {...props} member={null} reward={null} />);
+
+  fireEvent.change(screen.getByLabelText("Email or phone number"), { target: { value: "ari@example.test" } });
+  fireEvent.click(screen.getByRole("button", { name: "Find member" }));
+  await waitFor(() => expect(setMember).toHaveBeenCalledWith(member));
+  expect(api.post).toHaveBeenCalledWith("/members/lookup", { identifier: "ari@example.test" });
+
+  rerender(<MemberCheckout {...props} member={member} reward={null} />);
+  const select = await screen.findByLabelText("Redeem a reward");
+  expect(screen.getByRole("option", { name: /Cheesecake/ })).toBeDisabled();
+  fireEvent.change(select, { target: { value: "coffee" } });
+  expect(setReward).toHaveBeenLastCalledWith(reward);
+  expect(screen.getByText("Receipt will be sent to ari@example.test.")).toBeInTheDocument();
+});
+
+test("membership directory tells cashiers when an administrator must approve access", async () => {
+  window.history.replaceState({}, "", "/members");
+  api.get.mockResolvedValue({ data: { allowed: false } });
+  render(<App />);
+
+  expect(await screen.findByText(/Ask a Boonz admin to approve your account/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "New member" })).not.toBeInTheDocument();
+  expect(api.get).toHaveBeenCalledTimes(1);
 });

@@ -79,6 +79,7 @@ export function buildReceipt({
   payment,
   orderType,
   customer,
+  membership,
 }) {
   const w = 32; // 58mm ~32 chars (80mm ~42)
   let out = "";
@@ -143,6 +144,12 @@ export function buildReceipt({
     line(lr("TOTAL", `Rp.${(+total).toFixed(2)}`, w)) +
     boldOff();
   if (payment) out += alignLeft() + line(`Payment: ${payment}`);
+
+  if (membership) {
+    out += line(lr("Points earned", membership.earned, w));
+    if (membership.redeemed) out += line(lr("Points redeemed", membership.redeemed, w));
+    out += line(lr("Points after checkout", membership.balance, w));
+  }
 
   // Thank you line
   out += line("Terima kasih!");

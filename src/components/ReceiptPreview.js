@@ -82,6 +82,7 @@ function Receipt({ data }) {
     total = 0,
     payment,
     customer,
+    membership,
   } = data;
 
   return (
@@ -131,6 +132,11 @@ function Receipt({ data }) {
         )}
         <div className="grand"><span>Total</span><span className="price">Rp.{total.toFixed(2)}</span></div>
         <div className="pay muted">Payment: {payment || "-"}</div>
+        {membership && <>
+          <Row left="Points earned" right={membership.earned} />
+          {membership.redeemed > 0 && <Row left="Points redeemed" right={membership.redeemed} />}
+          <Row left="Points after checkout" right={membership.balance} />
+        </>}
       </div>
 
       <div className="footer muted">Terima kasih!</div>

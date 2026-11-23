@@ -2,6 +2,8 @@ export default function errorHandler(error, _req, res, next) {
   if (res.headersSent) return next(error);
   if (error.code === "23505") {
     const messages = {
+      members_email_key: "That email already belongs to a member.",
+      members_phone_key: "That phone number already belongs to a member.",
       user_email: "Email is already in use.",
       category_name: "Category already exists.",
       category_slug: "Category already exists.",

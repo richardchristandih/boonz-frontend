@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { query, transaction } from "./database.js";
+import { query } from "./database.js";
 
 const newId = () => randomBytes(12).toString("hex");
 const timestamp = () => new Date().toISOString();
@@ -130,21 +130,30 @@ export const Setting = {
 
 export const Order = {
   ...collection("orders", true),
-  async create(fields) {
+  async create(fields, run) {
     const createdAt = timestamp();
-    return transaction(async (run) => {
-      const { rows: [counter] } = await run(`
-        insert into pos_private.order_counters (day, last_number) values ($1, 1)
-        on conflict (day) do update set last_number = order_counters.last_number + 1
-        returning last_number
-      `, [createdAt.slice(0, 10)]);
-      const data = { ...fields, orderNumber: counter.last_number, createdAt, updatedAt: createdAt };
-      const { rows } = await run(
-        "insert into pos_private.orders (id, data) values ($1, $2) returning id, data",
-        [newId(), data]
-      );
-      return result(rows[0]);
-    });
+    const { rows: [counter] } = await run(`
+      insert into pos_private.order_counters (day, last_number) values ($1, 1)
+      on conflict (day) do update set last_number = order_counters.last_number + 1
+      returning last_number
+    `, [createdAt.slice(0, 10)]);
+    const data = { ...fields, orderNumber: counter.last_number, createdAt, updatedAt: createdAt };
+    const { rows } = await run(
+      "insert into pos_private.orders (id, data) values ($1, $2) returning id, data",
+      [newId(), data]
+    );
+    return result(rows[0]);
+  },
+  async byCheckoutId(checkoutId, run) {
+    const { rows } = await run(`
+      select id, data from pos_private.orders where data ? 'checkoutId' and data->>'checkoutId' = $1
+    `, [checkoutId]);
+    return result(rows[0]);
+  },
+  async markReceiptSent(id) {
+    await query(`
+      update pos_private.orders set data = data || '{"receiptEmailSent":true}'::jsonb where id = $1
+    `, [id]);
   },
   async list({ populate = false, includeVoids = true } = {}) {
     const { rows } = await query(`
@@ -173,8 +182,8 @@ export const Order = {
     `, [String(number)]);
     return result(rows[0]);
   },
-  async updateStatus(id, expectedStatus, status) {
-    const { rows } = await query(`
+  async updateStatus(id, expectedStatus, status, run) {
+    const { rows } = await run(`
       update pos_private.orders set data = data || $2::jsonb
       where id = $1 and coalesce(data->>'status', 'pending') = $3 returning id, data
     `, [id, { status, updatedAt: timestamp() }, expectedStatus]);

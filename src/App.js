@@ -18,6 +18,7 @@ import PrinterTest from "./components/PrinterTest";
 
 import Settings from "./pages/Settings";
 import Inventory from "./pages/Inventory";
+import Members from "./pages/Members";
 
 // NEW: admin-only Categories page
 import CategoriesPage from "./pages/Categories";
@@ -53,6 +54,7 @@ function App() {
             <Route path="/printer-test" element={<RequireSession><PrinterTest /></RequireSession>} />
             <Route path="/settings" element={<RequireSession><Settings /></RequireSession>} />
             <Route path="/inventory" element={<RequireSession><Inventory /></RequireSession>} />
+            <Route path="/members" element={<RequireSession><Members /></RequireSession>} />
             <Route path="/menu" element={<PublicMenu />} />
 
             {/* Auth routes */}
