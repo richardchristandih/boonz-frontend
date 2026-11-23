@@ -74,9 +74,9 @@ flow.
 
 ## Boonz membership
 
-- Admins configure earning and product rewards under **Membership → Points and rewards**. The default is 1 point per full Rp10.000 paid. Only rewards configured and enabled by an admin appear at checkout.
+- Admins configure earning and product rewards under **Membership → Points and rewards**. The default is 1 point per full Rp10.000 paid, and each point is worth Rp1.000 toward a discount. Only rewards configured and enabled by an admin appear at checkout.
 - Under **Membership → Cashier access**, admins approve existing cashier accounts that should handle member information. Members provide their name, email, and phone number at enrollment.
-- At checkout, select **Add a member**, then look up their email or phone number. Choose an available reward if requested. Use **Redeem reward** with an empty cart for a rewards-only order.
+- The membership dialog opens before payment. Search by name, email, or phone, register a new member, or choose **Skip membership** with no details. Once a member is selected, choose to earn only, use points to reduce the amount due, or redeem an item. Use **Redeem reward** with an empty cart for a rewards-only order.
 - Member receipts are emailed automatically and show earned points, redeemed points, and the balance after checkout. A cancellation or refund reverses that order’s points. If the member has already spent the earned points, future earnings first make up the shortfall.
 
 ## Available Scripts

@@ -18,3 +18,7 @@ export const memberError = (error, fallback) => error.response?.data?.message ||
 export async function membershipAccess(options) {
   return (await api.get("/members/access", options)).data.allowed;
 }
+
+export async function searchMembers(q) {
+  return (await api.post("/members/search", { q })).data;
+}

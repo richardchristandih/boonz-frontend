@@ -1,9 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import App from "./App";
+import { MemoryRouter } from "react-router-dom";
+import { ToastProvider } from "./components/ToastProvider";
+import { ConfirmProvider } from "./components/ConfirmDialog";
 import api from "./services/api";
 import MemberCheckout from "./components/MemberCheckout";
 
 jest.mock("./pages/MainMenu", () => () => "Register");
+jest.mock("./utils/productImage", () => ({ getImageSrc: () => null }));
 jest.mock("./pages/PublicMenu", () => () => "Public menu");
 jest.mock("./services/api", () => ({
   __esModule: true,
@@ -78,31 +82,56 @@ test("sales rankings and payment totals exclude refunded orders", async () => {
 });
 
 
-test("cashier can look up a member and choose an affordable reward", async () => {
-  const member = { id: "member-1", name: "Ari", email: "ari@example.test", points: 4 };
+test("cashier can search by name, inspect membership, and choose an affordable reward", async () => {
+  const member = { id: "member-1", name: "Ari", email: "ari@example.test", phone: "+6281234567890", points: 4 };
   const reward = { productId: "coffee", name: "Americano", points: 3, active: true };
-  api.post.mockResolvedValue({ data: member });
-  api.get.mockResolvedValue({ data: { rupiahPerPoint: 10000, rewards: [
+  api.post.mockResolvedValue({ data: { items: [member], hasMore: false } });
+  api.get.mockResolvedValue({ data: { rupiahPerPoint: 10000, redemptionValue: 1000, rewards: [
     reward,
     { productId: "cake", name: "Cheesecake", points: 5, active: true },
   ] } });
-  const setMember = jest.fn();
-  const setReward = jest.fn();
-  const onBusyChange = jest.fn();
-  const props = { setMember, setReward, onBusyChange, rewardOnly: true, total: 0 };
-  const { rerender } = render(<MemberCheckout {...props} member={null} reward={null} />);
+  const props = {
+    setMember: jest.fn(), setBenefit: jest.fn(), onBusyChange: jest.fn(),
+    onContinue: jest.fn(), onSkip: jest.fn(), hasItems: true, total: 20000,
+  };
+  const { rerender } = render(<MemberCheckout {...props} member={null} benefit={null} />);
 
-  fireEvent.change(screen.getByLabelText("Email or phone number"), { target: { value: "ari@example.test" } });
+  fireEvent.change(screen.getByLabelText("Name, email, or phone number"), { target: { value: "Ari" } });
   fireEvent.click(screen.getByRole("button", { name: "Find member" }));
-  await waitFor(() => expect(setMember).toHaveBeenCalledWith(member));
-  expect(api.post).toHaveBeenCalledWith("/members/lookup", { identifier: "ari@example.test" });
+  fireEvent.click(await screen.findByRole("button", { name: /Ari/ }));
+  expect(api.post).toHaveBeenCalledWith("/members/search", { q: "Ari" });
+  expect(props.setMember).toHaveBeenCalledWith(member);
 
-  rerender(<MemberCheckout {...props} member={member} reward={null} />);
-  const select = await screen.findByLabelText("Redeem a reward");
+  rerender(<MemberCheckout {...props} member={member} benefit={null} />);
+  fireEvent.click(await screen.findByRole("radio", { name: "Redeem an item" }));
+  const select = screen.getByLabelText("Redeem a reward");
   expect(screen.getByRole("option", { name: /Cheesecake/ })).toBeDisabled();
   fireEvent.change(select, { target: { value: "coffee" } });
-  expect(setReward).toHaveBeenLastCalledWith(reward);
-  expect(screen.getByText("Receipt will be sent to ari@example.test.")).toBeInTheDocument();
+  expect(props.setBenefit).toHaveBeenLastCalledWith({ ...reward, kind: "reward" });
+  expect(screen.getByText("ari@example.test · +6281234567890")).toBeInTheDocument();
+});
+
+test("cashier can skip without any details or exchange points for a discount", async () => {
+  const member = { id: "member-1", name: "Ari", email: "ari@example.test", phone: "+6281234567890", points: 4 };
+  api.get.mockResolvedValue({ data: { rupiahPerPoint: 10000, redemptionValue: 1000, rewards: [] } });
+  const props = {
+    setMember: jest.fn(), setBenefit: jest.fn(), onBusyChange: jest.fn(),
+    onContinue: jest.fn(), onSkip: jest.fn(), hasItems: true, total: 20000,
+  };
+  const { rerender } = render(<MemberCheckout {...props} member={null} benefit={null} />);
+  fireEvent.click(screen.getByRole("button", { name: "Skip membership" }));
+  expect(props.onSkip).toHaveBeenCalled();
+  expect(api.post).not.toHaveBeenCalled();
+
+  rerender(<MemberCheckout {...props} member={member} benefit={null} />);
+  fireEvent.click(await screen.findByRole("radio", { name: "Use points to reduce the total" }));
+  const input = screen.getByRole("spinbutton", { name: /Points to use/ });
+  fireEvent.change(input, { target: { value: "5" } });
+  expect(screen.getByRole("button", { name: "Continue to payment" })).toBeDisabled();
+  fireEvent.change(input, { target: { value: "3" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue to payment" }));
+  expect(props.setBenefit).toHaveBeenLastCalledWith({ kind: "discount", points: 3, value: 1000 });
+  expect(props.onContinue).toHaveBeenCalled();
 });
 
 test("membership directory tells cashiers when an administrator must approve access", async () => {
@@ -113,4 +142,44 @@ test("membership directory tells cashiers when an administrator must approve acc
   expect(await screen.findByText(/Ask a Boonz admin to approve your account/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "New member" })).not.toBeInTheDocument();
   expect(api.get).toHaveBeenCalledTimes(1);
+});
+
+
+test("register opens membership before payment and skipping needs no customer details", async () => {
+  const originalMatchMedia = window.matchMedia;
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  const Register = jest.requireActual("./pages/MainMenu").default;
+  const product = { _id: "aaaaaaaaaaaaaaaaaaaaaaaa", name: "Banana bread", price: 20000, category: "Food", sku: "BRD" };
+  api.get.mockImplementation(async (url) => ({ data: {
+    "/products": [product],
+    "/categories": [],
+    "/settings/order-charges": {},
+    "/members/access": { allowed: true },
+    "/promotions?active=true": [],
+  }[url] }));
+
+  const view = render(
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <ToastProvider><ConfirmProvider><Register /></ConfirmProvider></ToastProvider>
+    </MemoryRouter>
+  );
+  try {
+    fireEvent.click(await screen.findByRole("button", { name: /Banana bread/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Review payment" }));
+    const membership = screen.getByRole("dialog", { name: "Boonz membership" });
+    expect(screen.queryByRole("dialog", { name: "Record payment" })).not.toBeInTheDocument();
+    fireEvent.click(within(membership).getByRole("button", { name: "Register new member" }));
+    expect(within(membership).getByLabelText("Phone number")).toBeRequired();
+    fireEvent.click(within(membership).getByRole("button", { name: "Skip membership" }));
+
+    const payment = screen.getByRole("dialog", { name: "Record payment" });
+    expect(within(payment).getByLabelText(/Customer name/)).toHaveValue("");
+    expect(within(payment).getByLabelText(/Email receipt/)).not.toBeRequired();
+    fireEvent.click(within(payment).getByRole("button", { name: "QRIS" }));
+    expect(within(payment).getByRole("button", { name: "Record payment" })).toBeEnabled();
+    expect(api.post).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    window.matchMedia = originalMatchMedia;
+  }
 });

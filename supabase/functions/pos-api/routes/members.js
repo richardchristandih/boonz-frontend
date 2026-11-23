@@ -46,6 +46,11 @@ router.get("/", handle(async (req, res) => {
   res.json(await listMembers({ q: req.query.q, offset: (page - 1) * 30 }));
 }));
 router.post("/", handle(async (req, res) => res.status(201).json(await saveMember(req.body))));
+router.post("/search", handle(async (req, res) => {
+  const q = typeof req.body?.q === "string" ? req.body.q.trim() : "";
+  if (q.length < 2 || q.length > 254) throw requestError("Enter at least two characters to find a member.");
+  res.json(await listMembers({ q }));
+}));
 router.post("/lookup", handle(async (req, res) => res.json(await findMember(req.body?.identifier))));
 router.get("/program", handle(async (_req, res) => res.json(await getMembershipProgram())));
 router.put("/program", requireAdmin, handle(async (req, res) => res.json(await setMembershipProgram(req.body))));

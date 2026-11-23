@@ -19,7 +19,7 @@ import SafeImage from "../components/SafeImage";
 import api from "../services/api";
 import { membershipAccess } from "../services/membership";
 import appLogo from "../images/logo.jpg";
-import { normalizeImageUrl } from "../utils/driveUrl";
+import { getImageSrc } from "../utils/productImage";
 import { listCategories } from "../services/categories";
 import {
   isAndroidBridge,
@@ -41,11 +41,6 @@ const RECEIPT_PRINTER_HINT = /RPP02N/i;
 // Category UX preferences
 const DEFAULT_CATEGORY = "All";
 
-const productImages = require.context(
-  "../images",
-  true,
-  /\.(png|jpe?g|gif|webp)$/
-);
 
 /* ---------------- Small components ---------------- */
 function SkeletonCard() {
@@ -100,19 +95,6 @@ function ChipsSkeleton({ count = 6 }) {
   );
 }
 
-function getImageSrc(product) {
-  const raw = product?.imageUrl || product?.image || "";
-  if (!raw) return null;
-  const normalized = normalizeImageUrl(raw);
-  if (/^https?:\/\//i.test(normalized) || normalized.startsWith("data:")) {
-    return normalized;
-  }
-  try {
-    return productImages("./" + normalized);
-  } catch {
-    return normalized;
-  }
-}
 
 /* ---------------- Helpers ---------------- */
 async function toDataUrl(url) {
@@ -306,13 +288,14 @@ export default function MenuLayout() {
     catch { return null; }
   });
   const [showPaymentModal, setShowPaymentModal] = useState(Boolean(pendingCheckout));
-  const [canUseMembership, setCanUseMembership] = useState(false);
+  const [showMembershipModal, setShowMembershipModal] = useState(false);
+  const [canUseMembership, setCanUseMembership] = useState(null);
   useEffect(() => {
     if (!user) return undefined;
     const controller = new AbortController();
     const refreshAccess = () => membershipAccess({ signal: controller.signal })
       .then(setCanUseMembership)
-      .catch(() => {});
+      .catch(() => { if (!controller.signal.aborted) setCanUseMembership(false); });
     refreshAccess();
     window.addEventListener("focus", refreshAccess);
     return () => {
@@ -321,7 +304,7 @@ export default function MenuLayout() {
     };
   }, [user]);
   const [checkoutMember, setCheckoutMember] = useState(null);
-  const [checkoutReward, setCheckoutReward] = useState(null);
+  const [checkoutBenefit, setCheckoutBenefit] = useState(null);
   const [memberBusy, setMemberBusy] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [receiptOrderId, setReceiptOrderId] = useState(null);
@@ -1113,7 +1096,7 @@ export default function MenuLayout() {
 
   function resetCart() {
     setCheckoutMember(null);
-    setCheckoutReward(null);
+    setCheckoutBenefit(null);
     setCart([]);
     setResuming(null);
     setCustomerName("");
@@ -1172,10 +1155,39 @@ export default function MenuLayout() {
     show("Order held on this device.", { type: "success" });
   }
 
-  const rewardOnly = !itemCount && !!checkoutReward;
-  const canSubmitPayment = online && !isSubmitting && !memberBusy && Boolean(
-    pendingCheckout || (chargesState === "ready" && (rewardOnly || (itemCount && selectedPaymentMethod)))
+  const rewardOnly = !itemCount && checkoutBenefit?.kind === "reward";
+  const pointsDiscount = checkoutBenefit?.kind === "discount" ? checkoutBenefit.points * checkoutBenefit.value : 0;
+  const payableTotal = pointsDiscount ? Math.max(0, Math.round(total * 100) - pointsDiscount * 100) / 100 : total;
+  const pointsOnly = Boolean(rewardOnly || (pointsDiscount > 0 && payableTotal === 0));
+  const canSubmitPayment = online && !isSubmitting && Boolean(
+    pendingCheckout || (chargesState === "ready" && (pointsOnly || (itemCount && selectedPaymentMethod)))
   );
+
+  function startCheckout() {
+    setMobileCartOpen(false);
+    setCheckoutMember(null);
+    setCheckoutBenefit(null);
+    setSelectedPaymentMethod("");
+    setShowMembershipModal(true);
+  }
+
+  function continueFromMembership() {
+    setShowMembershipModal(false);
+    setShowPaymentModal(true);
+  }
+
+  function skipMembership() {
+    setCheckoutMember(null);
+    setCheckoutBenefit(null);
+    setShowMembershipModal(false);
+    if (itemCount) setShowPaymentModal(true);
+  }
+
+  function editMembership() {
+    setShowPaymentModal(false);
+    setSelectedPaymentMethod("");
+    setShowMembershipModal(true);
+  }
 
   async function confirmPayment(event) {
     event.preventDefault();
@@ -1210,11 +1222,18 @@ export default function MenuLayout() {
         discount,
         discountNote: finalDiscountNote,
         orderType,
-        paymentMethod: rewardOnly ? "Points" : selectedPaymentMethod,
+        paymentMethod: pointsOnly ? "Points" : selectedPaymentMethod,
         ...(itemCount && discountMode === "promo" && selectedPromo ? { promoId: selectedPromo._id || selectedPromo.id } : {}),
         ...(checkoutMember ? {
           memberId: checkoutMember.id,
-          ...(checkoutReward ? { rewardProductId: checkoutReward.productId, rewardPoints: checkoutReward.points } : {}),
+          ...(checkoutBenefit?.kind === "reward" ? {
+            rewardProductId: checkoutBenefit.productId, rewardPoints: checkoutBenefit.points,
+          } : {}),
+          ...(pointsDiscount ? {
+            discountPoints: checkoutBenefit.points,
+            redemptionValue: checkoutBenefit.value,
+            expectedTotalCents: Math.round(payableTotal * 100),
+          } : {}),
         } : {
           sendEmail: Boolean(customerEmail.trim()),
           customerEmail: customerEmail.trim() || undefined,
@@ -1254,7 +1273,7 @@ export default function MenuLayout() {
         showTax: taxEnabled,
         showService: serviceEnabled,
         discount: saved.discount ?? discount,
-        total: saved.totalAmount ?? total,
+        total: saved.totalAmount ?? payableTotal,
         payment: saved.paymentMethod || selectedPaymentMethod,
         orderType: saved.orderType || orderData.orderType,
         customer,
@@ -1282,6 +1301,10 @@ export default function MenuLayout() {
       const message = error.response?.data?.message || error.response?.data?.error;
       const rejected = status >= 400 && status < 500 && status !== 408 && status !== 429;
       if (rejected) storePendingCheckout(null);
+      if (status === 409 && (orderData.discountPoints || orderData.rewardProductId)) {
+        editMembership();
+        if (orderData.discountPoints) void reloadCharges();
+      }
       show(rejected ? message || "The order was rejected. Review the payment details."
         : "The result is uncertain. Retry this same order to check whether it was saved.", { type: "error" });
     } finally {
@@ -1647,7 +1670,7 @@ export default function MenuLayout() {
       <div className="register-order-actions">
         <button className="hold-order-btn" type="button" disabled={isSubmitting || !itemCount} onClick={holdOrder}>Hold</button>
         <button className="checkout-btn" type="button" disabled={!online || isSubmitting || (!itemCount && !canUseMembership) || chargesState !== "ready"}
-          onClick={() => { setMobileCartOpen(false); setShowPaymentModal(true); }}>
+          onClick={startCheckout}>
           {itemCount || !canUseMembership ? "Review payment" : "Redeem reward"}
         </button>
       </div>
@@ -1798,6 +1821,39 @@ export default function MenuLayout() {
         </aside>
       )}
 
+      {showMembershipModal && (
+        <div className="paymodal" role="dialog" aria-modal="true" aria-labelledby="membership-step-title"
+          onClick={() => !memberBusy && setShowMembershipModal(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !memberBusy) setShowMembershipModal(false);
+          }}>
+          <div className="paymodal__dialog" onClick={(event) => event.stopPropagation()}>
+            <header className="paymodal__head">
+              <h3 id="membership-step-title">Boonz membership</h3>
+              <button className="paymodal__close" type="button" aria-label="Close" disabled={memberBusy}
+                onClick={() => setShowMembershipModal(false)}><FiX /></button>
+            </header>
+            {canUseMembership ? (
+              <MemberCheckout member={checkoutMember} setMember={setCheckoutMember} benefit={checkoutBenefit}
+                setBenefit={setCheckoutBenefit} total={total} hasItems={!!itemCount} onBusyChange={setMemberBusy}
+                onContinue={continueFromMembership} onSkip={skipMembership} />
+            ) : (
+              <>
+                <div className="paymodal__body">
+                  <p>{canUseMembership === null ? "Checking cashier access…"
+                    : "Ask an admin to approve this cashier account for membership lookup and registration."}</p>
+                </div>
+                <footer className="paymodal__actions">
+                  <button className="btn btn-primary" type="button" onClick={skipMembership} autoFocus>
+                    {itemCount ? "Skip membership" : "Close"}
+                  </button>
+                </footer>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {showPaymentModal && (
         <div className="paymodal" role="dialog" aria-modal="true" aria-labelledby="paymodal-title"
           onClick={() => !isSubmitting && !pendingCheckout && !memberBusy && setShowPaymentModal(false)}
@@ -1815,11 +1871,16 @@ export default function MenuLayout() {
                 <p role="status">{isSubmitting ? "Confirming this transaction…" : "Retry the same transaction to check its result."}</p>
               ) : (
                 <>
-                  <div className="payment-due"><span>Amount due</span><strong>{formatIDR(total)}</strong></div>
-                  {canUseMembership && <MemberCheckout member={checkoutMember} setMember={setCheckoutMember}
-                    reward={checkoutReward} setReward={setCheckoutReward}
-                    total={total} disabled={isSubmitting} onBusyChange={setMemberBusy} rewardOnly={!itemCount} />}
-                  {itemCount > 0 && (
+                  <div className="payment-due"><span>Amount due</span><strong>{formatIDR(payableTotal)}</strong></div>
+                  {checkoutMember && <div className="checkout-member member-selected">
+                    <div>
+                      <h4>{checkoutMember.name}</h4>
+                      {pointsDiscount > 0 && <span>{checkoutBenefit.points.toLocaleString()} points · −{formatIDR(pointsDiscount)}</span>}
+                      {checkoutBenefit?.kind === "reward" && <span>Reward: {checkoutBenefit.name} · {checkoutBenefit.points.toLocaleString()} points</span>}
+                    </div>
+                    <button type="button" className="member-button" onClick={editMembership}>Edit membership</button>
+                  </div>}
+                  {pointsOnly ? <p className="payment-help">No payment is due.</p> : itemCount > 0 && (
                     <>
                       <p className="payment-help">Complete the payment on your terminal, then select its method below.</p>
                       <fieldset className="payment-fields" disabled={isSubmitting || memberBusy}>
@@ -1849,10 +1910,10 @@ export default function MenuLayout() {
               )}
             </div>
             <form className="paymodal__actions" id="pos-payment" onSubmit={confirmPayment}>
-              <button className="btn btn-ghost" type="button" disabled={isSubmitting || !!pendingCheckout || memberBusy}
-                onClick={() => setShowPaymentModal(false)}>Cancel</button>
+              <button className="btn btn-ghost" type="button" disabled={isSubmitting || !!pendingCheckout}
+                onClick={editMembership}>Back</button>
               <button className="btn btn-primary" type="submit" disabled={!canSubmitPayment}>
-                {isSubmitting ? "Recording…" : pendingCheckout ? "Retry transaction" : rewardOnly ? "Redeem reward" : "Record payment"}
+                {isSubmitting ? "Recording…" : pendingCheckout ? "Retry transaction" : rewardOnly ? "Redeem reward" : pointsOnly ? "Record order" : "Record payment"}
               </button>
             </form>
           </div>

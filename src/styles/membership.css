@@ -44,3 +44,12 @@
   position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden;
   clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
+
+.checkout-member-step h4 { margin: 0 0 8px; }
+.member-benefits { display: grid; gap: 6px; padding: 8px 0; margin: 10px 0; border: 0; }
+.member-benefits legend { font-weight: 700; }
+.member-benefits label { display: flex; gap: 7px; align-items: center; min-height: 32px; }
+.member-checkout-results { display: grid; gap: 6px; padding: 0; margin: 10px 0; list-style: none; max-height: 210px; overflow: auto; }
+.member-checkout-results .member-button { display: grid; justify-items: start; width: 100%; overflow-wrap: anywhere; text-align: left; }
+.member-checkout-results span { color: var(--boonz-muted); font-size: 12px; }
+.checkout-member-step .payment-due { margin-top: 12px; }

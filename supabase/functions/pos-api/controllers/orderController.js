@@ -83,6 +83,9 @@ export const createOrder = async (req, res, next) => {
       memberId,
       rewardProductId,
       rewardPoints,
+      discountPoints,
+      redemptionValue,
+      expectedTotalCents,
       checkoutId: suppliedCheckoutId,
     } = req.body;
 
@@ -115,15 +118,19 @@ export const createOrder = async (req, res, next) => {
 
     const checkoutId = typeof suppliedCheckoutId === "string" ? suppliedCheckoutId.toLowerCase() : undefined;
     const rewardOnly = !!rewardProductId && !sanitizedProducts.length;
-    const validPayment = rewardOnly
-      ? paymentMethod === "Points"
-      : ["Credit Card", "Debit Card", "QRIS", "Go Pay", "Grab Pay"].includes(paymentMethod);
+    const validPayment = paymentMethod === "Points"
+      ? rewardOnly || discountPoints !== undefined
+      : !rewardOnly && ["Credit Card", "Debit Card", "QRIS", "Go Pay", "Grab Pay"].includes(paymentMethod);
     if (!validPayment || !["Delivery", "Dine in", "Take away"].includes(orderType ?? "Delivery") ||
         !Number.isFinite(totalAmount) || !req.user.userId ||
         (suppliedCheckoutId !== undefined && !uuidPattern.test(checkoutId)) ||
         (memberId !== undefined && (typeof memberId !== "string" || !uuidPattern.test(memberId) || !checkoutId)) ||
         (rewardProductId !== undefined && (typeof rewardProductId !== "string" ||
           !/^[a-f0-9]{24}$/.test(rewardProductId) || !memberId || !Number.isSafeInteger(rewardPoints))) ||
+        (discountPoints !== undefined && (!memberId || rewardProductId || !sanitizedProducts.length ||
+          !Number.isSafeInteger(discountPoints) || discountPoints < 1 || discountPoints > 100000000 ||
+          !Number.isSafeInteger(redemptionValue) || redemptionValue < 1 ||
+          !Number.isSafeInteger(expectedTotalCents) || expectedTotalCents < 0)) ||
         sanitizedProducts.some((item) => !/^[a-f0-9]{24}$/.test(item.productId) || !item.name ||
           !Number.isFinite(item.quantity) || item.quantity < 1 || !Number.isFinite(item.price) || item.price < 0)) {
       return res.status(400).json({ message: "Invalid order details." });
@@ -148,9 +155,13 @@ export const createOrder = async (req, res, next) => {
         throw requestError("This cashier account needs membership access from a Boonz admin.", 403);
       }
       const loyalty = memberId && await prepareMemberOrder(run, {
-        memberId, rewardProductId, rewardPoints, totalAmount,
+        memberId, rewardProductId, rewardPoints, discountPoints, redemptionValue, totalAmount,
       });
       if (loyalty) await validateMemberPrices(run, sanitizedProducts, products);
+      if (discountPoints && (Math.round(loyalty.payable * 100) !== expectedTotalCents ||
+          (loyalty.payable === 0) !== (paymentMethod === "Points"))) {
+        throw requestError("The amount due changed. Review membership before taking payment.", 409);
+      }
       const items = [...sanitizedProducts];
       if (loyalty?.reward) {
         items.push({
@@ -163,15 +174,21 @@ export const createOrder = async (req, res, next) => {
         });
       }
 
+      const pointsDiscount = loyalty?.discountAmount || 0;
+      const regularDiscountNote = (discountNote || "").toString().trim().slice(0, pointsDiscount ? 115 : 140);
+      const combinedDiscountNote = pointsDiscount
+        ? [finalDiscount && regularDiscountNote !== "None" ? regularDiscountNote : "", "Membership points"].filter(Boolean).join(" + ")
+        : regularDiscountNote || "None";
+
       const saved = await Order.create({
         status: "pending",
         products: items,
         subtotal,
         tax,
         serviceCharge,
-        discount: finalDiscount,
-        discountNote: (discountNote || "None").toString().trim().slice(0, 140) || "None",
-        totalAmount,
+        discount: pointsDiscount ? Math.round((finalDiscount + pointsDiscount) * 100) / 100 : finalDiscount,
+        discountNote: combinedDiscountNote,
+        totalAmount: loyalty?.payable ?? totalAmount,
         checkoutId,
         user: req.user.userId,
         orderType: orderType ?? "Delivery",

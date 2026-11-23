@@ -22,6 +22,7 @@ function MemberProgram() {
   const [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [rate, setRate] = useState("");
+  const [redemptionValue, setRedemptionValue] = useState("");
   const [productId, setProductId] = useState("");
   const [points, setPoints] = useState("");
   const [active, setActive] = useState(true);
@@ -33,6 +34,7 @@ function MemberProgram() {
       .then(([program, { data: products }]) => {
         setData({ ...program, products: [...products].sort((a, b) => a.name.localeCompare(b.name)) });
         setRate(String(program.rupiahPerPoint));
+        setRedemptionValue(String(program.redemptionValue));
         setError("");
       })
       .catch((failure) => {
@@ -56,9 +58,11 @@ function MemberProgram() {
     setBusy(true);
     try {
       if (rule) {
-        const { data: ruleData } = await api.put("/members/program", { rupiahPerPoint: Number(rate) });
+        const { data: ruleData } = await api.put("/members/program", {
+          rupiahPerPoint: Number(rate), redemptionValue: Number(redemptionValue),
+        });
         setData((current) => ({ ...current, ...ruleData }));
-        setStatus("Earning rule saved.");
+        setStatus("Point settings saved.");
       } else {
         const { data: reward } = await api.put(`/members/rewards/${productId}`, { points: Number(points), active });
         const name = data.products.find((item) => item._id === productId)?.name;
@@ -85,7 +89,11 @@ function MemberProgram() {
               <input className="register-input" type="number" min="1" max="1000000000" step="1"
                 value={rate} onChange={(event) => setRate(event.target.value)} required disabled={busy} />
             </label>
-            <button type="submit" className="member-button primary" disabled={busy}>Save earning rule</button>
+            <label className="member-field">Discount value per point (rupiah)
+              <input className="register-input" type="number" min="1" max="1000000000" step="1"
+                value={redemptionValue} onChange={(event) => setRedemptionValue(event.target.value)} required disabled={busy} />
+            </label>
+            <button type="submit" className="member-button primary" disabled={busy}>Save point settings</button>
           </form>
           <p className="member-muted">Members earn 1 point per full {formatIDR(data.rupiahPerPoint)} paid after discounts.</p>
 

@@ -8,7 +8,7 @@ import "./PublicMenu.css";
 import { FiRefreshCw, FiSearch, FiShoppingBag, FiX } from "react-icons/fi";
 import SafeImage from "../components/SafeImage";
 import api from "../services/api";
-import { normalizeImageUrl } from "../utils/driveUrl";
+import { getImageSrc } from "../utils/productImage";
 import { listCategories } from "../services/categories";
 import { formatIDR } from "../utils/money";
 import appLogo from "../images/login-logo.png"; // your brand logo
@@ -16,11 +16,6 @@ import appLogo from "../images/login-logo.png"; // your brand logo
 /* ---------------- Constants ---------------- */
 const DEFAULT_CATEGORY = "All";
 
-const productImages = require.context(
-  "../images",
-  true,
-  /\.(png|jpe?g|gif|webp)$/
-);
 
 /* ---------------- Small components ---------------- */
 function SkeletonCard() {
@@ -75,19 +70,6 @@ function ChipsSkeleton({ count = 6 }) {
 }
 
 /* ---------------- Helpers ---------------- */
-function getImageSrc(product) {
-  const raw = product?.imageUrl || product?.image || "";
-  if (!raw) return null;
-  const normalized = normalizeImageUrl(raw);
-  if (/^https?:\/\//i.test(normalized) || normalized.startsWith("data:")) {
-    return normalized;
-  }
-  try {
-    return productImages("./" + normalized);
-  } catch {
-    return normalized;
-  }
-}
 function deriveCategoryNames(products = []) {
   const set = new Set();
   products.forEach((p) => {

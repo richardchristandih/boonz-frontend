@@ -1,7 +1,8 @@
 import { query } from "./database.js";
 import { Setting } from "./repositories.js";
 
-export const DEFAULT_RUPIAH_PER_POINT = 10000;
+const DEFAULT_RUPIAH_PER_POINT = 10000;
+const DEFAULT_REDEMPTION_VALUE = 1000;
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const memberColumns = 'id, name, email, phone, points::double precision as points, created_at as "createdAt"';
@@ -42,15 +43,24 @@ export async function getMembershipProgram() {
       order by lower(p.data->>'name'), p.id
     `),
   ]);
-  return { rupiahPerPoint: rules?.rupiahPerPoint ?? DEFAULT_RUPIAH_PER_POINT, rewards };
+  return {
+    rupiahPerPoint: rules?.rupiahPerPoint ?? DEFAULT_RUPIAH_PER_POINT,
+    redemptionValue: rules?.redemptionValue ?? DEFAULT_REDEMPTION_VALUE,
+    rewards,
+  };
 }
 
 export async function setMembershipProgram(body) {
-  const rupiahPerPoint = body?.rupiahPerPoint;
-  if (!Number.isSafeInteger(rupiahPerPoint) || rupiahPerPoint < 1 || rupiahPerPoint > 1000000000) {
-    throw requestError("Enter a whole-rupiah amount between 1 and 1,000,000,000.");
+  const { rupiahPerPoint, redemptionValue } = body || {};
+  const validRate = (value) => Number.isSafeInteger(value) && value >= 1 && value <= 1000000000;
+  if (!validRate(rupiahPerPoint) || (redemptionValue !== undefined && !validRate(redemptionValue))) {
+    throw requestError("Enter whole-rupiah amounts between 1 and 1,000,000,000.");
   }
-  return Setting.set("membership", { rupiahPerPoint });
+  const current = redemptionValue === undefined ? await Setting.get("membership") : null;
+  return Setting.set("membership", {
+    rupiahPerPoint,
+    redemptionValue: redemptionValue ?? current?.redemptionValue ?? DEFAULT_REDEMPTION_VALUE,
+  });
 }
 
 export async function saveMemberReward(productId, body) {
@@ -82,11 +92,14 @@ export async function findMember(value) {
 
 export async function listMembers({ q, offset = 0 }) {
   const term = clean(q).slice(0, 254).toLowerCase();
+  const digits = /^[+\d\s().-]+$/.test(term) ? term.replace(/\D/g, "") : "";
+  const phone = normalizePhone(term) || (digits.length >= 2
+    ? (digits.startsWith("0") ? "+62" + digits.slice(1) : digits) : null);
   const { rows } = await query(`
     select ${memberColumns} from pos_private.members
-    where strpos(lower(name), $1) > 0 or strpos(email, $1) > 0 or strpos(phone, $1) > 0 or phone = $2 or $1 = ''
+    where strpos(lower(name), $1) > 0 or strpos(email, $1) > 0 or strpos(phone, $2) > 0 or $1 = ''
     order by lower(name), id limit 31 offset $3
-  `, [term, normalizePhone(term), offset]);
+  `, [term, phone, offset]);
   return { items: rows.slice(0, 30), hasMore: rows.length > 30 };
 }
 
@@ -135,7 +148,9 @@ export async function validateMemberPrices(run, items, requestedItems) {
   }
 }
 
-export async function prepareMemberOrder(run, { memberId, rewardProductId, rewardPoints, totalAmount }) {
+export async function prepareMemberOrder(run, {
+  memberId, rewardProductId, rewardPoints, discountPoints, redemptionValue, totalAmount,
+}) {
   const { rows: [member] } = await run(`
     select ${memberColumns} from pos_private.members where id = $1 for update
   `, [memberId]);
@@ -157,15 +172,31 @@ export async function prepareMemberOrder(run, { memberId, rewardProductId, rewar
   }
 
   const { rows: [rule] } = await run(
-    "select data->'data'->>'rupiahPerPoint' as rate from pos_private.settings where data->>'key' = 'membership'"
+    "select data->'data' as settings from pos_private.settings where data->>'key' = 'membership' for share"
   );
-  // Count only whole rupiah, rounding away tiny floating-point errors at IDR boundaries.
-  const earned = Math.floor(Math.round(totalAmount * 100) / 100 / (Number(rule?.rate) || DEFAULT_RUPIAH_PER_POINT));
-  const redeemed = reward?.points ?? 0;
+  const value = rule?.settings?.redemptionValue ?? DEFAULT_REDEMPTION_VALUE;
+  if (discountPoints && value !== redemptionValue) {
+    throw requestError("The points value changed. Review membership before taking payment.", 409);
+  }
+  if (discountPoints && discountPoints > member.points) {
+    throw requestError("This member no longer has enough points.", 409);
+  }
+  const discountAmount = (discountPoints || 0) * value;
+  const totalCents = Math.round(totalAmount * 100);
+  if (!Number.isSafeInteger(discountAmount * 100) || discountAmount * 100 > totalCents) {
+    throw requestError("The points discount exceeds the amount due. Review membership.", 409);
+  }
+  const payable = discountAmount ? (totalCents - discountAmount * 100) / 100 : totalAmount;
+  const earningRate = rule?.settings?.rupiahPerPoint ?? DEFAULT_RUPIAH_PER_POINT;
+  const earned = Math.floor(Math.round(payable * 100) / 100 / earningRate);
+  const redeemed = reward?.points ?? discountPoints ?? 0;
   if (earned > 100000000) throw requestError("This order exceeds the points limit.");
   return {
-    member, reward,
-    membership: { memberId, earned, redeemed, balance: member.points + earned - redeemed },
+    member, reward, payable, discountAmount,
+    membership: {
+      memberId, earned, redeemed, balance: member.points + earned - redeemed,
+      ...(discountAmount ? { discountAmount } : {}),
+    },
   };
 }
 
