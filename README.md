@@ -2,6 +2,76 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+## Supabase backend
+
+The React app uses the `pos-api` Edge Function at
+`<project URL>/functions/v1/pos-api` when `REACT_APP_SUPABASE_URL` is set.
+Copy `.env.example` to `.env.local` for local development. Set the same
+`REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_PUBLISHABLE_KEY` build
+variables in your frontend host. The existing `REACT_APP_API_URL` override
+still works when the Supabase URL is unset.
+
+The Edge Function keeps the existing POS endpoints and session format. It uses
+Supabase Postgres for records and Supabase Storage for new product images.
+The public menu can read products, categories, and promotions. Staff and
+admin routes check POS bearer tokens. Daily order numbers follow UTC, matching
+the previous backend's default server timezone.
+
+### Deploy the database and Edge Function
+
+Sign in to the Supabase CLI and run these commands from this repository.
+
+```sh
+supabase link --project-ref YOUR_PROJECT_REF
+supabase db push --remote
+supabase secrets set --env-file supabase/.env.production
+supabase functions deploy pos-api
+```
+
+In the ignored `supabase/.env.production` file, set the backend's
+`ACCESS_TOKEN_SECRET` and `REFRESH_TOKEN_SECRET`. Reusing the current secrets
+keeps active sessions valid. Preserve `SENDGRID_API_KEY`, `MAIL_FROM`,
+`MAIL_REPLY_TO`, and `ADMIN_EMAIL` for receipts and PIN emails. Set
+`FRONTEND_ORIGIN` to your frontend origin, with comma-separated origins if you
+have several. The function uses the Supabase-provided database URL by default.
+To use a pooler connection, set the backend-only `POS_DATABASE_URL`. Keep
+database credentials, JWT secrets, and SendGrid credentials in server-side
+configuration. [Supabase deployment](https://supabase.com/docs/guides/functions/deploy) ·
+[Supabase function secrets](https://supabase.com/docs/guides/functions/secrets)
+
+For signed QZ Tray printing, set the Edge Function's `POS_QZ_SIGNER_URL` and the
+frontend's `REACT_APP_QZ_CERTIFICATE_URL` to the matching signer and public
+certificate. Without those settings, QZ Tray uses its default unsigned-print
+flow.
+
+### Import existing records and switch traffic
+
+1. Prepare a fresh Supabase POS schema and verify
+   `GET /functions/v1/pos-api/health`. Before the production import, back up
+   MongoDB and pause writes to the old POS backend.
+2. Create the ignored file `supabase/.env.import` with `MONGODB_URI` and
+   `POS_IMPORT_DATABASE_URL`. If the MongoDB URI needs a separate database
+   name, set `MONGODB_DATABASE`. For the destination, use the Supabase direct
+   or session-pooler connection string with TLS. Run the import from this
+   repository.
+
+   ```sh
+   deno run --node-modules-dir=none --allow-env --allow-net --allow-sys=osRelease \
+     --env-file=supabase/.env.import supabase/scripts/import-mongo.js
+   ```
+
+3. Compare the import counts against MongoDB. The importer commits all
+   collections together, preserves record IDs and password hashes, and seeds
+   the daily order counters. It refuses to overwrite a populated target.
+4. Use a preview build configured for Supabase to confirm that the public menu
+   loads with its existing images, an existing staff account can sign in, and a
+   controlled checkout can print and email a receipt. If any stored image links still use
+   the old backend host, move those images to Supabase Storage and update their
+   product links before retiring the service.
+5. Set the frontend build variables and redeploy. Keep the old deployment
+   available during verification. Once the Supabase POS accepts new orders,
+   reconcile any new records before switching traffic back.
+
 ## Available Scripts
 
 In the project directory, you can run:

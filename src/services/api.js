@@ -4,7 +4,12 @@ import axios from "axios";
 const ACCESS_KEY = "token";
 const REFRESH_KEY = "refreshToken";
 
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL?.trim().replace(/\/+$/, "");
+const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_PUBLISHABLE_KEY?.trim();
+
 function pickBaseURL() {
+  if (SUPABASE_URL) return `${SUPABASE_URL}/functions/v1/pos-api`;
+
   const envUrl =
     process.env.REACT_APP_API_URL || process.env.REACT_APP_API_BASE;
   if (envUrl) return envUrl;
@@ -23,6 +28,7 @@ function pickBaseURL() {
 }
 
 const API_BASE = pickBaseURL();
+const gatewayHeaders = SUPABASE_URL && SUPABASE_KEY ? { apikey: SUPABASE_KEY } : {};
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -30,6 +36,7 @@ const api = axios.create({
   timeout: 15000,
   headers: {
     Accept: "application/json",
+    ...gatewayHeaders,
   },
 });
 
@@ -53,7 +60,7 @@ api.interceptors.response.use(
     if (!response) return Promise.reject(error);
 
     // Not 401 or already retried once -> just bubble up
-    if (response.status !== 401 || config._retry) {
+    if (response.status !== 401 || !config || config._retry || /^\/?auth\//.test(config.url)) {
       return Promise.reject(error);
     }
 
@@ -74,7 +81,7 @@ api.interceptors.response.use(
           `${API_BASE.replace(/\/$/, "")}/auth/refresh`,
           { refreshToken },
           {
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...gatewayHeaders },
             timeout: 10000,
           }
         )

@@ -904,7 +904,7 @@ body{
   cursor: pointer;
 }
 .boonz-register button.product-card:hover { border-color: var(--boonz-control-border); box-shadow: 0 3px 12px #253c3314; }
-.register-product-image { display: grid; place-items: center; width: 100%; min-height: 98px; background: var(--boonz-wash); position: relative; }
+.register-product-image { display: grid; place-items: center; width: 100%; min-height: 98px; background: #fff; position: relative; }
 .boonz-register .register-product-image .product-image { width: 100%; height: clamp(95px, 11vw, 144px); margin: 0; border-radius: 0; object-fit: cover; }
 .register-product-add { display: grid; place-items: center; position: absolute; bottom: 8px; right: 8px; width: 31px; height: 31px; border-radius: 9px; background: white; color: var(--boonz-accent); }
 .register-product-info { width: 100%; padding: 9px 11px 12px; display: grid; gap: 5px; }

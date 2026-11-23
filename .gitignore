@@ -24,3 +24,9 @@ yarn-error.log*
 
 # Local Netlify folder
 .netlify
+
+# Local values and Supabase CLI state
+/.env
+/supabase/.temp/
+/supabase/.branches/
+/supabase/**/.env*

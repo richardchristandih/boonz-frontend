@@ -299,7 +299,7 @@ export default function MenuLayout() {
   const [orderType, setOrderType] = useState(initialDraft.orderType || "Delivery");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
-  const [orderNumber, setOrderNumber] = useState(null);
+  const [receiptOrderId, setReceiptOrderId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submitting = useRef(false);
   const [coffeeCustomize, setCoffeeCustomize] = useState({
@@ -738,7 +738,7 @@ export default function MenuLayout() {
   );
 
   const handleEmailReceipt = async () => {
-    if (!orderNumber) {
+    if (!receiptOrderId) {
       show("Place an order first.", { type: "info" });
       return;
     }
@@ -751,7 +751,7 @@ export default function MenuLayout() {
       setSendingEmail(true);
       setEmailNotice("");
       setEmailError("");
-      await sendOrderEmail(orderNumber, email);
+      await sendOrderEmail(receiptOrderId, email);
       setEmailNotice(`Receipt sent to ${email}.`);
       setEmailCooldownUntil(Date.now() + EMAIL_COOLDOWN_SEC * 1000);
     } catch (e) {
@@ -1176,7 +1176,7 @@ export default function MenuLayout() {
     try {
       const { data: saved } = await api.post("/orders", orderData);
       const newOrderNumber = saved.orderNumber;
-      setOrderNumber(newOrderNumber);
+      setReceiptOrderId(saved._id || saved.id || newOrderNumber);
       setEmail(customerEmail.trim());
       setEmailNotice(saved.emailSent ? `Receipt sent to ${customerEmail.trim()}.` : "");
       setEmailCooldownUntil(saved.emailSent ? Date.now() + EMAIL_COOLDOWN_SEC * 1000 : 0);

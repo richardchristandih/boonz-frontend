@@ -1,0 +1,5 @@
+project_id = "boonz-pos"
+
+[functions.pos-api]
+# The function checks existing POS session tokens and serves the public menu.
+verify_jwt = false
