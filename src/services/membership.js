@@ -19,6 +19,11 @@ export async function membershipAccess(options) {
   return (await api.get("/members/access", options)).data.allowed;
 }
 
-export async function searchMembers(q) {
-  return (await api.post("/members/search", { q })).data;
+export async function searchMembers(q, options) {
+  return (await api.post("/members/search", { q }, options)).data;
+}
+
+
+export async function adjustPoints(id, details) {
+  return (await api.patch(`/members/${id}/points`, details)).data;
 }

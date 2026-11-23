@@ -99,7 +99,7 @@ test("cashier can search by name, inspect membership, and choose an affordable r
   fireEvent.change(screen.getByLabelText("Name, email, or phone number"), { target: { value: "Ari" } });
   fireEvent.click(screen.getByRole("button", { name: "Find member" }));
   fireEvent.click(await screen.findByRole("button", { name: /Ari/ }));
-  expect(api.post).toHaveBeenCalledWith("/members/search", { q: "Ari" });
+  expect(api.post).toHaveBeenCalledWith("/members/search", { q: "Ari" }, { signal: expect.any(AbortSignal) });
   expect(props.setMember).toHaveBeenCalledWith(member);
 
   rerender(<MemberCheckout {...props} member={member} benefit={null} />);
@@ -147,7 +147,7 @@ test("membership directory tells cashiers when an administrator must approve acc
 });
 
 
-test("register opens membership before payment and skipping needs no customer details", async () => {
+test("register checks points without checkout and still allows skipping membership before payment", async () => {
   const originalMatchMedia = window.matchMedia;
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   const Register = jest.requireActual("./pages/MainMenu").default;
@@ -167,6 +167,20 @@ test("register opens membership before payment and skipping needs no customer de
   );
   try {
     fireEvent.click(await screen.findByRole("button", { name: /Banana bread/ }));
+    api.post.mockResolvedValueOnce({ data: { items: [
+      { id: "member-1", name: "Ari", email: "ari@example.test", phone: "+6281234567890", points: 14 },
+    ], hasMore: false } });
+    fireEvent.click(screen.getByRole("button", { name: "Check points" }));
+    const lookup = screen.getByRole("dialog", { name: "Check points" });
+    fireEvent.change(within(lookup).getByLabelText("Name, email, or phone number"), { target: { value: "Ari" } });
+    fireEvent.click(within(lookup).getByRole("button", { name: "Find member" }));
+    fireEvent.click(await within(lookup).findByRole("button", { name: /Ari/ }));
+    expect(within(lookup).getByText("14 points")).toBeInTheDocument();
+    expect(within(lookup).queryByRole("button", { name: "Redeem reward" })).not.toBeInTheDocument();
+    fireEvent.keyDown(lookup, { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Check points" })).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Review payment" }));
     const membership = screen.getByRole("dialog", { name: "Boonz membership" });
     expect(screen.queryByRole("dialog", { name: "Record payment" })).not.toBeInTheDocument();
@@ -179,9 +193,37 @@ test("register opens membership before payment and skipping needs no customer de
     expect(within(payment).getByLabelText(/Email receipt/)).not.toBeRequired();
     fireEvent.click(within(payment).getByRole("button", { name: "QRIS" }));
     expect(within(payment).getByRole("button", { name: "Record payment" })).toBeEnabled();
-    expect(api.post).not.toHaveBeenCalled();
+    expect(api.post).toHaveBeenCalledTimes(1);
   } finally {
     view.unmount();
     window.matchMedia = originalMatchMedia;
   }
+});
+
+
+test("admin adjusts a member balance with a reason and sees the adjustment in history", async () => {
+  const member = { id: "member-1", name: "Ari", email: "ari@example.test", phone: "+6281234567890", points: 4 };
+  localStorage.setItem("user", JSON.stringify({ name: "Admin", role: "admin" }));
+  window.history.replaceState({}, "", "/members");
+  api.get.mockImplementation(async (url) => ({ data: {
+    "/members/access": { allowed: true },
+    "/members": { items: [member], hasMore: false },
+    "/members/member-1/activity": [{ id: "adjustment-1", kind: "adjustment", points: 2,
+      reason: "Corrected missing points", adjustedBy: "Admin", createdAt: "2025-01-01T12:00:00Z" }],
+  }[url] }));
+  api.patch.mockResolvedValue({ data: { ...member, points: 6 } });
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Adjust points for Ari" }));
+  const dialog = screen.getByRole("dialog", { name: "Adjust points for Ari" });
+  fireEvent.change(within(dialog).getByLabelText("New balance"), { target: { value: "6" } });
+  expect(within(dialog).getByRole("button", { name: "Save points" })).toBeDisabled();
+  fireEvent.change(within(dialog).getByLabelText("Reason for adjustment"), { target: { value: "Corrected missing points" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save points" }));
+
+  expect(await screen.findByText("Corrected missing points")).toBeInTheDocument();
+  expect(screen.getByText("6 pts")).toBeInTheDocument();
+  expect(api.patch).toHaveBeenCalledWith("/members/member-1/points", {
+    points: 6, expectedPoints: 4, reason: "Corrected missing points",
+  });
 });

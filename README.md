@@ -77,6 +77,7 @@ flow.
 - Admins configure earning and product rewards under **Membership → Points and rewards**. The default is 1 point per full Rp10.000 paid, and each point is worth Rp1.000 toward a discount. Only rewards configured and enabled by an admin appear at checkout.
 - Under **Membership → Cashier access**, admins approve existing cashier accounts that should handle member information. Members provide their name, email, and phone number at enrollment.
 - The membership dialog opens before payment. Search by name, email, or phone, register a new member, or choose **Skip membership** with no details. Once a member is selected, choose to earn only, use points to reduce the amount due, or redeem an item. Use **Redeem reward** with an empty cart for a rewards-only order.
+- Cashiers can select **Check points** next to **Held orders** to look up a balance without opening checkout. Admins can select **Adjust points** in the member list and enter a new balance and reason. Both the adjustment and the admin are recorded in the member’s history.
 - Member receipts are emailed automatically and show earned points, redeemed points, and the balance after checkout. A cancellation or refund reverses that order’s points. If the member has already spent the earned points, future earnings first make up the shortfall.
 
 ## Available Scripts

@@ -9,8 +9,9 @@ import React, {
 import { useNavigate } from "react-router-dom";
 import { buildKitchenTicket } from "../kitchenReceipt";
 import "./MainMenu.css";
-import { FiArchive, FiChevronDown, FiCoffee, FiPlus, FiRefreshCw, FiSearch, FiShoppingBag, FiTag, FiX } from "react-icons/fi";
+import { FiArchive, FiAward, FiChevronDown, FiCoffee, FiPlus, FiRefreshCw, FiSearch, FiShoppingBag, FiTag, FiX } from "react-icons/fi";
 import MemberCheckout from "../components/MemberCheckout";
+import PointsLookup from "../components/PointsLookup";
 import ReceiptPreview from "../components/ReceiptPreview";
 import Sidebar from "./Sidebar";
 import { buildReceipt } from "../receipt";
@@ -289,6 +290,8 @@ export default function MenuLayout() {
   });
   const [showPaymentModal, setShowPaymentModal] = useState(Boolean(pendingCheckout));
   const [showMembershipModal, setShowMembershipModal] = useState(false);
+  const [showPointsLookup, setShowPointsLookup] = useState(false);
+  const checkPointsButton = useRef(null);
   const [canUseMembership, setCanUseMembership] = useState(null);
   useEffect(() => {
     if (!user) return undefined;
@@ -1689,6 +1692,11 @@ export default function MenuLayout() {
           <div className="register-location"><span>Boonz</span><strong>Point of sale</strong></div>
           <div className="topbar-actions">
             <span className={`register-connection ${online ? "" : "offline"}`} role="status">{online ? "Online" : "Offline"}</span>
+            {canUseMembership && <button ref={checkPointsButton} className="icon-btn register-check-points" type="button"
+              aria-label="Check points" title="Check points" onClick={() => setShowPointsLookup(true)} disabled={!online}>
+              <FiAward size={18} aria-hidden="true" />
+              <span>Check points</span>
+            </button>}
             <button className="icon-btn register-held-button" type="button"
               aria-label={`Held orders (${openBills.length})`} onClick={() => setShowOpenBills(true)}>
               <FiArchive size={18} aria-hidden="true" />
@@ -1820,6 +1828,11 @@ export default function MenuLayout() {
           {cartSummary}
         </aside>
       )}
+
+      {showPointsLookup && <PointsLookup onClose={() => {
+        setShowPointsLookup(false);
+        checkPointsButton.current?.focus();
+      }} />}
 
       {showMembershipModal && (
         <div className="paymodal" role="dialog" aria-modal="true" aria-labelledby="membership-step-title"

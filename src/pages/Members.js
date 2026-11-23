@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { FiGift, FiUserPlus } from "react-icons/fi";
 import WorkspacePage from "../components/WorkspacePage";
 import MemberForm from "../components/MemberForm";
+import MemberPointsEditor from "../components/MemberPointsEditor";
 import api from "../services/api";
 import { memberError, membershipAccess, membershipProgram } from "../services/membership";
 import { formatIDR } from "../utils/money";
@@ -12,6 +13,7 @@ const activityLabels = {
   redeemed: "Redeemed",
   earn_reversed: "Earned points reversed",
   redemption_returned: "Redeemed points returned",
+  adjustment: "Manual adjustment",
 };
 
 function MemberProgram() {
@@ -208,9 +210,11 @@ function MemberActivity({ member }) {
           onClick={() => { setResult(null); setRevision((value) => value + 1); }}>Retry</button></p>
       ) : result.entries.length ? (
         <ul className="member-rewards">
-          {result.entries.map((entry, index) => (
-            <li key={index}><div><strong>{activityLabels[entry.kind]}</strong>
-              <span>Order #{entry.orderNumber} · {new Date(entry.createdAt).toLocaleString()}</span></div>
+          {result.entries.map((entry) => (
+            <li key={entry.id}><div><strong>{activityLabels[entry.kind]}</strong>
+              <span>{entry.orderNumber ? `Order #${entry.orderNumber} · ` : entry.adjustedBy ? `${entry.adjustedBy} · ` : ""}
+                {new Date(entry.createdAt).toLocaleString()}</span>
+              {entry.reason && <span>{entry.reason}</span>}</div>
               <strong>{entry.points > 0 ? "+" : ""}{entry.points.toLocaleString()}</strong></li>
           ))}
         </ul>
@@ -234,6 +238,7 @@ export default function Members() {
   const [results, setResults] = useState(null);
   const [form, setForm] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [pointsEditor, setPointsEditor] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -264,6 +269,14 @@ export default function Members() {
     setSelected(member);
     loadPage(1, "");
     setSearch("");
+  }
+
+  function onPointsSaved(member) {
+    setPointsEditor(null);
+    setSelected(member);
+    setResults((current) => current?.items
+      ? { ...current, items: current.items.map((item) => item.id === member.id ? member : item) }
+      : current);
   }
 
   return (
@@ -314,8 +327,12 @@ export default function Members() {
                     <div className="member-actions">
                       <button type="button" className="member-button" aria-pressed={selected?.id === member.id}
                         onClick={() => setSelected(member)}>History<span className="sr-only"> for {member.name}</span></button>
-                      {admin && <button type="button" className="member-button" onClick={() => setForm(member)}>
-                        Edit<span className="sr-only"> {member.name}</span></button>}
+                      {admin && <>
+                        <button type="button" className="member-button" onClick={() => setForm(member)}>
+                          Edit<span className="sr-only"> {member.name}</span></button>
+                        <button type="button" className="member-button" onClick={() => setPointsEditor(member)}>
+                          Adjust points<span className="sr-only"> for {member.name}</span></button>
+                      </>}
                     </div>
                   </li>
                 ))}
@@ -327,7 +344,9 @@ export default function Members() {
               <button type="button" className="member-button" disabled={!results?.hasMore} onClick={() => loadPage(page + 1)}>Next</button>
             </div>}
           </section>
-          {selected && <MemberActivity key={selected.id} member={selected} />}
+          {selected && <MemberActivity key={`${selected.id}:${selected.points}`} member={selected} />}
+          {pointsEditor && <MemberPointsEditor member={pointsEditor} onSaved={onPointsSaved}
+            onClose={() => setPointsEditor(null)} />}
         </>
       )}
     </WorkspacePage>

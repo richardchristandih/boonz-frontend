@@ -2,7 +2,7 @@ import express from "npm:express@4.22.3";
 import auth from "../middleware/authMiddleware.js";
 import requireAdmin from "../middleware/requireAdmin.js";
 import {
-  findMember, getMembershipProgram, hasMembershipAccess, listMembers, listMembershipStaff, memberActivity, requestError,
+  adjustMemberPoints, findMember, getMembershipProgram, hasMembershipAccess, listMembers, listMembershipStaff, memberActivity, requestError,
   saveMember, saveMemberReward, setMembershipProgram, setMembershipStaff, uuidPattern,
 } from "../membership.js";
 
@@ -56,7 +56,18 @@ router.get("/program", handle(async (_req, res) => res.json(await getMembershipP
 router.put("/program", requireAdmin, handle(async (req, res) => res.json(await setMembershipProgram(req.body))));
 router.put("/rewards/:productId", requireAdmin, handle(async (req, res) =>
   res.json(await saveMemberReward(req.params.productId, req.body))));
-router.get("/:id/activity", handle(async (req, res) => res.json(await memberActivity(memberId(req)))));
+router.get("/:id/activity", handle(async (req, res) => {
+  const includeAuditDetails = ["admin", "superadmin"].includes(req.user.role);
+  res.json(await memberActivity(memberId(req), includeAuditDetails));
+}));
+router.patch("/:id/points", requireAdmin, handle(async (req, res) => {
+  const { member, conflict } = await adjustMemberPoints(memberId(req), req.user.userId, req.body);
+  if (conflict) return res.status(409).json({
+    message: "The balance changed. Review the current balance before saving again.",
+    member,
+  });
+  res.json(member);
+}));
 router.patch("/:id", requireAdmin, handle(async (req, res) => res.json(await saveMember(req.body, memberId(req)))));
 
 export default router;

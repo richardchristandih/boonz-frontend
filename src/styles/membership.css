@@ -67,3 +67,18 @@
 .checkout-reward-list .member-button:disabled { opacity: 1; background: var(--boonz-wash); color: var(--boonz-muted); }
 .checkout-reward-list .member-button:disabled span:last-child { color: inherit; }
 .checkout-reward-list .member-button[aria-pressed="true"] { background: var(--boonz-cream); border-color: var(--boonz-teal-ink); }
+
+.boonz-register .register-check-points {
+  display: inline-flex; align-items: center; gap: 6px; width: auto; padding: 0 10px;
+  color: var(--boonz-teal-ink); white-space: nowrap; font-weight: 650;
+}
+.points-lookup-balance {
+  display: grid; gap: 5px; padding: 16px; border-radius: 10px;
+  background: var(--boonz-wash); color: var(--boonz-teal-ink); overflow-wrap: anywhere;
+}
+.points-lookup-balance span { font-size: 22px; font-weight: 750; }
+.points-editor-fields { display: grid; gap: 10px; }
+.points-editor-fields p { margin: 0; }
+@media (max-width: 380px) {
+  .register-check-points span { display: none; }
+}

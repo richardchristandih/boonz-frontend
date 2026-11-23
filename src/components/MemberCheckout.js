@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { findMember, memberError, membershipProgram, searchMembers } from "../services/membership";
+import { findMember, memberError, membershipProgram } from "../services/membership";
 import { formatIDR } from "../utils/money";
 import MemberForm from "./MemberForm";
+import MemberSearch from "./MemberSearch";
 import "../styles/membership.css";
 
 export default function MemberCheckout({
   member, setMember, benefit, setBenefit, total, hasItems, onBusyChange, onContinue, onSkip,
 }) {
   const [enrolling, setEnrolling] = useState(false);
-  const [identifier, setIdentifier] = useState("");
-  const [matches, setMatches] = useState(null);
   const [mode, setMode] = useState(benefit?.kind || (hasItems ? "earn" : "reward"));
   const [points, setPoints] = useState(benefit?.kind === "discount" ? String(benefit.points) : "");
   const [busy, setBusy] = useState(false);
@@ -39,23 +38,8 @@ export default function MemberCheckout({
     setMode(hasItems ? "earn" : "reward");
     setPoints("");
     setProgramState({ program: null, error: "" });
-    setMatches(null);
     setEnrolling(false);
     setError("");
-  }
-
-  async function search(event) {
-    event.preventDefault();
-    setWorking(true);
-    setMatches(null);
-    setError("");
-    try {
-      setMatches(await searchMembers(identifier.trim()));
-    } catch (failure) {
-      setError(memberError(failure, "Couldn’t find members. Try again."));
-    } finally {
-      setWorking(false);
-    }
   }
 
   async function refreshMember() {
@@ -169,32 +153,7 @@ export default function MemberCheckout({
         ) : (
           <>
             <p>Ask the customer if they’re a Boonz member.</p>
-            <form className="member-lookup" onSubmit={search}>
-              <label className="member-field">Name, email, or phone number
-                <input className="register-input" value={identifier} onChange={(event) => {
-                  setIdentifier(event.target.value);
-                  setMatches(null);
-                }} minLength={2} maxLength={254} disabled={busy} required autoFocus />
-              </label>
-              <button type="submit" className="member-button" disabled={busy || identifier.trim().length < 2}>
-                {busy ? "Searching…" : "Find member"}
-              </button>
-            </form>
-            {matches && (matches.items.length ? (
-              <>
-                <ul className="member-checkout-results">
-                  {matches.items.map((match) => (
-                    <li key={match.id}>
-                      <button className="member-button" type="button" onClick={() => selectMember(match)} disabled={busy}>
-                        <strong>{match.name}</strong>
-                        <span>{match.email[0]}…@{match.email.split("@")[1]} · Phone ending {match.phone.slice(-4)}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {matches.hasMore && <p className="member-muted">Refine your search to see more matches.</p>}
-              </>
-            ) : <p role="status">No matching members.</p>)}
+            <MemberSearch onSelect={selectMember} onBusyChange={setWorking} />
             <button type="button" className="member-button" onClick={() => setEnrolling(true)} disabled={busy}>Register new member</button>
           </>
         )}

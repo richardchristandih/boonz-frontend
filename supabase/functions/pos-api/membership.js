@@ -1,4 +1,4 @@
-import { query } from "./database.js";
+import { query, transaction } from "./database.js";
 import { Setting } from "./repositories.js";
 
 const DEFAULT_RUPIAH_PER_POINT = 10000;
@@ -114,12 +114,49 @@ export async function saveMember(body, id) {
   return member;
 }
 
-export async function memberActivity(memberId) {
+export async function adjustMemberPoints(memberId, adminId, body) {
+  const { points, expectedPoints } = body || {};
+  const reason = clean(body?.reason);
+  if (!Number.isSafeInteger(points) || points < 0 || !Number.isSafeInteger(expectedPoints)) {
+    throw requestError("Enter a non-negative whole number for the new balance.");
+  }
+  if (!reason || reason.length > 240) throw requestError("Enter a reason of up to 240 characters.");
+
+  return transaction(async (run) => {
+    const { rows: [member] } = await run(`
+      select ${memberColumns} from pos_private.members where id = $1 for update
+    `, [memberId]);
+    if (!member) throw requestError("Member not found.", 404);
+    if (member.points !== expectedPoints) return { member, conflict: true };
+    if (member.points === points) throw requestError("Enter a balance different from the current balance.");
+
+    await run(`
+      insert into pos_private.member_point_adjustments (member_id, adjusted_by, balance_before, balance_after, reason)
+      values ($1, $2, $3, $4, $5)
+    `, [memberId, adminId, member.points, points, reason]);
+    await run("update pos_private.members set points = $2 where id = $1", [memberId, points]);
+    return { member: { ...member, points }, conflict: false };
+  });
+}
+
+export async function memberActivity(memberId, includeAuditDetails) {
   const { rows } = await query(`
-    select l.kind, l.points, l.created_at as "createdAt", o.data->>'orderNumber' as "orderNumber"
-    from pos_private.member_points l join pos_private.orders o on o.id = l.order_id
-    where l.member_id = $1 order by l.id desc limit 50
-  `, [memberId]);
+    select id, kind, points::double precision as points, "createdAt", "orderNumber",
+      case when $2 then reason end as reason, case when $2 then "adjustedBy" end as "adjustedBy"
+    from (
+      select 'order-' || l.id as id, l.kind, l.points::bigint as points, l.created_at as "createdAt",
+        o.data->>'orderNumber' as "orderNumber", null::text as reason, null::text as "adjustedBy", l.id as sequence
+      from pos_private.member_points l join pos_private.orders o on o.id = l.order_id
+      where l.member_id = $1
+      union all
+      select 'adjustment-' || a.id, 'adjustment', a.balance_after - a.balance_before, a.created_at,
+        null, a.reason, u.data->>'name', a.id
+      from pos_private.member_point_adjustments a
+      join pos_private.users u on u.id = a.adjusted_by
+      where a.member_id = $1
+    ) activity
+    order by "createdAt" desc, sequence desc limit 50
+  `, [memberId, includeAuditDetails]);
   return rows;
 }
 
