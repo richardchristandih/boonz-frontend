@@ -5,8 +5,6 @@
 
 /* ===== Base / tokens ===== */
 :root {
-  color-scheme: light dark;
-
   /* Surfaces (from your globals) */
   --bg:            var(--bg, #ffffff);
   --bg-soft:       var(--bg-soft, #f7f8fa);
@@ -68,30 +66,6 @@
   --space-6: 28px;
 }
 
-/* Dark mode nips */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg:           color-mix(in oklab, #0b0f1a 92%, var(--bg, #000));
-    --bg-soft:      color-mix(in oklab, #0f1526 86%, var(--bg, #000));
-    --panel:        color-mix(in oklab, #0f172a 92%, var(--bg, #000));
-    --panel-2:      color-mix(in oklab, #0b1222 92%, var(--bg, #000));
-
-    --ink:          #e5e7eb;
-    --text:         #cbd5e1;
-    --muted:        #93a3b8;
-
-    --border:       #1f2a3e;
-    --border-strong:#2a3450;
-
-    --shadow-xs:    0 1px 2px rgba(0,0,0,.35);
-    --shadow-sm:    0 6px 18px rgba(0,0,0,.35);
-    --shadow:       0 12px 36px rgba(0,0,0,.45);
-    --shadow-lg:    0 22px 70px rgba(0,0,0,.55);
-
-    --focus:        0 0 0 3px color-mix(in oklab, var(--brand) 40%, transparent);
-    --ring:         0 0 0 1px var(--brand), 0 0 0 8px color-mix(in oklab, var(--brand) 28%, transparent);
-  }
-}
 
 /* A11y */
 @media (prefers-contrast: more) {
@@ -480,9 +454,6 @@ html, body {
   box-shadow: var(--shadow-sm);
   background: #fff;
 }
-@media (prefers-color-scheme: dark) {
-  .modal__body .receipt-preview .receipt-paper { background: #fff; }
-}
 .modal__body .receipt-preview pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
 /* Logo preview */
@@ -640,24 +611,9 @@ html, body {
   caret-color: var(--brand);
   backdrop-filter: saturate(115%);
 }
-@media (prefers-color-scheme: dark) {
-  .workspace-settings .settings-grid section.card textarea {
-    --ta-bg: linear-gradient(180deg, color-mix(in oklab, #0c1222 84%, transparent), transparent);
-    background: var(--ta-bg);
-    box-shadow:
-      0 1px 0 rgba(0,0,0,.25),
-      0 6px 18px rgba(0,0,0,.28),
-      inset 0 -1px 0 rgba(255,255,255,.03);
-  }
-}
 .workspace-settings .settings-grid section.card textarea:hover {
   border-color: color-mix(in oklab, var(--brand) 28%, var(--ta-border));
   background: #fff;
-}
-@media (prefers-color-scheme: dark) {
-  .workspace-settings .settings-grid section.card textarea:hover {
-    background: color-mix(in oklab, #0e162a 80%, transparent);
-  }
 }
 .workspace-settings .settings-grid section.card textarea:focus {
   outline: none;
@@ -668,15 +624,6 @@ html, body {
     0 0 0 4px color-mix(in oklab, var(--brand) 18%, transparent),
     inset 0 -1px 0 rgba(0,0,0,.04);
   transform: translateZ(0);
-}
-@media (prefers-color-scheme: dark) {
-  .workspace-settings .settings-grid section.card textarea:focus {
-    background: #0f172a;
-    box-shadow:
-      0 10px 28px rgba(0,0,0,.45),
-      0 0 0 6px color-mix(in oklab, var(--brand) 22%, transparent),
-      inset 0 -1px 0 rgba(255,255,255,.04);
-  }
 }
 .workspace-settings .settings-grid section.card textarea::placeholder {
   color: color-mix(in oklab, var(--muted) 84%, transparent);

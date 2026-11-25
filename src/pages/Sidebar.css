@@ -37,27 +37,6 @@
   --logo-skel-shine:rgba(255,255,255,.65);
 }
 
-/* Dark mode */
-@media (prefers-color-scheme: dark){
-  :root{
-    --bg:#0b0f14;
-    --bg-soft:#0f141b;
-    --text:#e7edf6;
-    --muted:#9aa4b2;
-    --border:#1e2630;
-
-    --shadow-xs:0 2px 8px rgba(0,0,0,.35);
-    --shadow-sm:0 4px 14px rgba(0,0,0,.4);
-    --shadow:0 8px 28px rgba(0,0,0,.5);
-
-    --cta:#79B4B0;
-    --cta-900:#5A8E8B;
-    --cta-glow:0 10px 26px rgba(121,180,176,.45);
-
-    --logo-skel-bg:#0f141b;
-    --logo-skel-shine:rgba(255,255,255,.2);
-  }
-}
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce){
@@ -202,8 +181,7 @@ Markup:
 .sb-btn-primary.add-product-btn:hover{ filter:brightness(.95); }
 .sb-btn-primary.add-product-btn:active{ transform:translateY(1px); }
 
-/* Light mode separator (optional) */
-@media (prefers-color-scheme: light){ .sidebar-top{ border-bottom:0; } }
+.sidebar-top{ border-bottom:0; }
 
 /* Short-height desktops */
 @media (max-height:580px) and (min-width:901px){

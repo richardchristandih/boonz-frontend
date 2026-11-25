@@ -7,7 +7,6 @@
   --cta-contrast: var(--boonz-ink);
   --price: var(--boonz-teal-ink);
   --ring: 0 0 0 3px #fb7e004d;
-  color-scheme: light;
 }
 
 .boonz-register :is(button, a, summary, select, input, textarea):focus-visible {

@@ -162,26 +162,6 @@
   .card { transition: none; }
 }
 
-/* ===== Optional dark mode polish ===== */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0c111b;
-    --card: #111827;
-    --text: #000000;
-    --muted: #94a3b8;
-    --border: #1f2937;
-    --shadow-sm: 0 4px 14px rgba(0,0,0,.35);
-    --shadow:    0 10px 30px rgba(0,0,0,.45);
-    --shadow-lg: 0 22px 60px rgba(0,0,0,.55);
-  }
-  .product-page { background: linear-gradient(180deg, #0c111b, #0b1320); }
-  .card__head { background: linear-gradient(#0f172a, #0b1320); border-color: #1f2937; }
-  .card { border-color: #1f2937; }
-  .back-btn { background: #0f172a; border-color: #1f2937; color: var(--text); }
-  .back-btn:hover { background: #0e1725; }
-  .card--stretch .card__body::-webkit-scrollbar-thumb { background: #2b3544; }
-  .card--stretch .card__body::-webkit-scrollbar-thumb:hover { background: #3a4557; }
-}
 
 .product-page {
   width: 100%;
