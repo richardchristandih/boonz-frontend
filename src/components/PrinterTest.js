@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { FiPrinter } from "react-icons/fi";
 import WorkspacePage from "./WorkspacePage";
+import { androidPrinterTarget, androidPrintFormatted, isAndroidBridge } from "../utils/androidBridge";
 
 // Example arrays of potential services/characteristics. Adjust as needed.
 const possibleServices = [0x18F0, 0xFFF0, 0xFEE7];
@@ -70,13 +71,19 @@ async function connectPrinter() {
 export default function PrinterTest() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
-  const supported = Boolean(navigator.bluetooth);
+  const native = isAndroidBridge();
+  const supported = native || Boolean(navigator.bluetooth);
 
   async function testPrinter() {
     setBusy(true);
     setResult(null);
     try {
-      await connectPrinter();
+      if (native) {
+        const target = androidPrinterTarget(localStorage.getItem("printer.receipt"), "receipt");
+        androidPrintFormatted(escPosCommands, target);
+      } else {
+        await connectPrinter();
+      }
       setResult({ message: "Test sent. Check the printer for output." });
     } catch (error) {
       setResult({ error: true, message: error.name === "NotFoundError" ? "No printer selected." : error.message });
@@ -90,7 +97,7 @@ export default function PrinterTest() {
       actions={<Link className="workspace-button" to="/settings?section=printers">Printer settings</Link>}>
       <section className="workspace-section">
         <button className="workspace-button primary" type="button" disabled={!supported || busy} onClick={testPrinter}>
-          <FiPrinter aria-hidden="true" /> {busy ? "Testing…" : "Choose and test printer"}
+          <FiPrinter aria-hidden="true" /> {busy ? "Testing…" : native ? "Test receipt printer" : "Choose and test printer"}
         </button>
         {!supported && <p className="workspace-muted">This browser doesn’t support direct Bluetooth printing. Use the printer routing options in Settings.</p>}
         {result && <p role={result.error ? "alert" : "status"}>{result.message}</p>}

@@ -11,7 +11,7 @@ import { buildReceipt } from "../receipt";
 import { printRaw, listPrinters, connectQZ } from "../utils/qzHelper";
 import {
   isAndroidBridge,
-  androidListPrintersDetailed,
+  androidPrinterTarget,
   androidPrintWithRetry,
   androidIsBtOn,
   androidPrintLogoAndText,
@@ -54,12 +54,6 @@ async function toDataUrl(url) {
     fr.onerror = reject;
     fr.readAsDataURL(blob);
   });
-}
-
-function extractBtAddress(val) {
-  const s = String(val || "");
-  const m = s.match(/\(([^)]+)\)\s*$/);
-  return (m && m[1]) || s;
 }
 
 function getPrinterPrefs() {
@@ -312,14 +306,9 @@ export default function Orders() {
           show("Bluetooth is OFF.", { type: "error" });
           return;
         }
-        const printers = androidListPrintersDetailed() || [];
-        if (printers.length === 0) {
-          show("No paired Bluetooth printers.", { type: "error" });
-          return;
-        }
-        const printerAddr = printers[0].address || "";
+        const target = androidPrinterTarget(localStorage.getItem("printer.receipt"), "receipt");
         await androidPrintWithRetry(settlementText, {
-          address: printerAddr,
+          ...target,
           copies: 1,
           tries: 3,
           baseDelay: 500,
@@ -421,17 +410,12 @@ export default function Orders() {
           });
           return;
         }
-        const paired = androidListPrintersDetailed();
-        const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
-        const kitchenTarget =
-          extractBtAddress(localStorage.getItem("printer.kitchen")) ||
-          fallbackAddr;
+        const kitchenTarget = androidPrinterTarget(localStorage.getItem("printer.kitchen"), "kitchen");
 
         const { kitchenCopies } = getPrinterPrefs();
         for (let i = 0; i < kitchenCopies; i++) {
           await androidPrintWithRetry(kotText, {
-            address: kitchenTarget,
-            nameLike: kitchenTarget,
+            ...kitchenTarget,
             copies: 1,
             tries: 3,
             baseDelay: 500,
@@ -477,22 +461,16 @@ export default function Orders() {
           });
           return;
         }
-        const paired = androidListPrintersDetailed();
-        const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
-        const receiptTarget =
-          extractBtAddress(localStorage.getItem("printer.receipt")) ||
-          fallbackAddr;
+        const receiptTarget = androidPrinterTarget(localStorage.getItem("printer.receipt"), "receipt");
 
         const { receiptCopies } = getPrinterPrefs();
         for (let i = 0; i < receiptCopies; i++) {
           const res = await androidPrintLogoAndText(logoDataUrl, receiptText, {
-            address: receiptTarget,
-            nameLike: receiptTarget,
+            ...receiptTarget,
           });
           if (!res?.text) {
             await androidPrintWithRetry(receiptText + "\n\n\n", {
-              address: receiptTarget,
-              nameLike: receiptTarget,
+              ...receiptTarget,
               copies: 1,
               tries: 3,
               baseDelay: 500,

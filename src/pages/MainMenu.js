@@ -24,7 +24,7 @@ import { getImageSrc } from "../utils/productImage";
 import { listCategories } from "../services/categories";
 import {
   isAndroidBridge,
-  androidListPrintersDetailed,
+  androidPrinterTarget,
   androidPrintWithRetry,
   androidIsBtOn,
   androidPrintLogoAndText,
@@ -139,12 +139,6 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function extractBtAddress(val) {
-  const s = String(val || "");
-  const m = s.match(/\(([^)]+)\)\s*$/);
-  return (m && m[1]) || s;
 }
 
 function promoUnavailable(promo, subtotal, now = Date.now()) {
@@ -1332,17 +1326,12 @@ export default function MenuLayout() {
           });
           return;
         }
-        const paired = androidListPrintersDetailed();
-        const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
-        const kitchenTarget =
-          extractBtAddress(localStorage.getItem("printer.kitchen")) ||
-          fallbackAddr;
+        const kitchenTarget = androidPrinterTarget(localStorage.getItem("printer.kitchen"), "kitchen");
 
         const { kitchenCopies } = getPrinterPrefs();
         for (let i = 0; i < kitchenCopies; i++) {
           await androidPrintWithRetry(kotText, {
-            address: kitchenTarget,
-            nameLike: kitchenTarget,
+            ...kitchenTarget,
             copies: 1,
             tries: 3,
             baseDelay: 500, // Reduced from 3000ms for faster printing
@@ -1389,24 +1378,18 @@ export default function MenuLayout() {
           });
           return;
         }
-        const paired = androidListPrintersDetailed();
-        const fallbackAddr = paired[0]?.address || paired[0]?.name || "";
-        const receiptTarget =
-          extractBtAddress(localStorage.getItem("printer.receipt")) ||
-          fallbackAddr;
+        const receiptTarget = androidPrinterTarget(localStorage.getItem("printer.receipt"), "receipt");
 
         const { receiptCopies } = getPrinterPrefs();
         for (let i = 0; i < receiptCopies; i++) {
           const logo = logoDataUrl?.startsWith("data:")
             ? logoDataUrl : await toDataUrl(logoDataUrl || appLogo).catch(() => "");
           const res = logo ? await androidPrintLogoAndText(logo, receiptText, {
-            address: receiptTarget,
-            nameLike: receiptTarget,
+            ...receiptTarget,
           }) : null;
           if (!res?.text) {
             await androidPrintWithRetry(receiptText + "\n\n\n", {
-              address: receiptTarget,
-              nameLike: receiptTarget,
+              ...receiptTarget,
               copies: 1,
               tries: 3,
               baseDelay: 500,

@@ -8,6 +8,7 @@ import { fetchOrderCharges, saveOrderCharges } from "../services/orderCharges";
 import {
   isAndroidBridge,
   androidListPrintersDetailed,
+  androidPrinterTarget,
   androidPrintWithRetry,
   androidIsBtOn,
   androidGetLastError,
@@ -239,10 +240,10 @@ export default function Settings() {
         setPrinterList(toOptions(list));
         setBtMsg(
           list.length
-            ? `Paired BT printers:\n• ${list
+            ? `Paired Bluetooth devices:\n• ${list
                 .map((p) => `${p?.name ?? "Unknown"} — ${p?.address ?? "-"}`)
                 .join("\n• ")}`
-            : "No paired Bluetooth printers found."
+            : "No paired Bluetooth devices. Pair the printer in Samsung Bluetooth settings first."
         );
         return;
       }
@@ -341,12 +342,6 @@ export default function Settings() {
     setShowPreview(true);
   }
 
-  function extractBtAddress(val) {
-    const s = String(val || "");
-    const m = s.match(/\(([^)]+)\)\s*$/);
-    return (m && m[1]) || s;
-  }
-
   async function handleTestPrint() {
     try {
       setTestMsg("Sending sample receipt and kitchen ticket…");
@@ -357,7 +352,7 @@ export default function Settings() {
 
       // Get logos
       const logoSrc = logoDataUrl || appLogo;
-      const logoData = await toDataUrl(logoSrc);
+      const logoData = await toDataUrl(logoSrc).catch(() => "");
 
       if (isAndroidBridge()) {
         if (!androidIsBtOn()) {
@@ -365,27 +360,18 @@ export default function Settings() {
           show("Bluetooth is OFF.", { type: "error" });
           return;
         }
-        const raw = androidListPrintersDetailed() || [];
-        const list = Array.isArray(raw) ? raw : [];
-        if (!list.length) {
-          setTestMsg("No paired Bluetooth printers.");
-          show("No paired Bluetooth printers.", { type: "error" });
-          return;
-        }
-
-        // --- Print to RECEIPT printer ---
-        const receiptAddr =
-          extractBtAddress(receiptPrinter) || list[0].address || "";
+        const receiptTarget = androidPrinterTarget(receiptPrinter, "receipt");
+        const kitchenTarget = kitchenPrinter ? androidPrinterTarget(kitchenPrinter, "kitchen") : null;
         for (let i = 0; i < receiptCopiesNum; i++) {
-          const combined = androidPrintLogoAndText(
+          const combined = await androidPrintLogoAndText(
             logoData,
             sampleReceipt + "\n\n",
-            { address: receiptAddr, nameLike: receiptAddr }
+            receiptTarget
           );
-          if (!combined) {
+          if (!combined.text) {
             // fall back to text-only with retries
             await androidPrintWithRetry(sampleReceipt + "\n\n\n", {
-              address: receiptAddr,
+              ...receiptTarget,
               copies: 1,
               tries: 3,
               baseDelay: 500,
@@ -397,14 +383,10 @@ export default function Settings() {
         }
 
         // --- Print to KITCHEN printer (if defined) ---
-        if (kitchenPrinter) {
-          const kitchenAddr =
-            extractBtAddress(kitchenPrinter) ||
-            list.find((p) => p.address !== receiptAddr)?.address ||
-            "";
+        if (kitchenTarget) {
           for (let i = 0; i < kitchenCopiesNum; i++) {
             await androidPrintWithRetry(sampleKot, {
-              address: kitchenAddr,
+              ...kitchenTarget,
               copies: 1,
               tries: 3,
               baseDelay: 500,

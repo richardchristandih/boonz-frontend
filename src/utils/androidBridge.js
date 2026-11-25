@@ -29,34 +29,44 @@ export function androidOpenBtSettings() {
 // --- Discovery: returns [{ name, address }] ---
 export function androidListPrintersDetailed() {
   const b = AP();
-  try {
-    const raw =
-      typeof b.listPrintersDetailed === "function"
-        ? b.listPrintersDetailed()
-        : typeof b.listPrinters === "function"
-        ? b.listPrinters()
-        : [];
+  const raw = typeof b.listPrintersDetailed === "function" ? b.listPrintersDetailed()
+    : typeof b.listPrinters === "function" ? b.listPrinters()
+    : typeof b.listBluetoothPrinters === "function" ? b.listBluetoothPrinters()
+    : null;
+  if (raw === null) throw new Error("Printer discovery is unavailable. Open the updated Boonz Android app.");
+  const error = androidGetLastError();
+  if (error) throw new Error(error);
+  const data = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
+  const items = Array.isArray(data) ? data : data?.printers;
+  if (!Array.isArray(items)) return [];
 
-    const arr = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
-    if (!Array.isArray(arr)) return [];
+  const seen = new Set();
+  return items.flatMap((item) => {
+    const name = String(typeof item === "string" ? item : item?.name || "").trim();
+    const address = String(item?.address || "").trim();
+    const key = address.toUpperCase() || name;
+    if (!key || seen.has(key)) return [];
+    seen.add(key);
+    return [{ name, address }];
+  });
+}
 
-    // Normalize, dedupe by address/name
-    const out = [];
-    const seen = new Set();
-    for (const x of arr) {
-      const item = typeof x === "string" ? { name: x, address: "" } : { ...x };
-      item.name = String(item.name || "").trim();
-      item.address = String(item.address || "").trim();
-      const key = item.address || `name:${item.name}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        out.push(item);
-      }
-    }
-    return out;
-  } catch {
-    return [];
+// Resolve saved addresses, old name-only values, and labels from older installs.
+export function androidPrinterTarget(preference, role) {
+  const printers = androidListPrintersDetailed();
+  if (!printers.length) {
+    throw new Error("Pair your printer in Android Bluetooth settings first.");
   }
+  const saved = String(preference || "").trim();
+  const target = (saved.match(/\(([^)]+)\)\s*$/)?.[1] || saved).toLowerCase();
+  const matches = target
+    ? printers.filter(({ address, name }) => [address, name].some((value) => value.toLowerCase() === target))
+    : printers;
+  if (matches.length !== 1) {
+    throw new Error(`Select and save your ${role} printer in Boonz Settings.`);
+  }
+  const { address, name } = matches[0];
+  return { address, nameLike: name };
 }
 
 // --- Core text print (best-effort target: address → nameLike → default) ---
@@ -67,27 +77,19 @@ export function androidPrintFormatted(
   const b = AP();
   const payload = String(text || "");
 
-  // Strict MAC-address target (best if supported by your native bridge)
+  let sent;
   if (address && typeof b.printToAddress === "function") {
-    b.printToAddress(String(address), payload);
-    return;
+    sent = b.printToAddress(String(address), payload);
+  } else if (typeof b.printTo === "function") {
+    sent = b.printTo(JSON.stringify({ nameLike: String(nameLike || address || ""), text: payload }));
+  } else if (!address && !nameLike && typeof b.printText === "function") {
+    sent = b.printText(payload);
+  } else if (!address && !nameLike && typeof b.printFormatted === "function") {
+    sent = b.printFormatted(payload);
+  } else {
+    throw new Error("Printer routing is unavailable. Open the updated Boonz Android app.");
   }
-
-  // Name-like targeting (bridge resolves internally)
-  if (typeof b.printTo === "function") {
-    b.printTo(
-      JSON.stringify({ nameLike: String(nameLike || ""), text: payload })
-    );
-    return;
-  }
-
-  // Plain broadcast / default printer
-  if (typeof b.printText === "function") {
-    b.printText(payload);
-    return;
-  }
-
-  throw new Error("Android bridge missing print methods");
+  if (sent === false) throw new Error(androidGetLastError() || "The Android printer could not print this ticket.");
 }
 
 // --- Simple retry wrapper around androidPrintFormatted ---
