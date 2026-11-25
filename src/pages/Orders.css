@@ -181,8 +181,20 @@
 /* Actions */
 .order-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+.workspace-orders .order-actions > .btn {
+  flex: 1 1 6rem;
+  width: auto;
+  min-width: 0;
+  min-height: 44px;
+  height: auto;
+  padding: 8px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .btn {
   border: 1px solid #e5e7eb;
